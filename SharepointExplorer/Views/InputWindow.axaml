@@ -1,0 +1,16 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="SharepointExplorer.Views.InputWindow"
+        Title="Input"
+        Width="300" Height="150"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False">
+    <StackPanel Margin="20" Spacing="10">
+        <TextBlock Name="PromptText" Text="Enter value:"/>
+        <TextBox Name="InputBox"/>
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10">
+            <Button Name="OkButton" Content="OK" Click="Ok_Click"/>
+            <Button Content="Cancel" Click="Cancel_Click"/>
+        </StackPanel>
+    </StackPanel>
+</Window>

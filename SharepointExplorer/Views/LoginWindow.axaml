@@ -1,0 +1,62 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:SharepointExplorer.ViewModels"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="400" d:DesignHeight="500"
+        x:Class="SharepointExplorer.Views.LoginWindow"
+        x:DataType="vm:LoginViewModel"
+        Title="SharePoint Login"
+        Width="400" Height="550"
+        WindowStartupLocation="CenterScreen"
+        CanResize="False">
+
+    <Design.DataContext>
+        <vm:LoginViewModel/>
+    </Design.DataContext>
+
+    <Border Padding="20">
+        <StackPanel Spacing="15" VerticalAlignment="Center">
+            <TextBlock Text="SharePoint Explorer" FontSize="24" FontWeight="Bold" HorizontalAlignment="Center"/>
+            
+            <TextBlock Text="Site URL:"/>
+            <TextBox Text="{Binding SiteUrl}"/>
+            
+            <TabControl>
+                <TabItem Header="Modern Auth">
+                    <StackPanel Spacing="10" Margin="0,10,0,0">
+                         <TextBlock Text="Use this for MFA or SSO accounts." TextWrapping="Wrap" />
+                         
+                         <TextBlock Text="Client ID (App ID):" ToolTip.Tip="Azure AD App Client ID. Leave default for PnP Management Shell."/>
+                         <TextBox Text="{Binding ClientId}"/>
+                         
+                         <TextBlock Text="Redirect URI:" ToolTip.Tip="Must match App Registration (e.g., http://localhost)"/>
+                         <TextBox Text="{Binding RedirectUri}"/>
+                         
+                         <Button Content="Login with Browser (MFA)" 
+                                Command="{Binding ModernConnectCommand}" 
+                                HorizontalAlignment="Stretch" 
+                                HorizontalContentAlignment="Center"/>
+                    </StackPanel>
+                </TabItem>
+                <TabItem Header="Credentials (Legacy)">
+                    <StackPanel Spacing="10" Margin="0,10,0,0">
+                        <TextBlock Text="Username:"/>
+                        <TextBox Text="{Binding Username}"/>
+                        
+                        <TextBlock Text="Password:"/>
+                        <TextBox Text="{Binding Password}" PasswordChar="*" />
+                        
+                        <Button Content="Connect" 
+                                Command="{Binding ConnectCommand}" 
+                                HorizontalAlignment="Stretch" 
+                                HorizontalContentAlignment="Center"/>
+                    </StackPanel>
+                </TabItem>
+            </TabControl>
+            
+            <TextBlock Text="{Binding StatusMessage}" Foreground="Red" TextWrapping="Wrap" HorizontalAlignment="Center"/>
+        </StackPanel>
+    </Border>
+
+</Window>
