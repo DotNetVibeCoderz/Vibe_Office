@@ -1,0 +1,19 @@
+<MudDialog>
+    <DialogContent>
+        <MudText>@Message</MudText>
+        <MudNumericField @bind-Value="Value" Label="Amount" Format="N2" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" OnClick="Submit">Ok</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] MudDialogInstance MudDialog { get; set; }
+    [Parameter] public string Message { get; set; } = "Enter value:";
+    public decimal Value { get; set; }
+
+    private void Cancel() => MudDialog.Cancel();
+    private void Submit() => MudDialog.Close(DialogResult.Ok(Value));
+}

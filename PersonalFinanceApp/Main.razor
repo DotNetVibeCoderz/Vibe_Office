@@ -1,0 +1,40 @@
+@using PersonalFinanceApp.Services
+@inject AuthService AuthService
+
+<MudThemeProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+@if (!isAuthenticated)
+{
+    <PersonalFinanceApp.Pages.Login OnLoginSuccess="HandleLogin" />
+}
+else
+{
+    <Router AppAssembly="@typeof(Main).Assembly">
+        <Found Context="routeData">
+            <RouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)" />
+        </Found>
+        <NotFound>
+            <LayoutView Layout="@typeof(MainLayout)">
+                <p>Sorry, there's nothing at this address.</p>
+            </LayoutView>
+        </NotFound>
+    </Router>
+}
+
+@code {
+    private bool isAuthenticated = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Simple check, maybe auto-login if no pin set?
+        // For now, require login
+    }
+
+    private void HandleLogin()
+    {
+        isAuthenticated = true;
+        StateHasChanged();
+    }
+}

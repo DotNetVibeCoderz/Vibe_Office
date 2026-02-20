@@ -1,0 +1,91 @@
+@page "/transactions"
+@using PersonalFinanceApp.Data
+@using PersonalFinanceApp.Services
+@using PersonalFinanceApp.Components
+@using System.Text
+@inject TransactionService Service
+@inject IDialogService DialogService
+@inject IJSRuntime JS
+
+<MudTable Items="@transactions" Hover="true" Filter="new Func<Transaction,bool>(FilterFunc1)" @bind-SelectedItem="selectedItem">
+    <ToolBarContent>
+        <MudText Typo="Typo.h6">Transactions</MudText>
+        <MudSpacer />
+        <MudTextField @bind-Value="searchString" Placeholder="Search" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0"></MudTextField>
+        <MudIconButton Icon="@Icons.Material.Filled.Add" Color="Color.Primary" OnClick="OpenDialog" />
+        <MudIconButton Icon="@Icons.Material.Filled.Download" Color="Color.Secondary" OnClick="ExportCsv" Title="Export CSV" />
+    </ToolBarContent>
+    <HeaderContent>
+        <MudTh>Date</MudTh>
+        <MudTh>Type</MudTh>
+        <MudTh>Category</MudTh>
+        <MudTh>Description</MudTh>
+        <MudTh>Amount</MudTh>
+        <MudTh>Account</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Date">@context.Date.ToShortDateString()</MudTd>
+        <MudTd DataLabel="Type">@context.Type</MudTd>
+        <MudTd DataLabel="Category">@context.Category?.Name</MudTd>
+        <MudTd DataLabel="Description">@context.Description</MudTd>
+        <MudTd DataLabel="Amount">@context.Amount.ToString("C0")</MudTd>
+        <MudTd DataLabel="Account">@context.Account?.Name</MudTd>
+    </RowTemplate>
+    <PagerContent>
+        <MudTablePager />
+    </PagerContent>
+</MudTable>
+
+@code {
+    private List<Transaction> transactions = new();
+    private Transaction selectedItem = null;
+    private string searchString = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        transactions = await Service.GetAllAsync();
+    }
+
+    private bool FilterFunc1(Transaction element) => FilterFunc(element, searchString);
+
+    private bool FilterFunc(Transaction element, string searchString)
+    {
+        if (string.IsNullOrWhiteSpace(searchString))
+            return true;
+        if (element.Description.Contains(searchString, StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (element.Category != null && element.Category.Name.Contains(searchString, StringComparison.OrdinalIgnoreCase))
+            return true;
+        return false;
+    }
+
+    private async Task OpenDialog()
+    {
+        var options = new DialogOptions { CloseOnEscapeKey = true, MaxWidth = MaxWidth.Medium, FullWidth = true };
+        var dialog = DialogService.Show<TransactionDialog>("Add Transaction", options);
+        var result = await dialog.Result;
+
+        if (!result.Cancelled)
+        {
+            var newTrans = (Transaction)result.Data;
+            await Service.AddTransactionAsync(newTrans);
+            await LoadData();
+        }
+    }
+
+    private async Task ExportCsv()
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("Date,Type,Category,Description,Amount,Account");
+        foreach (var t in transactions)
+        {
+            sb.AppendLine($"{t.Date:yyyy-MM-dd},{t.Type},{t.Category?.Name},{t.Description},{t.Amount},{t.Account?.Name}");
+        }
+        await JS.InvokeVoidAsync("downloadFile", "transactions.csv", sb.ToString());
+    }
+}

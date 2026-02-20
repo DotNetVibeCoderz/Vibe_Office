@@ -1,0 +1,71 @@
+@using PersonalFinanceApp.Data
+@using PersonalFinanceApp.Services
+@inject TransactionService Service
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="form" @bind-IsValid="@success">
+            <MudSelect T="TransactionType" Label="Type" @bind-Value="transaction.Type" Required="true">
+                <MudSelectItem Value="TransactionType.Income">Income</MudSelectItem>
+                <MudSelectItem Value="TransactionType.Expense">Expense</MudSelectItem>
+                <MudSelectItem Value="TransactionType.Transfer">Transfer</MudSelectItem>
+            </MudSelect>
+
+            <MudDatePicker Label="Date" @bind-Date="date" />
+            
+            <MudNumericField @bind-Value="transaction.Amount" Label="Amount" Format="N2" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.AttachMoney" />
+            
+            <MudTextField @bind-Value="transaction.Description" Label="Description" Required="true" />
+
+            <MudSelect T="int" Label="Category" @bind-Value="transaction.CategoryId">
+                @foreach (var cat in categories)
+                {
+                    <MudSelectItem Value="@cat.Id">@cat.Name</MudSelectItem>
+                }
+            </MudSelect>
+            
+            <MudSelect T="int" Label="Account" @bind-Value="transaction.AccountId">
+                @foreach (var acc in accounts)
+                {
+                    <MudSelectItem Value="@acc.Id">@acc.Name</MudSelectItem>
+                }
+            </MudSelect>
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" OnClick="Submit">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] MudDialogInstance MudDialog { get; set; }
+    [Parameter] public Transaction transaction { get; set; } = new Transaction();
+
+    private DateTime? date = DateTime.Today;
+    private List<Category> categories = new();
+    private List<Account> accounts = new();
+    bool success;
+    MudForm form;
+
+    protected override async Task OnInitializedAsync()
+    {
+        categories = await Service.GetCategoriesAsync();
+        accounts = await Service.GetAccountsAsync();
+        if (transaction.Id != 0) date = transaction.Date;
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private async Task Submit()
+    {
+        await form.Validate();
+        if (form.IsValid)
+        {
+            transaction.Date = date ?? DateTime.Now;
+            // Usually we call service to save here or return the object
+            // I will return the object
+            MudDialog.Close(DialogResult.Ok(transaction));
+        }
+    }
+}

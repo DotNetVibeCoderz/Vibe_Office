@@ -1,0 +1,32 @@
+@page "/login"
+@using PersonalFinanceApp.Services
+@inject AuthService AuthService
+@inject ISnackbar Snackbar
+
+<MudContainer MaxWidth="MaxWidth.Small" Class="d-flex align-center justify-center" Style="height: 100vh;">
+    <MudPaper Class="pa-8 d-flex flex-column gap-4" Elevation="4">
+        <MudText Typo="Typo.h4" Align="Align.Center">LOCKED</MudText>
+        <MudText Align="Align.Center">Enter PIN to access your finance</MudText>
+        
+        <MudTextField @bind-Value="pin" Label="PIN" Variant="Variant.Outlined" InputType="InputType.Password" Adornment="Adornment.End" AdornmentIcon="@Icons.Material.Filled.Lock" />
+        
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SubmitLogin" FullWidth="true">Unlock</MudButton>
+    </MudPaper>
+</MudContainer>
+
+@code {
+    private string pin = "";
+    [Parameter] public EventCallback OnLoginSuccess { get; set; }
+
+    private async Task SubmitLogin()
+    {
+        if (await AuthService.VerifyPin(pin))
+        {
+            await OnLoginSuccess.InvokeAsync();
+        }
+        else
+        {
+            Snackbar.Add("Invalid PIN", Severity.Error);
+        }
+    }
+}

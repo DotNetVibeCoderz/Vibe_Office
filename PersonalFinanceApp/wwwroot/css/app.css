@@ -1,0 +1,80 @@
+/* Brutalist CSS */
+:root {
+    --bg-color: #ffffff;
+    --text-color: #000000;
+    --primary-color: #0000ff; /* Blue */
+    --secondary-color: #ff0000; /* Red */
+    --accent-color: #00ff00; /* Green */
+    --border-width: 3px;
+    --font-family: 'Courier New', Courier, monospace;
+}
+
+body {
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    font-family: var(--font-family);
+    margin: 0;
+    padding: 0;
+}
+
+h1, h2, h3, h4, h5, h6 {
+    text-transform: uppercase;
+    font-weight: 900;
+    border-bottom: var(--border-width) solid var(--text-color);
+    padding-bottom: 0.5rem;
+    margin-bottom: 1rem;
+}
+
+.brutalist-card {
+    border: var(--border-width) solid var(--text-color);
+    box-shadow: 5px 5px 0px 0px var(--text-color);
+    padding: 1rem;
+    margin: 1rem;
+    background-color: #f0f0f0;
+    transition: transform 0.1s;
+}
+
+.brutalist-card:hover {
+    transform: translate(-2px, -2px);
+    box-shadow: 7px 7px 0px 0px var(--text-color);
+}
+
+.brutalist-btn {
+    background-color: var(--primary-color);
+    color: white;
+    border: var(--border-width) solid var(--text-color);
+    padding: 0.5rem 1rem;
+    font-weight: bold;
+    text-transform: uppercase;
+    cursor: pointer;
+    box-shadow: 3px 3px 0px 0px var(--text-color);
+}
+
+.brutalist-btn:active {
+    transform: translate(2px, 2px);
+    box-shadow: 1px 1px 0px 0px var(--text-color);
+}
+
+.mud-appbar {
+    border-bottom: var(--border-width) solid var(--text-color) !important;
+    background-color: var(--bg-color) !important;
+    color: var(--text-color) !important;
+    box-shadow: none !important;
+}
+
+.mud-drawer {
+    border-right: var(--border-width) solid var(--text-color) !important;
+}
+
+/* Override MudBlazor Defaults for Brutalism */
+.mud-paper {
+    border: var(--border-width) solid var(--text-color) !important;
+    box-shadow: 4px 4px 0px 0px rgba(0,0,0,1) !important;
+    border-radius: 0 !important;
+}
+
+.mud-button-filled {
+    border: 2px solid black;
+    box-shadow: 2px 2px 0px 0px black;
+    border-radius: 0 !important;
+}

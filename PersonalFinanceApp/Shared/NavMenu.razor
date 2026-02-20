@@ -1,0 +1,17 @@
+<MudNavMenu>
+    <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Dashboard">Dashboard</MudNavLink>
+    <MudNavLink Href="/transactions" Icon="@Icons.Material.Filled.Receipt">Transactions</MudNavLink>
+    <MudNavLink Href="/budgets" Icon="@Icons.Material.Filled.PieChart">Budgets</MudNavLink>
+    <MudNavLink Href="/goals" Icon="@Icons.Material.Filled.Savings">Goals</MudNavLink>
+    <MudNavLink Href="/reports" Icon="@Icons.Material.Filled.Analytics">Reports</MudNavLink>
+    
+    <MudDivider Class="my-2"/>
+    <MudNavLink OnClick="ExitApp" Icon="@Icons.Material.Filled.ExitToApp" IconColor="Color.Error">Exit</MudNavLink>
+</MudNavMenu>
+
+@code {
+    private void ExitApp()
+    {
+        System.Windows.Application.Current.Shutdown();
+    }
+}

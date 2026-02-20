@@ -1,0 +1,30 @@
+@using PersonalFinanceApp.Data
+@using PersonalFinanceApp.Services
+@inject BudgetService Service
+
+<MudDialog>
+    <DialogContent>
+        <MudForm>
+             <MudSelect T="int" Label="Category" @bind-Value="budget.CategoryId" Required="true">
+                @foreach (var cat in categories)
+                {
+                    <MudSelectItem Value="@cat.Id">@cat.Name</MudSelectItem>
+                }
+            </MudSelect>
+            <MudNumericField @bind-Value="budget.Amount" Label="Limit Amount" Format="N2" />
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" OnClick="Submit">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] MudDialogInstance MudDialog { get; set; }
+    [Parameter] public Budget budget { get; set; } = new Budget();
+    [Parameter] public List<Category> categories { get; set; } = new();
+
+    private void Cancel() => MudDialog.Cancel();
+    private void Submit() => MudDialog.Close(DialogResult.Ok(budget));
+}

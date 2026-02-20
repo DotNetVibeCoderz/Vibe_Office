@@ -1,0 +1,75 @@
+@page "/goals"
+@using PersonalFinanceApp.Data
+@using PersonalFinanceApp.Services
+@using PersonalFinanceApp.Components
+@inject GoalService Service
+@inject IDialogService DialogService
+
+<MudContainer>
+    <MudText Typo="Typo.h5" Class="mb-4">Savings Goals</MudText>
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="OpenAddGoal" Class="mb-4">New Goal</MudButton>
+
+    <MudGrid>
+        @foreach (var goal in goals)
+        {
+            <MudItem xs="12" sm="6" md="4">
+                <MudCard Class="brutalist-card">
+                    <MudCardHeader>
+                        <CardHeaderContent>
+                            <MudText Typo="Typo.h6">@goal.Name</MudText>
+                        </CardHeaderContent>
+                    </MudCardHeader>
+                    <MudCardContent>
+                        <MudText Typo="Typo.body2">Target: @goal.TargetAmount.ToString("C0")</MudText>
+                        <MudText Typo="Typo.body2">Current: @goal.CurrentAmount.ToString("C0")</MudText>
+                        <MudProgressLinear Color="Color.Info" Value="@((double)(goal.CurrentAmount / goal.TargetAmount) * 100)" Class="my-2" />
+                    </MudCardContent>
+                    <MudCardActions>
+                        <MudButton Variant="Variant.Text" Color="Color.Primary" OnClick="@(() => AddSavings(goal))">Add Savings</MudButton>
+                    </MudCardActions>
+                </MudCard>
+            </MudItem>
+        }
+    </MudGrid>
+</MudContainer>
+
+@code {
+    private List<Goal> goals = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        goals = await Service.GetGoalsAsync();
+    }
+
+    private async Task OpenAddGoal()
+    {
+        var dialog = DialogService.Show<GoalDialog>("New Goal");
+        var result = await dialog.Result;
+
+        if (!result.Cancelled)
+        {
+            var goal = (Goal)result.Data;
+            await Service.AddGoalAsync(goal);
+            await LoadData();
+        }
+    }
+
+    private async Task AddSavings(Goal goal)
+    {
+        var parameters = new DialogParameters { ["Message"] = $"Add savings to {goal.Name}" };
+        var dialog = DialogService.Show<InputDialog>("Add Savings", parameters);
+        var result = await dialog.Result;
+
+        if (!result.Cancelled)
+        {
+            var amount = (decimal)result.Data;
+            await Service.AddSavingsAsync(goal.Id, amount);
+            await LoadData();
+        }
+    }
+}

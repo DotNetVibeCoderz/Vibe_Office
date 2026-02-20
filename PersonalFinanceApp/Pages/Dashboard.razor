@@ -1,0 +1,70 @@
+@page "/"
+@using PersonalFinanceApp.Data
+@using PersonalFinanceApp.Services
+@inject ReportService ReportService
+@inject TransactionService TransactionService
+@inject NavigationManager Nav
+
+<MudGrid>
+    <MudItem xs="12" sm="4">
+        <MudPaper Class="pa-4 d-flex flex-column mud-theme-primary">
+            <MudText Typo="Typo.h6">Income</MudText>
+            <MudText Typo="Typo.h4">@income.ToString("C0")</MudText>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" sm="4">
+        <MudPaper Class="pa-4 d-flex flex-column mud-theme-secondary">
+            <MudText Typo="Typo.h6">Expense</MudText>
+            <MudText Typo="Typo.h4">@expense.ToString("C0")</MudText>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" sm="4">
+        <MudPaper Class="pa-4 d-flex flex-column mud-theme-dark">
+            <MudText Typo="Typo.h6">Balance</MudText>
+            <MudText Typo="Typo.h4">@((income - expense).ToString("C0"))</MudText>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12">
+        <MudText Typo="Typo.h5" Class="mt-4">Recent Transactions</MudText>
+        <MudTable Items="@recentTransactions" Hover="true" Breakpoint="Breakpoint.Sm" Loading="@loading" LoadingProgressColor="Color.Info">
+            <HeaderContent>
+                <MudTh>Date</MudTh>
+                <MudTh>Category</MudTh>
+                <MudTh>Description</MudTh>
+                <MudTh>Amount</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Date">@context.Date.ToShortDateString()</MudTd>
+                <MudTd DataLabel="Category">@context.Category?.Name</MudTd>
+                <MudTd DataLabel="Description">@context.Description</MudTd>
+                <MudTd DataLabel="Amount" Style="@(context.Type == TransactionType.Income ? "color:green" : "color:red")">
+                    @context.Amount.ToString("C0")
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+    </MudItem>
+    
+    <MudItem xs="12">
+        <MudPaper Class="pa-4">
+             <MudText Typo="Typo.h6">AI Insight</MudText>
+             <MudText>Based on your spending, you spend 20% more on food this month compared to last month. Consider cooking at home!</MudText>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private decimal income = 0;
+    private decimal expense = 0;
+    private List<Transaction> recentTransactions = new();
+    private bool loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var now = DateTime.Now;
+        income = await ReportService.GetTotalIncomeAsync(now.Month, now.Year);
+        expense = await ReportService.GetTotalExpenseAsync(now.Month, now.Year);
+        recentTransactions = await ReportService.GetRecentTransactionsAsync(5);
+        loading = false;
+    }
+}

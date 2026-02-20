@@ -1,0 +1,83 @@
+@page "/budgets"
+@using PersonalFinanceApp.Data
+@using PersonalFinanceApp.Services
+@using PersonalFinanceApp.Components
+@inject BudgetService BudgetService
+@inject TransactionService TransactionService
+@inject IDialogService DialogService
+
+<MudContainer MaxWidth="MaxWidth.Medium">
+    <MudText Typo="Typo.h5" Class="mb-4">Monthly Budgets (@DateTime.Now.ToString("MMMM yyyy"))</MudText>
+    
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="OpenAddBudget" Class="mb-4">Set Budget</MudButton>
+
+    <MudGrid>
+        @foreach (var item in budgetProgress)
+        {
+            <MudItem xs="12">
+                <MudCard>
+                    <MudCardContent>
+                        <MudText>@item.CategoryName</MudText>
+                        <MudProgressLinear Color="@(item.Percent > 100 ? Color.Error : Color.Success)" Value="@item.Percent" Class="my-2" />
+                        <MudText Typo="Typo.caption">
+                            Spent: @item.Spent.ToString("C0") / Limit: @item.Limit.ToString("C0") (@item.Percent.ToString("F1")%)
+                        </MudText>
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
+        }
+    </MudGrid>
+</MudContainer>
+
+@code {
+    class BudgetViewModel
+    {
+        public string CategoryName { get; set; }
+        public decimal Limit { get; set; }
+        public decimal Spent { get; set; }
+        public double Percent => Limit == 0 ? 0 : (double)(Spent / Limit) * 100;
+    }
+
+    private List<BudgetViewModel> budgetProgress = new();
+    private List<Category> categories = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        categories = await TransactionService.GetCategoriesAsync();
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        var now = DateTime.Now;
+        var budgets = await BudgetService.GetBudgetsAsync(now.Month, now.Year);
+        budgetProgress.Clear();
+
+        foreach (var b in budgets)
+        {
+            var spent = await BudgetService.GetSpentAmountAsync(b.CategoryId, now.Month, now.Year);
+            budgetProgress.Add(new BudgetViewModel
+            {
+                CategoryName = b.Category.Name,
+                Limit = b.Amount,
+                Spent = spent
+            });
+        }
+    }
+
+    private async Task OpenAddBudget()
+    {
+        var parameters = new DialogParameters { ["categories"] = categories };
+        var dialog = DialogService.Show<BudgetDialog>("Set Budget", parameters);
+        var result = await dialog.Result;
+
+        if (!result.Cancelled)
+        {
+            var budget = (Budget)result.Data;
+            budget.Month = DateTime.Now.Month;
+            budget.Year = DateTime.Now.Year;
+            await BudgetService.SetBudgetAsync(budget);
+            await LoadData();
+        }
+    }
+}

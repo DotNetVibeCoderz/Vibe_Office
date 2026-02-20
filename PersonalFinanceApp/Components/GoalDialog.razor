@@ -1,0 +1,25 @@
+@using PersonalFinanceApp.Data
+@using PersonalFinanceApp.Services
+@inject GoalService Service
+
+<MudDialog>
+    <DialogContent>
+        <MudForm>
+            <MudTextField @bind-Value="goal.Name" Label="Goal Name" Required="true" />
+            <MudNumericField @bind-Value="goal.TargetAmount" Label="Target Amount" Format="N2" />
+            <MudDatePicker Label="Deadline" @bind-Date="goal.Deadline" />
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" OnClick="Submit">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] MudDialogInstance MudDialog { get; set; }
+    [Parameter] public Goal goal { get; set; } = new Goal();
+
+    private void Cancel() => MudDialog.Cancel();
+    private void Submit() => MudDialog.Close(DialogResult.Ok(goal));
+}
