@@ -1,0 +1,191 @@
+@page "/master/currencies"
+@rendermode @(RenderMode.InteractiveServer)
+@attribute [Authorize(Roles = "Admin,Akuntan")]
+@inject AppDbContext DbContext
+@inject IJSRuntime JS
+
+<PageTitle>Mata Uang - CUAN</PageTitle>
+
+<div class="cu-flex-between cu-mb-2">
+    <div><h2 style="margin:0;">💱 Mata Uang</h2><span class="cu-text-muted">@totalCurrencies mata uang</span></div>
+    <div class="cu-flex cu-gap-1">
+        <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportExcel">📥 Excel</button>
+        <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportCsv">📄 CSV</button>
+        <button class="cu-btn cu-btn-primary cu-btn-sm" @onclick="() => ShowModal(null)">+ Mata Uang</button>
+    </div>
+</div>
+
+<div class="cu-card cu-mb-2">
+    <div class="cu-flex cu-gap-2">
+        <div style="flex:1;"><input class="cu-form-input" @bind="searchTerm" @bind:event="oninput" placeholder="🔍 Cari kode/nama mata uang..." /></div>
+    </div>
+</div>
+
+<div class="cu-card">
+    <table class="cu-table">
+        <thead><tr><th>Kode</th><th>Nama</th><th>Simbol</th><th>Kurs (IDR)</th><th>Base</th><th>Status</th><th></th></tr></thead>
+        <tbody>
+            @foreach (var c in filteredCurrencies)
+            {
+                <tr>
+                    <td><strong>@c.Code</strong></td>
+                    <td>@c.Name</td>
+                    <td>@c.Symbol</td>
+                    <td>@c.ExchangeRate.ToString("N0")</td>
+                    <td>@(c.IsBaseCurrency ? "✅" : "")</td>
+                    <td><span class="cu-badge @(c.IsActive ? "cu-badge-success" : "cu-badge-danger")">@(c.IsActive ? "Active" : "Inactive")</span></td>
+                    <td>
+                        <button class="cu-btn cu-btn-sm cu-btn-outline" @onclick="() => ShowModal(c)">✏️</button>
+                        <button class="cu-btn cu-btn-sm cu-btn-danger" title="Hapus" @onclick="() => DeleteCurrency(c)">🗑️</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@if (showModal)
+{
+    <div class="cu-modal-overlay" @onclick="HideModal">
+        <div class="cu-modal" @onclick:stopPropagation="true">
+            <h3 style="margin-top:0;">@(editingCurrency.Id == 0 ? "Tambah Mata Uang" : "Edit Mata Uang")</h3>
+            <EditForm Model="editingCurrency" OnValidSubmit="SaveCurrency">
+                <div class="cu-grid cu-grid-2">
+                    <div class="cu-form-group"><label class="cu-form-label">Kode *</label><InputText @bind-Value="editingCurrency.Code" class="cu-form-input" /></div>
+                    <div class="cu-form-group"><label class="cu-form-label">Nama *</label><InputText @bind-Value="editingCurrency.Name" class="cu-form-input" /></div>
+                </div>
+                <div class="cu-grid cu-grid-2">
+                    <div class="cu-form-group"><label class="cu-form-label">Simbol</label><InputText @bind-Value="editingCurrency.Symbol" class="cu-form-input" /></div>
+                    <div class="cu-form-group"><label class="cu-form-label">Kurs (IDR)</label><InputNumber @bind-Value="editingCurrency.ExchangeRate" class="cu-form-input" /></div>
+                </div>
+                <div class="cu-grid cu-grid-2">
+                    <div class="cu-form-group"><label class="cu-form-label"><input type="checkbox" @bind="editingCurrency.IsBaseCurrency" /> Base Currency</label></div>
+                    <div class="cu-form-group"><label class="cu-form-label"><input type="checkbox" @bind="editingCurrency.IsActive" /> Aktif?</label></div>
+                </div>
+                <div class="cu-flex cu-gap-1" style="justify-content:flex-end;margin-top:1rem;">
+                    <button type="button" class="cu-btn cu-btn-outline" @onclick="HideModal">Batal</button>
+                    <button type="submit" class="cu-btn cu-btn-primary">💾 Simpan</button>
+                </div>
+            </EditForm>
+        </div>
+    </div>
+}
+
+@code {
+    private List<Currency> currencies = new();
+    private string searchTerm = "";
+    private int totalCurrencies;
+    private bool showModal;
+    private Currency editingCurrency = new();
+
+    private IEnumerable<Currency> filteredCurrencies => currencies
+        .Where(c => string.IsNullOrEmpty(searchTerm)
+            || c.Code.Contains(searchTerm, StringComparison.OrdinalIgnoreCase)
+            || c.Name.Contains(searchTerm, StringComparison.OrdinalIgnoreCase))
+        .OrderByDescending(c => c.IsBaseCurrency)
+        .ThenBy(c => c.Code);
+
+    protected override async Task OnInitializedAsync() { await LoadData(); }
+    private async Task LoadData() { currencies = await DbContext.Currencies.OrderByDescending(c => c.IsBaseCurrency).ThenBy(c => c.Code).ToListAsync(); totalCurrencies = currencies.Count; }
+
+    private void ShowModal(Currency? existing)
+    {
+        editingCurrency = existing != null
+            ? new Currency
+            {
+                Id = existing.Id,
+                Code = existing.Code,
+                Name = existing.Name,
+                Symbol = existing.Symbol,
+                ExchangeRate = existing.ExchangeRate,
+                IsBaseCurrency = existing.IsBaseCurrency,
+                IsActive = existing.IsActive
+            }
+            : new Currency { IsActive = true };
+        showModal = true;
+    }
+
+    private void HideModal() { showModal = false; }
+
+    private async Task SaveCurrency()
+    {
+        if (editingCurrency.IsBaseCurrency)
+        {
+            foreach (var c in currencies)
+            {
+                c.IsBaseCurrency = false;
+            }
+        }
+
+        if (editingCurrency.Id == 0)
+        {
+            DbContext.Currencies.Add(editingCurrency);
+        }
+        else
+        {
+            var ex = await DbContext.Currencies.FindAsync(editingCurrency.Id);
+            if (ex != null)
+            {
+                ex.Code = editingCurrency.Code;
+                ex.Name = editingCurrency.Name;
+                ex.Symbol = editingCurrency.Symbol;
+                ex.ExchangeRate = editingCurrency.ExchangeRate;
+                ex.IsBaseCurrency = editingCurrency.IsBaseCurrency;
+                ex.IsActive = editingCurrency.IsActive;
+            }
+        }
+
+        await DbContext.SaveChangesAsync();
+        showModal = false;
+        await LoadData();
+    }
+
+    private async Task DeleteCurrency(Currency currency)
+    {
+        if (!await ConfirmAsync($"Hapus mata uang {currency.Code}?") ) return;
+        DbContext.Currencies.Remove(currency);
+        await DbContext.SaveChangesAsync();
+        await LoadData();
+    }
+
+    private async Task ExportCsv()
+    {
+        var data = filteredCurrencies.Select(c => new
+        {
+            c.Code,
+            c.Name,
+            c.Symbol,
+            c.ExchangeRate,
+            c.IsBaseCurrency,
+            c.IsActive
+        });
+
+        var bytes = ExportService.ExportToCsv(data);
+        await DownloadAsync(bytes, "currencies.csv", "text/csv");
+    }
+
+    private async Task ExportExcel()
+    {
+        var data = filteredCurrencies.Select(c => new
+        {
+            c.Code,
+            c.Name,
+            c.Symbol,
+            c.ExchangeRate,
+            c.IsBaseCurrency,
+            c.IsActive
+        });
+
+        var bytes = ExportService.ExportToExcel(data, "Currencies");
+        await DownloadAsync(bytes, "currencies.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    }
+
+    private async Task DownloadAsync(byte[] data, string fileName, string contentType)
+    {
+        var base64 = Convert.ToBase64String(data);
+        await JS.InvokeVoidAsync("downloadFileFromBytes", fileName, contentType, base64);
+    }
+
+    private async Task<bool> ConfirmAsync(string message) =>
+        await JS.InvokeAsync<bool>("confirm", message);
+}

@@ -1,0 +1,201 @@
+@page "/master/banks"
+@rendermode @(RenderMode.InteractiveServer)
+@attribute [Authorize(Roles = "Admin,Akuntan,Kasir")]
+@inject AppDbContext DbContext
+@inject IJSRuntime JS
+
+<PageTitle>Bank - CUAN</PageTitle>
+
+<div class="cu-flex-between cu-mb-2">
+    <div>
+        <h2 style="margin:0;">🏦 Rekening Bank</h2>
+        <span class="cu-text-muted">@totalBanks rekening terdaftar</span>
+    </div>
+    <div class="cu-flex cu-gap-1">
+        <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportExcel">📥 Excel</button>
+        <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportCsv">📄 CSV</button>
+        <button class="cu-btn cu-btn-primary cu-btn-sm" @onclick="() => ShowModal(null)">+ Bank Baru</button>
+    </div>
+</div>
+
+<div class="cu-card cu-mb-2">
+    <div class="cu-flex cu-gap-2">
+        <div style="flex:1;"><input class="cu-form-input" @bind="searchTerm" @bind:event="oninput" placeholder="🔍 Cari bank, no rekening, pemilik..." /></div>
+    </div>
+</div>
+
+<div class="cu-card">
+    <table class="cu-table">
+        <thead><tr><th>Bank</th><th>No. Rekening</th><th>Pemilik</th><th>Mata Uang</th><th>Saldo</th><th>Status</th><th></th></tr></thead>
+        <tbody>
+            @foreach (var b in filteredBanks)
+            {
+                <tr>
+                    <td><strong>@b.BankName</strong></td>
+                    <td>@b.AccountNumber</td>
+                    <td>@b.AccountHolder</td>
+                    <td>@(b.Currency?.Code ?? "-")</td>
+                    <td class="cu-text-right" style="font-weight:600;">@b.Balance.ToString("N0")</td>
+                    <td><span class="cu-badge @(b.IsActive ? "cu-badge-success" : "cu-badge-danger")">@(b.IsActive ? "Active" : "Inactive")</span></td>
+                    <td>
+                        <button class="cu-btn cu-btn-sm cu-btn-outline" @onclick="() => ShowModal(b)">✏️</button>
+                        <button class="cu-btn cu-btn-sm cu-btn-danger" title="Hapus" @onclick="() => DeleteBank(b)">🗑️</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@if (showModal)
+{
+    <div class="cu-modal-overlay" @onclick="HideModal">
+        <div class="cu-modal" style="min-width:500px;" @onclick:stopPropagation="true">
+            <h3 style="margin-top:0;">@(editingBank.Id == 0 ? "Tambah Rekening Bank" : "Edit Rekening Bank")</h3>
+            <EditForm Model="editingBank" OnValidSubmit="SaveBank">
+                <div class="cu-grid cu-grid-2">
+                    <div class="cu-form-group"><label class="cu-form-label">Nama Bank *</label><InputText @bind-Value="editingBank.BankName" class="cu-form-input" /></div>
+                    <div class="cu-form-group"><label class="cu-form-label">No. Rekening *</label><InputText @bind-Value="editingBank.AccountNumber" class="cu-form-input" /></div>
+                </div>
+                <div class="cu-grid cu-grid-2">
+                    <div class="cu-form-group"><label class="cu-form-label">Pemilik</label><InputText @bind-Value="editingBank.AccountHolder" class="cu-form-input" /></div>
+                    <div class="cu-form-group"><label class="cu-form-label">Mata Uang</label>
+                        <InputSelect @bind-Value="editingBank.CurrencyId" class="cu-select">
+                            <option value="">-- Default --</option>
+                            @foreach (var c in currencies)
+                            {
+                                <option value="@c.Id">@c.Code - @c.Name</option>
+                            }
+                        </InputSelect>
+                    </div>
+                </div>
+                <div class="cu-grid cu-grid-2">
+                    <div class="cu-form-group"><label class="cu-form-label">Saldo</label><InputNumber @bind-Value="editingBank.Balance" class="cu-form-input" /></div>
+                    <div class="cu-form-group"><label class="cu-form-label"><input type="checkbox" @bind="editingBank.IsActive" /> Aktif?</label></div>
+                </div>
+                <div class="cu-flex cu-gap-1" style="justify-content:flex-end;margin-top:1rem;">
+                    <button type="button" class="cu-btn cu-btn-outline" @onclick="HideModal">Batal</button>
+                    <button type="submit" class="cu-btn cu-btn-primary">💾 Simpan</button>
+                </div>
+            </EditForm>
+        </div>
+    </div>
+}
+
+@code {
+    private List<BankAccount> bankAccounts = new();
+    private List<Currency> currencies = new();
+    private string searchTerm = "";
+    private int totalBanks;
+    private bool showModal;
+    private BankAccount editingBank = new();
+
+    private IEnumerable<BankAccount> filteredBanks => bankAccounts
+        .Where(b => string.IsNullOrEmpty(searchTerm)
+            || b.BankName.Contains(searchTerm, StringComparison.OrdinalIgnoreCase)
+            || b.AccountNumber.Contains(searchTerm, StringComparison.OrdinalIgnoreCase)
+            || (b.AccountHolder ?? "").Contains(searchTerm, StringComparison.OrdinalIgnoreCase))
+        .OrderBy(b => b.BankName);
+
+    protected override async Task OnInitializedAsync() { await LoadData(); }
+
+    private async Task LoadData()
+    {
+        bankAccounts = await DbContext.BankAccounts.Include(b => b.Currency).OrderBy(b => b.BankName).ToListAsync();
+        currencies = await DbContext.Currencies.OrderBy(c => c.Code).ToListAsync();
+        totalBanks = bankAccounts.Count;
+    }
+
+    private void ShowModal(BankAccount? existing)
+    {
+        editingBank = existing != null
+            ? new BankAccount
+            {
+                Id = existing.Id,
+                BankName = existing.BankName,
+                AccountNumber = existing.AccountNumber,
+                AccountHolder = existing.AccountHolder,
+                Balance = existing.Balance,
+                CurrencyId = existing.CurrencyId,
+                IsActive = existing.IsActive
+            }
+            : new BankAccount { IsActive = true };
+        showModal = true;
+    }
+
+    private void HideModal() { showModal = false; }
+
+    private async Task SaveBank()
+    {
+        if (editingBank.Id == 0)
+        {
+            editingBank.CreatedAt = DateTime.UtcNow;
+            DbContext.BankAccounts.Add(editingBank);
+        }
+        else
+        {
+            var ex = await DbContext.BankAccounts.FindAsync(editingBank.Id);
+            if (ex != null)
+            {
+                ex.BankName = editingBank.BankName;
+                ex.AccountNumber = editingBank.AccountNumber;
+                ex.AccountHolder = editingBank.AccountHolder;
+                ex.Balance = editingBank.Balance;
+                ex.CurrencyId = editingBank.CurrencyId;
+                ex.IsActive = editingBank.IsActive;
+            }
+        }
+        await DbContext.SaveChangesAsync();
+        showModal = false;
+        await LoadData();
+    }
+
+    private async Task DeleteBank(BankAccount bank)
+    {
+        if (!await ConfirmAsync($"Hapus rekening {bank.BankName} - {bank.AccountNumber}?") ) return;
+        DbContext.BankAccounts.Remove(bank);
+        await DbContext.SaveChangesAsync();
+        await LoadData();
+    }
+
+    private async Task ExportCsv()
+    {
+        var data = filteredBanks.Select(b => new
+        {
+            b.BankName,
+            b.AccountNumber,
+            b.AccountHolder,
+            Currency = b.Currency?.Code ?? "-",
+            b.Balance,
+            b.IsActive
+        });
+
+        var bytes = ExportService.ExportToCsv(data);
+        await DownloadAsync(bytes, "banks.csv", "text/csv");
+    }
+
+    private async Task ExportExcel()
+    {
+        var data = filteredBanks.Select(b => new
+        {
+            b.BankName,
+            b.AccountNumber,
+            b.AccountHolder,
+            Currency = b.Currency?.Code ?? "-",
+            b.Balance,
+            b.IsActive
+        });
+
+        var bytes = ExportService.ExportToExcel(data, "Banks");
+        await DownloadAsync(bytes, "banks.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    }
+
+    private async Task DownloadAsync(byte[] data, string fileName, string contentType)
+    {
+        var base64 = Convert.ToBase64String(data);
+        await JS.InvokeVoidAsync("downloadFileFromBytes", fileName, contentType, base64);
+    }
+
+    private async Task<bool> ConfirmAsync(string message) =>
+        await JS.InvokeAsync<bool>("confirm", message);
+}

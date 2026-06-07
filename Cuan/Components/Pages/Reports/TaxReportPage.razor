@@ -1,0 +1,10 @@
+@page "/reports/tax"
+@attribute [Authorize(Roles = "Admin,Akuntan")]
+@inject AppDbContext DbContext
+<PageTitle>Laporan Pajak - CUAN</PageTitle>
+<div class="cu-flex-between cu-mb-2"><div><h2 style="margin:0;">🧾 Laporan Pajak</h2></div></div>
+<div class="cu-card"><h3>Ringkasan Pajak - Tahun 2024</h3>
+<table class="cu-table" style="max-width:500px;"><thead><tr><th>Jenis Pajak</th><th>Tarif</th><th>DPP</th><th>Pajak</th></tr></thead><tbody>
+@foreach (var t in taxes){<tr><td>@t.Name</td><td>@t.Rate%</td><td class="cu-text-right">0</td><td class="cu-text-right">0</td></tr>}
+</tbody></table></div>
+@code { private List<Tax> taxes = new(); protected override async Task OnInitializedAsync() { taxes = await DbContext.Taxes.Where(t => t.IsActive).ToListAsync(); } }

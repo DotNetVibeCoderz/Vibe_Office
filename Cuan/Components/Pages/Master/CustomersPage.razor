@@ -1,0 +1,150 @@
+@page "/master/customers"
+@rendermode @(RenderMode.InteractiveServer)
+@attribute [Authorize(Roles = "Admin,Akuntan,Sales")]
+@inject AppDbContext DbContext
+@inject IJSRuntime JS
+
+<PageTitle>Master Customer - CUAN</PageTitle>
+
+<div class="cu-flex-between cu-mb-2">
+    <div><h2 style="margin:0;">👥 Master Customer</h2><span class="cu-text-muted">@totalCustomers pelanggan terdaftar</span></div>
+    <div class="cu-flex cu-gap-1">
+        <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportToExcel">📥 Excel</button>
+        <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportToCsv">📄 CSV</button>
+        <button class="cu-btn cu-btn-primary cu-btn-sm" @onclick="() => ShowModal(null)">+ Customer Baru</button>
+    </div>
+</div>
+
+<div class="cu-card cu-mb-2">
+    <div class="cu-flex cu-gap-2">
+        <div style="flex:1;"><input class="cu-form-input" @bind="searchTerm" @bind:event="oninput" placeholder="🔍 Cari kode, nama, kota..." /></div>
+    </div>
+</div>
+
+<div class="cu-card">
+    <table class="cu-table">
+        <thead><tr><th>Kode</th><th>Nama</th><th>Kota</th><th>Telepon</th><th>NPWP</th><th>Piutang</th><th>Status</th><th></th></tr></thead>
+        <tbody>
+            @foreach (var c in filteredCustomers)
+            {
+                <tr>
+                    <td style="font-family:monospace;font-weight:600;">@c.CustomerCode</td>
+                    <td>@c.Name</td><td>@c.City</td><td>@c.Phone</td>
+                    <td style="font-size:0.75rem;">@c.TaxNumber</td>
+                    <td class="cu-text-right" style="font-weight:600;">@FormatCurrency(c.Balance)</td>
+                    <td><span class="cu-badge @(c.IsActive ? "cu-badge-success" : "cu-badge-danger")">@(c.IsActive ? "Active" : "Inactive")</span></td>
+                    <td>
+                        <button class="cu-btn cu-btn-sm cu-btn-outline" @onclick="() => ShowModal(c)">✏️</button>
+                        <button class="cu-btn cu-btn-sm cu-btn-danger" title="Hapus" @onclick="() => DeleteCustomer(c)">🗑️</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@* Modal *@
+@if (showModal)
+{
+    <div class="cu-modal-overlay" @onclick="HideModal"><div class="cu-modal" style="min-width:500px;" @onclick:stopPropagation="true">
+        <h3 style="margin-top:0;">@(editingCustomer.Id == 0 ? "Tambah Customer" : "Edit Customer")</h3>
+        <EditForm Model="editingCustomer" OnValidSubmit="SaveCustomer">
+            <div class="cu-grid cu-grid-2">
+                <div class="cu-form-group"><label class="cu-form-label">Kode *</label><InputText @bind-Value="editingCustomer.CustomerCode" class="cu-form-input" /></div>
+                <div class="cu-form-group"><label class="cu-form-label">Nama *</label><InputText @bind-Value="editingCustomer.Name" class="cu-form-input" /></div>
+            </div>
+            <div class="cu-form-group"><label class="cu-form-label">Alamat</label><InputTextArea @bind-Value="editingCustomer.Address" class="cu-form-input" rows="2" /></div>
+            <div class="cu-grid cu-grid-3">
+                <div class="cu-form-group"><label class="cu-form-label">Kota</label><InputText @bind-Value="editingCustomer.City" class="cu-form-input" /></div>
+                <div class="cu-form-group"><label class="cu-form-label">Telepon</label><InputText @bind-Value="editingCustomer.Phone" class="cu-form-input" /></div>
+                <div class="cu-form-group"><label class="cu-form-label">Email</label><InputText @bind-Value="editingCustomer.Email" class="cu-form-input" /></div>
+            </div>
+            <div class="cu-grid cu-grid-2">
+                <div class="cu-form-group"><label class="cu-form-label">NPWP</label><InputText @bind-Value="editingCustomer.TaxNumber" class="cu-form-input" /></div>
+                <div class="cu-form-group"><label class="cu-form-label">Credit Limit</label><InputNumber @bind-Value="editingCustomer.CreditLimit" class="cu-form-input" /></div>
+            </div>
+            <div class="cu-form-group"><label class="cu-form-label"><input type="checkbox" @bind="editingCustomer.IsActive" /> Aktif?</label></div>
+            <div class="cu-flex cu-gap-1" style="justify-content:flex-end; margin-top:1rem;">
+                <button type="button" class="cu-btn cu-btn-outline" @onclick="HideModal">Batal</button>
+                <button type="submit" class="cu-btn cu-btn-primary">💾 Simpan</button>
+            </div>
+        </EditForm>
+    </div></div>
+}
+
+@code {
+    private List<Customer> allCustomers = new();
+    private string searchTerm = "";
+    private int totalCustomers;
+    private bool showModal;
+    private Customer editingCustomer = new();
+
+    private IEnumerable<Customer> filteredCustomers => allCustomers
+        .Where(c => string.IsNullOrEmpty(searchTerm) || c.CustomerCode.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) || c.Name.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) || (c.City ?? "").Contains(searchTerm, StringComparison.OrdinalIgnoreCase))
+        .OrderBy(c => c.CustomerCode);
+
+    protected override async Task OnInitializedAsync() { await LoadData(); }
+    private async Task LoadData() { allCustomers = await DbContext.Customers.OrderBy(c => c.CustomerCode).ToListAsync(); totalCustomers = allCustomers.Count; }
+    private void ShowModal(Customer? existing) { editingCustomer = existing != null ? new Customer { Id = existing.Id, CustomerCode = existing.CustomerCode, Name = existing.Name, Address = existing.Address, City = existing.City, Phone = existing.Phone, Email = existing.Email, TaxNumber = existing.TaxNumber, CreditLimit = existing.CreditLimit, IsActive = existing.IsActive } : new Customer { IsActive = true }; showModal = true; }
+    private void HideModal() { showModal = false; }
+    private async Task SaveCustomer() {
+        if (editingCustomer.Id == 0) { editingCustomer.CreatedAt = DateTime.UtcNow; DbContext.Customers.Add(editingCustomer); }
+        else { var ex = await DbContext.Customers.FindAsync(editingCustomer.Id); if (ex != null) { ex.CustomerCode = editingCustomer.CustomerCode; ex.Name = editingCustomer.Name; ex.Address = editingCustomer.Address; ex.City = editingCustomer.City; ex.Phone = editingCustomer.Phone; ex.Email = editingCustomer.Email; ex.TaxNumber = editingCustomer.TaxNumber; ex.CreditLimit = editingCustomer.CreditLimit; ex.IsActive = editingCustomer.IsActive; ex.UpdatedAt = DateTime.UtcNow; } }
+        await DbContext.SaveChangesAsync(); showModal = false; await LoadData();
+    }
+
+    private async Task DeleteCustomer(Customer customer)
+    {
+        if (!await ConfirmAsync($"Hapus customer {customer.CustomerCode} - {customer.Name}?") ) return;
+        DbContext.Customers.Remove(customer);
+        await DbContext.SaveChangesAsync();
+        await LoadData();
+    }
+
+    private string FormatCurrency(decimal a) => a.ToString("N0");
+
+    private async Task ExportToExcel()
+    {
+        var data = filteredCustomers.Select(c => new
+        {
+            c.CustomerCode,
+            c.Name,
+            c.City,
+            c.Phone,
+            c.TaxNumber,
+            c.CreditLimit,
+            c.Balance,
+            c.IsActive
+        });
+
+        var bytes = ExportService.ExportToExcel(data, "Customers");
+        await DownloadAsync(bytes, "customers.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    }
+
+    private async Task ExportToCsv()
+    {
+        var data = filteredCustomers.Select(c => new
+        {
+            c.CustomerCode,
+            c.Name,
+            c.City,
+            c.Phone,
+            c.TaxNumber,
+            c.CreditLimit,
+            c.Balance,
+            c.IsActive
+        });
+
+        var bytes = ExportService.ExportToCsv(data);
+        await DownloadAsync(bytes, "customers.csv", "text/csv");
+    }
+
+    private async Task DownloadAsync(byte[] data, string fileName, string contentType)
+    {
+        var base64 = Convert.ToBase64String(data);
+        await JS.InvokeVoidAsync("downloadFileFromBytes", fileName, contentType, base64);
+    }
+
+    private async Task<bool> ConfirmAsync(string message) =>
+        await JS.InvokeAsync<bool>("confirm", message);
+}

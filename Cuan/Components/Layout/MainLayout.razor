@@ -1,0 +1,98 @@
+@inherits LayoutComponentBase
+@inject NavigationManager Navigation
+
+@* Check auth state in code, not in markup *@
+
+<div class="cu-layout">
+    <aside class="cu-sidebar">
+        <div class="cu-sidebar-header">
+            <a href="/" class="cu-logo"><span class="cu-logo-icon">💰</span><span class="cu-logo-text">CUAN</span></a>
+        </div>
+        <nav class="cu-nav">
+            @if (_isAuthenticated)
+            {
+                <div class="cu-nav-group"><div class="cu-nav-group-title">📊 Dashboard</div><a href="/" class="cu-nav-link"><span class="cu-nav-icon">🏠</span> Dashboard</a></div>
+                <div class="cu-nav-group"><div class="cu-nav-group-title">📋 Master Data</div>
+                    <a href="/master/coa" class="cu-nav-link"><span class="cu-nav-icon">📒</span> Chart of Accounts</a>
+                    <a href="/master/items" class="cu-nav-link"><span class="cu-nav-icon">📦</span> Barang</a>
+                    <a href="/master/customers" class="cu-nav-link"><span class="cu-nav-icon">👥</span> Customer</a>
+                    <a href="/master/suppliers" class="cu-nav-link"><span class="cu-nav-icon">🏭</span> Supplier</a>
+                    <a href="/master/warehouses" class="cu-nav-link"><span class="cu-nav-icon">🏗️</span> Gudang & Cabang</a>
+                    <a href="/master/currencies" class="cu-nav-link"><span class="cu-nav-icon">💱</span> Mata Uang</a>
+                    <a href="/master/taxes" class="cu-nav-link"><span class="cu-nav-icon">🧾</span> Pajak</a>
+                    <a href="/master/banks" class="cu-nav-link"><span class="cu-nav-icon">🏦</span> Bank</a>
+                </div>
+                <div class="cu-nav-group"><div class="cu-nav-group-title">💰 Transaksi</div>
+                    <a href="/transactions/journal" class="cu-nav-link"><span class="cu-nav-icon">📝</span> Jurnal Umum</a>
+                    <a href="/transactions/sales" class="cu-nav-link"><span class="cu-nav-icon">🛒</span> Penjualan</a>
+                    <a href="/transactions/purchases" class="cu-nav-link"><span class="cu-nav-icon">📥</span> Pembelian</a>
+                    <a href="/transactions/cash" class="cu-nav-link"><span class="cu-nav-icon">💵</span> Kas</a>
+                    <a href="/transactions/bank" class="cu-nav-link"><span class="cu-nav-icon">🏦</span> Bank</a>
+                    <a href="/transactions/giro" class="cu-nav-link"><span class="cu-nav-icon">📜</span> Giro</a>
+                    <a href="/transactions/stock" class="cu-nav-link"><span class="cu-nav-icon">🔄</span> Stok</a>
+                </div>
+                <div class="cu-nav-group"><div class="cu-nav-group-title">📈 Laporan</div>
+                    <a href="/reports/executive" class="cu-nav-link"><span class="cu-nav-icon">📊</span> Executive Dashboard</a>
+                    <a href="/reports/profit-loss" class="cu-nav-link"><span class="cu-nav-icon">📉</span> Laba Rugi</a>
+                    <a href="/reports/balance-sheet" class="cu-nav-link"><span class="cu-nav-icon">⚖️</span> Neraca</a>
+                    <a href="/reports/cash-flow" class="cu-nav-link"><span class="cu-nav-icon">💸</span> Arus Kas</a>
+                    <a href="/reports/tax" class="cu-nav-link"><span class="cu-nav-icon">🧾</span> Pajak</a>
+                </div>
+                <div class="cu-nav-group"><div class="cu-nav-group-title">⚙️ Admin</div>
+                    <a href="/admin/users" class="cu-nav-link"><span class="cu-nav-icon">👤</span> User & Role</a>
+                    <a href="/admin/settings" class="cu-nav-link"><span class="cu-nav-icon">🔧</span> Pengaturan</a>
+                    <a href="/admin/audit" class="cu-nav-link"><span class="cu-nav-icon">📋</span> Audit Trail</a>
+                    <a href="/admin/apikeys" class="cu-nav-link"><span class="cu-nav-icon">🔑</span> API Keys</a>
+                </div>
+                <div style="margin-top:auto;padding-top:1rem;">
+                    <a href="/swagger" target="_blank" class="cu-nav-link"><span class="cu-nav-icon">🔌</span> API Swagger</a>
+                </div>
+            }
+        </nav>
+        <div class="cu-sidebar-footer">
+            <span style="font-size:0.7rem;color:var(--cu-text-secondary);">CUAN v1.0</span>
+        </div>
+    </aside>
+
+    <main class="cu-main">
+        <header class="cu-topbar">
+            <div class="cu-topbar-left"><span class="cu-breadcrumb">@GetBreadcrumb()</span></div>
+            <div class="cu-topbar-right">
+                @if (_isAuthenticated)
+                {
+                    <span class="cu-user-info">👤 @_userName</span>
+                    <a href="/logout" class="cu-btn cu-btn-sm cu-btn-outline">🚪 Logout</a>
+                }
+                else
+                {
+                    <a href="/login" class="cu-btn cu-btn-sm cu-btn-primary">🔐 Login</a>
+                }
+            </div>
+        </header>
+        <div class="cu-content">@Body</div>
+    </main>
+</div>
+
+@code {
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthenticationStateTask { get; set; }
+
+    private bool _isAuthenticated;
+    private string _userName = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthenticationStateTask != null)
+        {
+            var authState = await AuthenticationStateTask;
+            _isAuthenticated = authState.User.Identity?.IsAuthenticated ?? false;
+            _userName = authState.User.Identity?.Name ?? "";
+        }
+    }
+
+    private string GetBreadcrumb()
+    {
+        var path = Navigation.Uri.Replace(Navigation.BaseUri, "/");
+        return path switch { "/" => "Dashboard", _ => path.Replace("/", " > ").Replace("-", " ").TrimStart(' ', '>') };
+    }
+}

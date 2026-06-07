@@ -1,0 +1,22 @@
+@page "/reports/cash-flow"
+@rendermode @(RenderMode.InteractiveServer)
+@attribute [Authorize(Roles = "Admin,Akuntan")]
+@inject AppDbContext DbContext
+
+<PageTitle>Arus Kas - CUAN</PageTitle>
+<div class="cu-flex-between cu-mb-2"><div><h2 style="margin:0;">💸 Laporan Arus Kas</h2></div><button class="cu-btn cu-btn-outline cu-btn-sm">📥 Excel</button></div>
+<div class="cu-card"><h3>PT. CUAN MAKMUR SENTOSA — Arus Kas 2024</h3>
+<table class="cu-table" style="max-width:600px;"><thead><tr><th>Keterangan</th><th class="cu-text-right">Jumlah (Rp)</th></tr></thead><tbody>
+<tr><td colspan="2"><strong>A. ARUS KAS OPERASI</strong></td></tr>
+<tr><td style="padding-left:20px;">Kas Masuk dari Customer</td><td class="cu-text-right">@cashInFromCustomer.ToString("N0")</td></tr>
+<tr><td style="padding-left:20px;">Kas Keluar ke Supplier</td><td class="cu-text-right">@(cashOutToSupplier.ToString("N0"))</td></tr>
+<tr><td style="padding-left:20px;">Beban Operasional</td><td class="cu-text-right">@(operatingExpense.ToString("N0"))</td></tr>
+<tr style="font-weight:bold;border-top:2px solid var(--cu-border);"><td>Kas Bersih Operasi</td><td class="cu-text-right">@((cashInFromCustomer+cashOutToSupplier+operatingExpense).ToString("N0"))</td></tr>
+<tr><td colspan="2"><strong>B. ARUS KAS INVESTASI</strong></td></tr>
+<tr><td style="padding-left:20px;">Pembelian Aset Tetap</td><td class="cu-text-right">0</td></tr>
+<tr><td colspan="2"><strong>C. ARUS KAS PENDANAAN</strong></td></tr>
+<tr><td style="padding-left:20px;">Modal Disetor</td><td class="cu-text-right">155,000,000</td></tr>
+<tr style="font-weight:bold;font-size:1.1rem;border-top:3px double var(--cu-border);"><td>KENAIKAN / PENURUNAN KAS</td><td class="cu-text-right">@((cashInFromCustomer+cashOutToSupplier+operatingExpense+155000000).ToString("N0"))</td></tr>
+</tbody></table></div>
+
+@code {private decimal cashInFromCustomer;private decimal cashOutToSupplier;private decimal operatingExpense;protected override async Task OnInitializedAsync(){cashInFromCustomer=await DbContext.CashTransactions.Where(t=>t.Type==CashTransactionType.CashIn&&t.CustomerId!=null).SumAsync(t=>t.Amount);cashOutToSupplier=(await DbContext.CashTransactions.Where(t=>t.Type==CashTransactionType.CashOut&&t.SupplierId!=null).SumAsync(t=>t.Amount))*-1;operatingExpense=(await DbContext.ChartOfAccounts.Where(c=>c.AccountType==5&&!c.IsHeader).SumAsync(c=>c.CurrentBalance))*-1;}}
