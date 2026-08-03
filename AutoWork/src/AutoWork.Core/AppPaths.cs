@@ -20,6 +20,13 @@ public static class AppPaths
     public static string ScreenshotsDirectory => Path.Combine(Root, "screenshots");
 
     /// <summary>
+    /// Installed agent skills, one folder each. Inside <see cref="Root"/> on purpose: the guard
+    /// refuses everything under here, so the agent cannot edit its own instructions with the
+    /// file tools.
+    /// </summary>
+    public static string SkillsDirectory => Path.Combine(Root, "skills");
+
+    /// <summary>
     /// Where the agent puts files when a job names no destination, and the folder the starter
     /// permission policy grants.
     ///
@@ -68,6 +75,7 @@ public static class AppPaths
         Directory.CreateDirectory(KnowledgeDirectory);
         Directory.CreateDirectory(RunsDirectory);
         Directory.CreateDirectory(ScreenshotsDirectory);
+        Directory.CreateDirectory(SkillsDirectory);
 
         // Lives outside Root and belongs to the user, but must exist before it can be granted.
         Directory.CreateDirectory(WorkspaceDirectory);

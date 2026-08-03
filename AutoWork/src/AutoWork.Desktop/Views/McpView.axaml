@@ -1,0 +1,136 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:AutoWork.Desktop.ViewModels"
+             x:Class="AutoWork.Desktop.Views.McpView"
+             x:DataType="vm:McpViewModel">
+
+  <Grid RowDefinitions="Auto,Auto,*" Margin="26,22,26,0">
+
+    <StackPanel Grid.Row="0" Spacing="3" Margin="0,0,0,14">
+      <TextBlock Text="{Binding L[mcp.title]}" Classes="title" />
+      <TextBlock Text="{Binding L[mcp.subtitle]}" Classes="dim" TextWrapping="Wrap"
+                 MaxWidth="820" HorizontalAlignment="Left" />
+    </StackPanel>
+
+    <!-- The capability is off by default, so say so where it matters rather than failing later. -->
+    <Border Grid.Row="1" Classes="inset" Margin="0,0,0,14"
+            BorderBrush="{DynamicResource Warning}" BorderThickness="1.5"
+            IsVisible="{Binding !Allowed}">
+      <TextBlock Text="{Binding L[mcp.disabled]}" Foreground="{DynamicResource Warning}" TextWrapping="Wrap" />
+    </Border>
+
+    <Grid Grid.Row="2" ColumnDefinitions="*,380" Margin="0,0,0,26">
+
+      <!-- ── Catalogue ───────────────────────────────────────────────────────────────── -->
+      <Border Grid.Column="0" Classes="card" Margin="0,0,16,0">
+        <Grid RowDefinitions="Auto,Auto,*">
+
+          <TextBox Grid.Row="0" Text="{Binding Search}" Margin="0,0,0,8"
+                   AutomationProperties.AutomationId="McpSearch"
+                   Watermark="{Binding L[mcp.search]}" />
+
+          <TextBlock Grid.Row="1" Text="{Binding Status}" Classes="faint"
+                     TextWrapping="Wrap" Margin="0,0,0,8" />
+
+          <ScrollViewer Grid.Row="2">
+            <ItemsControl ItemsSource="{Binding Results}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:McpCatalogViewModel">
+                  <Border Classes="inset" Margin="0,0,0,10">
+                    <StackPanel Spacing="8">
+
+                      <Grid ColumnDefinitions="*,Auto">
+                        <StackPanel Grid.Column="0" Spacing="3">
+                          <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBlock Text="{Binding Name}" FontWeight="Medium" />
+                            <Border Classes="chip">
+                              <TextBlock Text="{Binding Category}" Classes="faint" />
+                            </Border>
+                          </StackPanel>
+                          <TextBlock Text="{Binding Description}" Classes="dim" TextWrapping="Wrap" />
+                          <TextBlock Text="{Binding Requires}" Classes="mono faint" TextWrapping="Wrap" />
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="1" VerticalAlignment="Top">
+                          <Button Content="{Binding $parent[ItemsControl].((vm:McpViewModel)DataContext).L[mcp.add]}"
+                                  Command="{Binding $parent[ItemsControl].((vm:McpViewModel)DataContext).AddCommand}"
+                                  CommandParameter="{Binding}"
+                                  IsVisible="{Binding !Added}" />
+                          <TextBlock Text="{Binding $parent[ItemsControl].((vm:McpViewModel)DataContext).L[mcp.added.badge]}"
+                                     Classes="faint" IsVisible="{Binding Added}" />
+                        </StackPanel>
+                      </Grid>
+
+                      <ItemsControl ItemsSource="{Binding Parameters}" IsVisible="{Binding HasParameters}">
+                        <ItemsControl.ItemTemplate>
+                          <DataTemplate x:DataType="vm:McpParameterViewModel">
+                            <StackPanel Spacing="3" Margin="0,4,0,0">
+                              <TextBlock Text="{Binding Label}" Classes="eyebrow" />
+                              <TextBox Text="{Binding Value}" Watermark="{Binding Placeholder}" />
+                            </StackPanel>
+                          </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                      </ItemsControl>
+                    </StackPanel>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </ScrollViewer>
+        </Grid>
+      </Border>
+
+      <!-- ── Configured servers ──────────────────────────────────────────────────────── -->
+      <Border Grid.Column="1" Classes="card">
+        <Grid RowDefinitions="Auto,*">
+
+          <StackPanel Grid.Row="0" Spacing="4" Margin="0,0,0,10">
+            <TextBlock Text="{Binding L[mcp.yours]}" Classes="eyebrow" />
+            <TextBlock Text="{Binding L[mcp.yours.empty]}" Classes="faint"
+                       TextWrapping="Wrap" IsVisible="{Binding !HasServers}" />
+          </StackPanel>
+
+          <ScrollViewer Grid.Row="1">
+            <ItemsControl ItemsSource="{Binding Servers}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:McpServerViewModel">
+                  <Border Classes="inset" Margin="0,0,0,10">
+                    <StackPanel Spacing="8">
+
+                      <Grid ColumnDefinitions="*,Auto,Auto">
+                        <TextBlock Grid.Column="0" Text="{Binding Name}" FontWeight="Medium" VerticalAlignment="Center" />
+                        <ToggleSwitch Grid.Column="1" IsChecked="{Binding Enabled}" Margin="8,0" />
+                        <Button Grid.Column="2" Classes="ghost danger" Content="×"
+                                Command="{Binding $parent[ItemsControl].((vm:McpViewModel)DataContext).RemoveCommand}"
+                                CommandParameter="{Binding}" />
+                      </Grid>
+
+                      <TextBlock Text="{Binding CommandLine}" Classes="mono faint" TextWrapping="Wrap" />
+
+                      <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button Content="{Binding $parent[ItemsControl].((vm:McpViewModel)DataContext).L[mcp.test]}"
+                                Command="{Binding $parent[ItemsControl].((vm:McpViewModel)DataContext).TestCommand}"
+                                CommandParameter="{Binding}" IsEnabled="{Binding !Busy}" />
+
+                        <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center"
+                                    IsVisible="{Binding HasStatus}">
+                          <Border Width="6" Height="6" CornerRadius="3" VerticalAlignment="Center"
+                                  Background="{DynamicResource Success}" IsVisible="{Binding TestPassed}" />
+                          <Border Width="6" Height="6" CornerRadius="3" VerticalAlignment="Center"
+                                  Background="{DynamicResource Danger}" IsVisible="{Binding !TestPassed}" />
+                        </StackPanel>
+                      </StackPanel>
+
+                      <TextBlock Text="{Binding Status}" Classes="dim" TextWrapping="Wrap"
+                                 IsVisible="{Binding HasStatus}" />
+                    </StackPanel>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </ScrollViewer>
+        </Grid>
+      </Border>
+    </Grid>
+  </Grid>
+</UserControl>

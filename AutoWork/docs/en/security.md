@@ -82,6 +82,7 @@ tests that tell you whether you broke the product's central promise.
 | Delete | **Off** | Separate switch from writing |
 | Soft delete | On | Deleted files move to a recycle folder inside AutoWork's protected directory, so the agent cannot read them back |
 | Shell commands | **Off** | Optional executable allow-list; approval-gated |
+| MCP servers | **Off** | Starts external programs with your rights. See below |
 | Screen capture | On | Approval-gated |
 | Mouse and keyboard control | **Off** | Approval-gated |
 | Network | On | Optional host allow-list |
@@ -101,6 +102,43 @@ the only way consent means anything.
 "Allow for this run" exists for repeatable, reversible kinds — writes, network, screen capture —
 so a 200-file batch asks once. It is deliberately **not offered for deletes or shell commands**:
 a standing grant is the wrong affordance for an irreversible act.
+
+## MCP servers are outside the sandbox
+
+An MCP server is a program AutoWork starts — usually `npx something` — and it runs with your full
+user rights. `PathGuard` governs *AutoWork's* file tools; it cannot reach inside another process.
+A filesystem MCP server can read whatever the operating system lets it read, whatever you granted
+in Settings.
+
+This is the same class of power as the shell tool, so it gets the same treatment:
+
+- **A capability switch.** `Settings › Permissions › Allow MCP servers`, off by default. With it
+  off, no server is started and no MCP tool is described to the model, even if servers are
+  configured.
+- **A per-server switch.** Adding a server from the gallery writes a command line into
+  `config.json`. It does not start anything. Enabling is a second, deliberate act.
+- **The command line is always shown**, so what will actually be launched is never a mystery.
+- **Their tools are marked as writing**, not as safe — AutoWork cannot see what an external tool
+  does, and claiming otherwise would be a guarantee it cannot make.
+
+Keys an MCP server needs go to the encrypted secret store like any other, and `config.json` keeps
+only the reference.
+
+The built-in catalogue lists servers whose packages were checked against their registry and are
+not deprecated. It is a starting point, not an endorsement: you are running someone else's code.
+
+## Skills are instructions, not code
+
+An installed skill is Markdown the model reads. It cannot grant a capability, call a tool the
+permission policy forbids, or execute anything by itself — the worst a bad skill can do is give
+the model bad advice, bounded by the same sandbox as everything else.
+
+Skills are installed into AutoWork's own data directory, which `PathGuard` protects. The agent
+therefore cannot rewrite its own instructions with the file tools; installing and removing stay
+deliberate acts in the Skills gallery.
+
+The repository each skill came from is shown next to it, because whose instructions you are
+following is the part worth knowing.
 
 ## The action log
 

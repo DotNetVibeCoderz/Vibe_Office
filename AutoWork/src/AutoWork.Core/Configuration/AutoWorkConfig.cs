@@ -88,6 +88,52 @@ public sealed class WebSearchOptions
     public int MaxResults { get; set; } = 5;
 }
 
+public enum McpTransport
+{
+    /// <summary>A local process speaking MCP over stdin/stdout.</summary>
+    Stdio = 0,
+
+    /// <summary>A remote server over HTTP.</summary>
+    Http = 1,
+}
+
+/// <summary>
+/// One MCP server the agent may borrow tools from.
+///
+/// A stdio server is a program AutoWork starts, with the user's full rights — the same power as
+/// the shell tool, and gated by the same kind of switch. Nothing here runs until the user enables
+/// the server explicitly and turns on <see cref="PermissionPolicy.AllowMcpServers"/>.
+/// </summary>
+public sealed class McpServerSettings
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("n")[..8];
+    public string Name { get; set; } = "";
+    public string Description { get; set; } = "";
+
+    /// <summary>Catalogue entry this came from, or empty when hand-added.</summary>
+    public string CatalogId { get; set; } = "";
+
+    public McpTransport Transport { get; set; } = McpTransport.Stdio;
+
+    /// <summary>Executable for a stdio server — "npx", "python", a path.</summary>
+    public string Command { get; set; } = "";
+
+    public List<string> Arguments { get; set; } = [];
+
+    /// <summary>Environment for the child process. Values may be "env:VAR" or a secret name.</summary>
+    public Dictionary<string, string> Environment { get; set; } = new(StringComparer.Ordinal);
+
+    /// <summary>Endpoint for an HTTP server.</summary>
+    public string Url { get; set; } = "";
+
+    public Dictionary<string, string> Headers { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Off until the user turns it on. Adding a server is not the same as trusting it.</summary>
+    public bool Enabled { get; set; }
+
+    public override string ToString() => string.IsNullOrWhiteSpace(Name) ? Id : Name;
+}
+
 public sealed class IntegrationSettings
 {
     public string Id { get; set; } = "";
@@ -120,6 +166,11 @@ public sealed class AutoWorkConfig
     public WebSearchOptions Search { get; set; } = new();
 
     public List<IntegrationSettings> Integrations { get; set; } = [];
+
+    public List<McpServerSettings> McpServers { get; set; } = [];
+
+    /// <summary>GitHub repositories the Skills gallery searches, as "owner/name".</summary>
+    public List<string> SkillRepositories { get; set; } = [];
 
     /// <summary>Persist run transcripts to disk so past work can be reopened.</summary>
     public bool KeepRunHistory { get; set; } = true;

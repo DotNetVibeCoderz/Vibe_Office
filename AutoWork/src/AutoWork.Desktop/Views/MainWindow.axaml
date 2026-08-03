@@ -49,6 +49,20 @@
                        CommandParameter="{x:Static vm:Section.Knowledge}" />
 
           <RadioButton Classes="nav" GroupName="section"
+                       AutomationProperties.AutomationId="NavSkills"
+                       Content="{Binding L[nav.skills]}"
+                       IsChecked="{Binding IsSkills, Mode=OneWay}"
+                       Command="{Binding NavigateCommand}"
+                       CommandParameter="{x:Static vm:Section.Skills}" />
+
+          <RadioButton Classes="nav" GroupName="section"
+                       AutomationProperties.AutomationId="NavMcp"
+                       Content="{Binding L[nav.mcp]}"
+                       IsChecked="{Binding IsMcp, Mode=OneWay}"
+                       Command="{Binding NavigateCommand}"
+                       CommandParameter="{x:Static vm:Section.Mcp}" />
+
+          <RadioButton Classes="nav" GroupName="section"
                        AutomationProperties.AutomationId="NavIntegrations"
                        Content="{Binding L[nav.integrations]}"
                        IsChecked="{Binding IsIntegrations, Mode=OneWay}"
@@ -100,6 +114,8 @@
         <views:WorkView DataContext="{Binding Work}" IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).IsWork}" />
         <views:ActivityView DataContext="{Binding Activity}" IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).IsActivity}" />
         <views:KnowledgeView DataContext="{Binding Knowledge}" IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).IsKnowledge}" />
+        <views:SkillsView DataContext="{Binding Skills}" IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).IsSkills}" />
+        <views:McpView DataContext="{Binding Mcp}" IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).IsMcp}" />
         <views:IntegrationsView DataContext="{Binding Integrations}" IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).IsIntegrations}" />
         <views:SettingsView DataContext="{Binding SettingsPage}" IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).IsSettings}" />
       </Panel>

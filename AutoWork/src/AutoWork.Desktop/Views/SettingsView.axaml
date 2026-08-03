@@ -223,6 +223,10 @@
                 <CheckBox IsChecked="{Binding InputApproval}" Content="{Binding L[perm.inputapproval]}"
                           Margin="22,0,0,0" IsEnabled="{Binding AllowInput}" />
 
+                <CheckBox IsChecked="{Binding AllowMcp}" Content="{Binding L[perm.mcp]}" />
+                <TextBlock Text="{Binding L[perm.mcp.hint]}" Classes="faint"
+                           TextWrapping="Wrap" Margin="22,0,0,4" />
+
                 <CheckBox IsChecked="{Binding AllowNetwork}" Content="{Binding L[perm.network]}" />
 
                 <StackPanel Spacing="4" Margin="22,2,0,4" IsEnabled="{Binding AllowNetwork}">

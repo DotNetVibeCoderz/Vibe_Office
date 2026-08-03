@@ -11,6 +11,7 @@
     <PackageVersion Include="Microsoft.Extensions.AI.OpenAI" Version="10.8.3" />
     <PackageVersion Include="Microsoft.Extensions.VectorData.Abstractions" Version="10.8.0" />
     <PackageVersion Include="OllamaSharp" Version="5.4.30" />
+    <PackageVersion Include="ModelContextProtocol" Version="2.0.0" />
   </ItemGroup>
 
   <ItemGroup Label="Hosting / DI / config">
@@ -27,6 +28,12 @@
     <PackageVersion Include="PdfPig" Version="0.1.15" />
     <PackageVersion Include="CsvHelper" Version="33.1.0" />
     <PackageVersion Include="SixLabors.ImageSharp" Version="4.0.0" />
+
+    <!-- Office and PDF to Markdown, so one code path covers every format a user might import.
+         Excel and PowerPoint ship as separate plugin packages. -->
+    <PackageVersion Include="ElBruno.MarkItDotNet" Version="0.9.1" />
+    <PackageVersion Include="ElBruno.MarkItDotNet.Excel" Version="0.9.1" />
+    <PackageVersion Include="ElBruno.MarkItDotNet.PowerPoint" Version="0.9.1" />
   </ItemGroup>
 
   <ItemGroup Label="UI">

@@ -13,6 +13,9 @@
     <PackageReference Include="PdfPig" />
     <PackageReference Include="CsvHelper" />
     <PackageReference Include="SixLabors.ImageSharp" />
+    <PackageReference Include="ElBruno.MarkItDotNet" />
+    <PackageReference Include="ElBruno.MarkItDotNet.Excel" />
+    <PackageReference Include="ElBruno.MarkItDotNet.PowerPoint" />
   </ItemGroup>
 
   <ItemGroup>

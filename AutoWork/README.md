@@ -77,7 +77,22 @@ context, so their token use does not compound.
 summarised away automatically — carefully, never splitting a tool call from its result.
 
 **Knowledge bases.** Topic-scoped memory that survives between sessions, searched by embedding
-when an embedding model is configured, and by keyword when one is not.
+when an embedding model is configured, and by keyword when one is not. Add notes by hand, or
+import Word, PowerPoint, Excel, PDF, CSV, HTML and Markdown files — the file's name becomes the
+title and its content becomes the note.
+
+![The Knowledge view, with notes added by hand or imported from a file](docs/images/knowledge.png)
+
+**Skills.** Instructions the agent follows for particular kinds of work, installed from GitHub
+repositories you choose. Only each skill's name and one-line description sit in the prompt; the
+agent opens the full text when the job calls for it, so an unused skill costs almost nothing.
+
+![The Skills gallery, browsing anthropics/skills and obra/superpowers](docs/images/skills-gallery.png)
+
+**MCP servers.** Borrow tools from any Model Context Protocol server — a real browser, a docs
+index, a vendor's API. A catalogue of verified servers is built in, and you can add your own.
+
+![The MCP gallery, testing a server before enabling it](docs/images/mcp-gallery.png)
 
 **Any model you like.** OpenAI, Azure OpenAI, Anthropic, Google Gemini, Ollama, DeepSeek, Qwen,
 Moonshot, OpenRouter, LM Studio — or any OpenAI-compatible endpoint. Configure in the app, in a
@@ -100,8 +115,8 @@ AutoWork's central claim is: **it can only reach the folders you grant it.**
   is refused. This is tested.
 - **Credentials are blocked even inside granted folders** — `.ssh`, `.aws`, `.env`, `*.pem`,
   keychains and friends, by default.
-- **Dangerous capabilities are opt-in.** Deleting, shell commands and mouse/keyboard control are
-  all off until you turn them on, and approval-gated by default when you do.
+- **Dangerous capabilities are opt-in.** Deleting, shell commands, mouse/keyboard control and
+  MCP servers are all off until you turn them on, and approval-gated by default when you do.
 - **Consent is inline and specific.** Requests appear in the flow of the work with the actual
   command or file list shown — not as a modal you learn to dismiss.
 
@@ -112,7 +127,9 @@ AutoWork's central claim is: **it can only reach the folders you grant it.**
 
 **Honest limits.** Input control (synthetic mouse and keyboard) cannot be sandboxed by this
 process — once input is synthesised it goes to whatever window has focus. Shell commands run
-with your full user privileges. Both are off by default, and the controls around them are
+with your full user privileges. An MCP server is a program AutoWork starts with those same
+rights, and `PathGuard` cannot see inside it — which is why it takes its own switch, and why
+each server stays disabled until you enable it. Both are off by default, and the controls around them are
 consent and visibility rather than containment. On Windows the secret store is encrypted with
 DPAPI; on Linux and macOS it falls back to owner-only file permissions. See
 [docs/en/security.md](docs/en/security.md) for the full picture.

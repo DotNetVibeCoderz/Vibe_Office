@@ -4,8 +4,11 @@ using AutoWork.Core.Configuration;
 using AutoWork.Core.Knowledge;
 using AutoWork.Core.Logging;
 using AutoWork.Core.Security;
+using AutoWork.Core.Skills;
 using AutoWork.Desktop.Localization;
 using AutoWork.Integrations;
+using AutoWork.Integrations.Mcp;
+using AutoWork.Integrations.Skills;
 using AutoWork.Providers;
 
 namespace AutoWork.Desktop.Services;
@@ -37,9 +40,20 @@ public sealed class AppServices : IDisposable
         Integrations = new IntegrationRegistry(Config, Secrets);
         Approvals = new UiApprovalBroker();
 
-        Tools = new ToolRegistry(Models, Knowledge, [Integrations.AsToolProvider()]);
+        Skills = new FileSkillStore();
+        SkillGallery = new SkillGallery();
+        Mcp = new McpServerRegistry(Config, Secrets);
 
-        Orchestrator = new AgentOrchestrator(Config, Models, Tools, ActionLog, Approvals, Knowledge, Secrets);
+        Tools = new ToolRegistry(Models, Knowledge,
+            [Integrations.AsToolProvider(), Mcp.AsToolProvider()], Skills);
+
+        Orchestrator = new AgentOrchestrator(
+            Config, Models, Tools, ActionLog, Approvals, Knowledge, Secrets, Skills)
+        {
+            // Starting MCP servers takes seconds, so it happens once per run rather than on the
+            // startup path — an app that waits for npx before showing a window is a broken app.
+            PrepareToolsAsync = async ct => await Mcp.SyncAsync(ct).ConfigureAwait(false),
+        };
 
         Strings = new Strings { Language = Config.Current.Appearance.Language };
 
@@ -54,6 +68,9 @@ public sealed class AppServices : IDisposable
     public ModelClientFactory Models { get; }
     public IKnowledgeStore Knowledge { get; }
     public IntegrationRegistry Integrations { get; }
+    public ISkillStore Skills { get; }
+    public SkillGallery SkillGallery { get; }
+    public McpServerRegistry Mcp { get; }
     public UiApprovalBroker Approvals { get; }
     public ToolRegistry Tools { get; }
     public AgentOrchestrator Orchestrator { get; }
@@ -61,6 +78,10 @@ public sealed class AppServices : IDisposable
 
     public void Dispose()
     {
+        // MCP servers are child processes; leaving them running after the window closes would
+        // leak a node process per enabled server.
+        Mcp.DisposeAsync().AsTask().GetAwaiter().GetResult();
+
         Models.Dispose();
         ActionLog.Dispose();
     }

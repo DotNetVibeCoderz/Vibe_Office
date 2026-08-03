@@ -81,6 +81,16 @@
     <Setter Property="Height" Value="1" />
   </Style>
 
+  <!-- A small label beside a title: a category, a state. Sized to the text, never to the row. -->
+  <Style Selector="Border.chip">
+    <Setter Property="Background" Value="{DynamicResource SurfaceSunken}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Line}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="999" />
+    <Setter Property="Padding" Value="8,2" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+
   <!-- ── Buttons ──────────────────────────────────────────────────────────────────────── -->
 
   <Style Selector="Button">

@@ -181,6 +181,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         _allowDelete = config.Permissions.AllowDelete;
         _softDelete = config.Permissions.SoftDelete;
         _allowShell = config.Permissions.AllowShell;
+        _allowMcp = config.Permissions.AllowMcpServers;
         _shellApproval = config.Permissions.ShellRequiresApproval;
         _allowScreen = config.Permissions.AllowScreenCapture;
         _allowInput = config.Permissions.AllowInputControl;
@@ -238,6 +239,9 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private bool _allowInput;
     [ObservableProperty] private bool _inputApproval;
     [ObservableProperty] private bool _allowNetwork;
+
+    /// <summary>Starting an MCP server is the same class of power as the shell, so it gets its own switch.</summary>
+    [ObservableProperty] private bool _allowMcp;
 
     /// <summary>Tavily key for web search. Blank is fine — search falls back to keyless backends.</summary>
     [ObservableProperty] private string _searchApiKey = "";
@@ -376,6 +380,7 @@ public sealed partial class SettingsViewModel : ObservableObject
             config.Permissions.AllowDelete = AllowDelete;
             config.Permissions.SoftDelete = SoftDelete;
             config.Permissions.AllowShell = AllowShell;
+            config.Permissions.AllowMcpServers = AllowMcp;
             config.Permissions.ShellRequiresApproval = ShellApproval;
             config.Permissions.AllowScreenCapture = AllowScreen;
             config.Permissions.AllowInputControl = AllowInput;

@@ -1,0 +1,125 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:AutoWork.Desktop.ViewModels"
+             xmlns:sk="clr-namespace:AutoWork.Core.Skills;assembly=AutoWork.Core"
+             x:Class="AutoWork.Desktop.Views.SkillsView"
+             x:DataType="vm:SkillsViewModel">
+
+  <Grid RowDefinitions="Auto,*" Margin="26,22,26,0">
+
+    <StackPanel Grid.Row="0" Spacing="3" Margin="0,0,0,16">
+      <TextBlock Text="{Binding L[skills.title]}" Classes="title" />
+      <TextBlock Text="{Binding L[skills.subtitle]}" Classes="dim" TextWrapping="Wrap"
+                 MaxWidth="760" HorizontalAlignment="Left" />
+    </StackPanel>
+
+    <Grid Grid.Row="1" ColumnDefinitions="320,*" Margin="0,0,0,26">
+
+      <!-- ── Installed and repositories ──────────────────────────────────────────────── -->
+      <ScrollViewer Grid.Column="0" Margin="0,0,16,0">
+        <StackPanel Spacing="14">
+
+          <Border Classes="card">
+            <StackPanel Spacing="10">
+              <TextBlock Text="{Binding L[skills.installed]}" Classes="eyebrow" />
+              <TextBlock Text="{Binding L[skills.installed.empty]}" Classes="faint"
+                         TextWrapping="Wrap" IsVisible="{Binding !HasInstalled}" />
+
+              <ItemsControl ItemsSource="{Binding Installed}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="sk:Skill">
+                    <Border Classes="inset" Margin="0,0,0,8">
+                      <Grid ColumnDefinitions="*,Auto">
+                        <StackPanel Grid.Column="0" Spacing="3">
+                          <TextBlock Text="{Binding Name}" FontWeight="Medium" />
+                          <TextBlock Text="{Binding Description}" Classes="dim"
+                                     MaxLines="3" TextTrimming="CharacterEllipsis" TextWrapping="Wrap" />
+                          <TextBlock Text="{Binding Source}" Classes="mono faint" />
+                        </StackPanel>
+                        <Button Grid.Column="1" Classes="ghost danger" Content="×"
+                                Command="{Binding $parent[ItemsControl].((vm:SkillsViewModel)DataContext).RemoveCommand}"
+                                CommandParameter="{Binding}" />
+                      </Grid>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+          </Border>
+
+          <Border Classes="card">
+            <StackPanel Spacing="10">
+              <TextBlock Text="{Binding L[skills.repos]}" Classes="eyebrow" />
+              <TextBlock Text="{Binding L[skills.repos.hint]}" Classes="faint" TextWrapping="Wrap" />
+
+              <ItemsControl ItemsSource="{Binding Repositories}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="x:String">
+                    <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,4">
+                      <TextBlock Grid.Column="0" Text="{Binding}" Classes="mono" VerticalAlignment="Center" />
+                      <Button Grid.Column="1" Classes="ghost" Content="×"
+                              Command="{Binding $parent[ItemsControl].((vm:SkillsViewModel)DataContext).RemoveRepositoryCommand}"
+                              CommandParameter="{Binding}" />
+                    </Grid>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBox Grid.Column="0" Text="{Binding NewRepository}" Watermark="owner/repository" />
+                <Button Grid.Column="1" Margin="6,0,0,0" Content="+" Command="{Binding AddRepositoryCommand}" />
+              </Grid>
+            </StackPanel>
+          </Border>
+        </StackPanel>
+      </ScrollViewer>
+
+      <!-- ── Gallery ─────────────────────────────────────────────────────────────────── -->
+      <Border Grid.Column="1" Classes="card">
+        <Grid RowDefinitions="Auto,Auto,*">
+
+          <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,10">
+            <TextBox Grid.Column="0" Text="{Binding Search}"
+                     AutomationProperties.AutomationId="SkillSearch"
+                     Watermark="{Binding L[skills.search]}" />
+            <Button Grid.Column="1" Classes="primary" Margin="8,0,0,0"
+                    AutomationProperties.AutomationId="SkillBrowse"
+                    Content="{Binding L[skills.browse]}" Command="{Binding BrowseCommand}"
+                    IsEnabled="{Binding !Busy}" />
+          </Grid>
+
+          <TextBlock Grid.Row="1" Text="{Binding Status}" Classes="faint"
+                     TextWrapping="Wrap" Margin="0,0,0,10" />
+
+          <ScrollViewer Grid.Row="2">
+            <ItemsControl ItemsSource="{Binding Results}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:SkillListingViewModel">
+                  <Border Classes="inset" Margin="0,0,0,8">
+                    <Grid ColumnDefinitions="*,Auto">
+                      <StackPanel Grid.Column="0" Spacing="3">
+                        <TextBlock Text="{Binding Name}" FontWeight="Medium" />
+                        <TextBlock Text="{Binding Description}" Classes="dim"
+                                   TextWrapping="Wrap" MaxLines="3" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Text="{Binding Repository}" Classes="mono faint" />
+                      </StackPanel>
+
+                      <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                        <Button Content="{Binding $parent[ItemsControl].((vm:SkillsViewModel)DataContext).L[skills.install]}"
+                                Command="{Binding $parent[ItemsControl].((vm:SkillsViewModel)DataContext).InstallCommand}"
+                                CommandParameter="{Binding}"
+                                IsVisible="{Binding !Installed}" IsEnabled="{Binding !Busy}" />
+                        <TextBlock Text="{Binding $parent[ItemsControl].((vm:SkillsViewModel)DataContext).L[skills.installed.badge]}"
+                                   Classes="faint" VerticalAlignment="Center" IsVisible="{Binding Installed}" />
+                      </StackPanel>
+                    </Grid>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </ScrollViewer>
+        </Grid>
+      </Border>
+    </Grid>
+  </Grid>
+</UserControl>

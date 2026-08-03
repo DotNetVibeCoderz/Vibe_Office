@@ -80,7 +80,23 @@ lama diringkas otomatis — dengan hati-hati, tidak pernah memisahkan pemanggila
 hasilnya.
 
 **Basis pengetahuan.** Memori per topik yang bertahan antar sesi, dicari lewat embedding bila
-model embedding tersedia, dan lewat kata kunci bila tidak.
+model embedding tersedia, dan lewat kata kunci bila tidak. Tambahkan catatan secara manual, atau
+impor file Word, PowerPoint, Excel, PDF, CSV, HTML, dan Markdown — nama file menjadi judulnya dan
+isinya menjadi catatannya.
+
+![Tampilan Pengetahuan, dengan catatan manual maupun impor dari file](docs/images/knowledge.png)
+
+**Skill.** Instruksi yang diikuti agen untuk jenis pekerjaan tertentu, dipasang dari repositori
+GitHub pilihan Anda. Hanya nama dan deskripsi satu barisnya yang masuk ke prompt; teks lengkapnya
+dibuka agen saat pekerjaannya memang membutuhkan, jadi skill yang tak terpakai nyaris tanpa biaya.
+
+![Galeri Skill, menelusuri anthropics/skills dan obra/superpowers](docs/images/skills-gallery.png)
+
+**Server MCP.** Pinjam tool dari server Model Context Protocol mana pun — peramban sungguhan,
+indeks dokumentasi, API vendor. Katalog server terverifikasi sudah tersedia, dan Anda bisa
+menambahkan sendiri.
+
+![Galeri MCP, menguji server sebelum diaktifkan](docs/images/mcp-gallery.png)
 
 **Model apa pun.** OpenAI, Azure OpenAI, Anthropic, Google Gemini, Ollama, DeepSeek, Qwen,
 Moonshot, OpenRouter, LM Studio — atau endpoint apa pun yang kompatibel dengan OpenAI. Diatur
@@ -104,9 +120,9 @@ Klaim utama AutoWork: **ia hanya bisa menjangkau folder yang Anda izinkan.**
   ke `~/.ssh` akan ditolak. Ini diuji.
 - **Kredensial diblokir bahkan di dalam folder yang diizinkan** — `.ssh`, `.aws`, `.env`,
   `*.pem`, keychain, dan sejenisnya, secara bawaan.
-- **Kemampuan berbahaya bersifat opt-in.** Menghapus, perintah shell, dan kendali
-  mouse/keyboard semuanya mati sampai Anda menyalakannya, dan meminta persetujuan secara
-  bawaan setelah menyala.
+- **Kemampuan berbahaya bersifat opt-in.** Menghapus, perintah shell, kendali mouse/keyboard,
+  dan server MCP semuanya mati sampai Anda menyalakannya, dan meminta persetujuan secara bawaan
+  setelah menyala.
 - **Persetujuan tampil inline dan spesifik.** Permintaan muncul di alur pekerjaan dengan
   perintah atau daftar file yang sebenarnya ditampilkan — bukan modal yang lama-lama Anda
   tutup tanpa membaca.
@@ -118,8 +134,11 @@ Klaim utama AutoWork: **ia hanya bisa menjangkau folder yang Anda izinkan.**
 
 **Batasan yang jujur.** Kendali input (mouse dan keyboard sintetis) tidak dapat di-sandbox oleh
 proses ini — begitu input dibangkitkan, ia menuju jendela mana pun yang sedang fokus. Perintah
-shell berjalan dengan hak akses penuh akun Anda. Keduanya mati secara bawaan, dan pengaman di
-sekitarnya berupa persetujuan dan keterlihatan, bukan pengurungan. Di Windows penyimpanan
+shell berjalan dengan hak akses penuh akun Anda. Server MCP adalah program yang dijalankan
+AutoWork dengan hak yang sama, dan `PathGuard` tidak bisa melihat ke dalamnya — karena itu ia
+punya sakelar sendiri, dan tiap server tetap mati sampai Anda mengaktifkannya. Semuanya mati
+secara bawaan, dan pengaman di sekitarnya berupa persetujuan dan keterlihatan, bukan
+pengurungan. Di Windows penyimpanan
 rahasia dienkripsi dengan DPAPI; di Linux dan macOS ia bersandar pada izin file khusus pemilik.
 Penjelasan lengkap: [docs/id/keamanan.md](docs/id/keamanan.md).
 

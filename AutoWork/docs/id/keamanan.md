@@ -86,6 +86,7 @@ tes-tes inilah yang memberi tahu apakah Anda merusak janji utama produk ini.
 | Menghapus | **Mati** | Saklar terpisah dari menulis |
 | Hapus lunak | Aktif | File terhapus dipindah ke folder daur ulang di dalam direktori terlindungi AutoWork, sehingga agen tidak bisa membacanya kembali |
 | Perintah shell | **Mati** | Daftar putih executable opsional; digerbangi persetujuan |
+| Server MCP | **Mati** | Menjalankan program eksternal dengan hak akses Anda. Lihat di bawah |
 | Penangkapan layar | Aktif | Digerbangi persetujuan |
 | Kendali mouse dan keyboard | **Mati** | Digerbangi persetujuan |
 | Jaringan | Aktif | Daftar putih host opsional |
@@ -106,6 +107,43 @@ konteksnya adalah satu-satunya cara agar persetujuan itu bermakna.
 jaringan, tangkapan layar — sehingga proses 200 file cukup bertanya sekali. Opsi itu **sengaja
 tidak ditawarkan untuk penghapusan dan perintah shell**: izin berdiri adalah afordansi yang salah
 untuk tindakan yang tidak dapat dibatalkan.
+
+## Server MCP berada di luar sandbox
+
+Server MCP adalah program yang dijalankan AutoWork — biasanya `npx sesuatu` — dan ia berjalan
+dengan hak akses penuh akun Anda. `PathGuard` mengatur tool file *milik AutoWork*; ia tidak bisa
+menjangkau ke dalam proses lain. Server MCP filesystem bisa membaca apa pun yang diizinkan sistem
+operasi, terlepas dari apa yang Anda beri izin di Pengaturan.
+
+Ini kelas kekuatan yang sama dengan tool shell, jadi perlakuannya pun sama:
+
+- **Sakelar kemampuan.** `Pengaturan › Izin › Izinkan server MCP`, mati secara bawaan. Saat mati,
+  tidak ada server yang dijalankan dan tidak ada tool MCP yang dijelaskan ke model, sekalipun ada
+  server yang sudah dikonfigurasi.
+- **Sakelar per server.** Menambahkan server dari galeri menuliskan satu baris perintah ke
+  `config.json`. Itu tidak menjalankan apa pun. Mengaktifkan adalah tindakan kedua yang disengaja.
+- **Baris perintahnya selalu ditampilkan**, jadi apa yang akan dijalankan tidak pernah misterius.
+- **Tool-nya ditandai sebagai menulis**, bukan aman — AutoWork tidak bisa melihat apa yang
+  dilakukan tool eksternal, dan mengklaim sebaliknya adalah jaminan yang tak bisa ia penuhi.
+
+Kunci yang dibutuhkan server MCP masuk ke penyimpanan rahasia terenkripsi seperti kunci lainnya,
+dan `config.json` hanya menyimpan referensinya.
+
+Katalog bawaan memuat server yang paketnya sudah diperiksa ke registry-nya dan tidak usang. Itu
+titik awal, bukan pengesahan: Anda tetap menjalankan kode orang lain.
+
+## Skill adalah instruksi, bukan kode
+
+Skill yang terpasang adalah Markdown yang dibaca model. Ia tidak bisa memberi kemampuan baru,
+memanggil tool yang dilarang kebijakan izin, atau mengeksekusi apa pun sendiri — hal terburuk yang
+bisa dilakukan skill buruk adalah memberi model saran buruk, tetap dibatasi sandbox yang sama.
+
+Skill dipasang ke direktori data milik AutoWork sendiri, yang dilindungi `PathGuard`. Karena itu
+agen tidak bisa menulis ulang instruksinya sendiri lewat tool file; memasang dan menghapus tetap
+tindakan yang disengaja di galeri Skill.
+
+Repositori asal tiap skill ditampilkan di sebelahnya, karena instruksi siapa yang Anda ikuti
+adalah bagian yang layak diketahui.
 
 ## Log tindakan
 

@@ -15,8 +15,10 @@ public partial class MainWindow : Window
         // supplies it and the view model stays free of Avalonia types.
         DataContextChanged += (_, _) =>
         {
-            if (DataContext is MainWindowViewModel model)
-                model.SettingsPage.PickFolder = PickFolderAsync;
+            if (DataContext is not MainWindowViewModel model) return;
+
+            model.SettingsPage.PickFolder = PickFolderAsync;
+            model.Knowledge.PickFiles = PickDocumentsAsync;
         };
     }
 
@@ -31,5 +33,29 @@ public partial class MainWindow : Window
         });
 
         return folders.Count > 0 ? folders[0].TryGetLocalPath() : null;
+    }
+
+    private async Task<IReadOnlyList<string>> PickDocumentsAsync()
+    {
+        var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Add documents to this knowledge base",
+
+            // Importing a folder's worth of meeting notes in one go is the point of the feature.
+            AllowMultiple = true,
+            FileTypeFilter =
+            [
+                new FilePickerFileType("Documents")
+                {
+                    Patterns = [.. AutoWork.Tools.DocumentText.SupportedExtensions.Select(e => "*" + e)],
+                },
+                FilePickerFileTypes.All,
+            ],
+        });
+
+        return files.Select(f => f.TryGetLocalPath())
+            .Where(p => !string.IsNullOrWhiteSpace(p))
+            .Select(p => p!)
+            .ToArray();
     }
 }

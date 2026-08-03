@@ -48,6 +48,11 @@ public sealed class DataTools : ToolSetBase, IToolProvider
 
         yield return Describe(AIFunctionFactory.Create(tools.PdfInfoAsync, "data_pdf_info",
             "Page count and metadata for a PDF, without extracting all its text."), ToolRisk.Safe);
+
+        yield return Describe(AIFunctionFactory.Create(tools.ReadDocumentAsync, "data_read_document",
+            "Read a Word, PowerPoint, Excel, PDF, HTML or text file as Markdown. " +
+            "Use this to read a document the user refers to, rather than opening it as raw bytes."),
+            ToolRisk.Safe);
     }
 
     private static ToolDescriptor Describe(AIFunction function, ToolRisk risk,
@@ -313,6 +318,26 @@ public sealed class DataTools : ToolSetBase, IToolProvider
                       (notes.Count > 0 ? " " + string.Join("; ", notes) + "." : ""));
         },
         [source, destination], ApprovalKind.WriteFiles);
+    }
+
+    // ── Documents ─────────────────────────────────────────────────────────────────────────
+
+    [Description("Read a document as Markdown.")]
+    private Task<string> ReadDocumentAsync(
+        [Description("The document to read: .docx, .pptx, .xlsx, .pdf, .csv, .html, .txt or .md.")] string path,
+        [Description("Maximum characters to return.")] int maxCharacters = 12000)
+    {
+        var target = Locate(path);
+
+        return GuardedAsync("data.read_document", $"Read {PathGuard.Describe(target)}", async () =>
+        {
+            var canonical = Guard.EnsureReadable(target);
+
+            var result = await DocumentText.ReadAsync(canonical).ConfigureAwait(false);
+            if (!result.Success) return Failed(result.Error);
+
+            return Ok($"{PathGuard.Describe(canonical)}\n\n{Cap(result.Text, maxCharacters)}");
+        });
     }
 
     // ── PDF ───────────────────────────────────────────────────────────────────────────────

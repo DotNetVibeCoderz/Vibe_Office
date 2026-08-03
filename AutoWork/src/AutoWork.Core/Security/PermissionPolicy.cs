@@ -62,6 +62,13 @@ public sealed class PermissionPolicy
     public bool AllowShell { get; set; } = false;
     public bool ShellRequiresApproval { get; set; } = true;
 
+    /// <summary>
+    /// Whether MCP servers may be started at all. Off by default: a stdio server is a program
+    /// launched with the user's full rights, so it is the same class of capability as the shell
+    /// and gets the same explicit switch rather than riding in on "add a server".
+    /// </summary>
+    public bool AllowMcpServers { get; set; } = false;
+
     /// <summary>If non-empty, only commands whose executable matches one of these may run.</summary>
     public List<string> ShellAllowList { get; set; } = [];
 

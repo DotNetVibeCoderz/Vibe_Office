@@ -11,6 +11,8 @@ public enum Section
     Work,
     Activity,
     Knowledge,
+    Skills,
+    Mcp,
     Integrations,
     Settings,
 }
@@ -32,12 +34,19 @@ public sealed partial class MainWindowViewModel : ObservableObject
         Work = new WorkViewModel(services);
         Activity = new ActivityViewModel(services);
         Knowledge = new KnowledgeViewModel(services);
+        Skills = new SkillsViewModel(services);
+        Mcp = new McpViewModel(services);
         Integrations = new IntegrationsViewModel(services);
         SettingsPage = new SettingsViewModel(services);
 
         SettingsPage.Applied += () =>
         {
             Work.RefreshModelAvailability();
+
+            // The MCP capability switch lives in Permissions, so the gallery has to be told
+            // when it changes or it keeps claiming servers are blocked.
+            Mcp.Refresh();
+
             OnPropertyChanged(nameof(L));
         };
 
@@ -57,6 +66,8 @@ public sealed partial class MainWindowViewModel : ObservableObject
     public WorkViewModel Work { get; }
     public ActivityViewModel Activity { get; }
     public KnowledgeViewModel Knowledge { get; }
+    public SkillsViewModel Skills { get; }
+    public McpViewModel Mcp { get; }
     public IntegrationsViewModel Integrations { get; }
     public SettingsViewModel SettingsPage { get; }
 
@@ -65,6 +76,8 @@ public sealed partial class MainWindowViewModel : ObservableObject
     public bool IsWork => Section == Section.Work;
     public bool IsActivity => Section == Section.Activity;
     public bool IsKnowledge => Section == Section.Knowledge;
+    public bool IsSkills => Section == Section.Skills;
+    public bool IsMcp => Section == Section.Mcp;
     public bool IsIntegrations => Section == Section.Integrations;
     public bool IsSettings => Section == Section.Settings;
 
@@ -80,10 +93,15 @@ public sealed partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(IsWork));
         OnPropertyChanged(nameof(IsActivity));
         OnPropertyChanged(nameof(IsKnowledge));
+        OnPropertyChanged(nameof(IsSkills));
+        OnPropertyChanged(nameof(IsMcp));
         OnPropertyChanged(nameof(IsIntegrations));
         OnPropertyChanged(nameof(IsSettings));
 
         if (value == Section.Knowledge) Knowledge.ReloadCommand.Execute(null);
+
+        // Not a browse: that costs network requests and stays a deliberate click.
+        if (value == Section.Mcp) Mcp.Refresh();
     }
 
     private void RaiseOrganFlags()

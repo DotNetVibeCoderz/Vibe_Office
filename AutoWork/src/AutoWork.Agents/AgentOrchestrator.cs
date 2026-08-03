@@ -7,6 +7,7 @@ using AutoWork.Core.Configuration;
 using AutoWork.Core.Knowledge;
 using AutoWork.Core.Logging;
 using AutoWork.Core.Security;
+using AutoWork.Core.Skills;
 using AutoWork.Providers;
 using Microsoft.Extensions.AI;
 
@@ -41,6 +42,14 @@ public sealed class AgentOrchestrator
     private readonly IApprovalBroker _approvals;
     private readonly IKnowledgeStore _knowledge;
     private readonly ISecretStore? _secrets;
+    private readonly ISkillStore? _skills;
+
+    /// <summary>
+    /// Called once before the tool set is built, so tool providers that need to reach the
+    /// network or start a process — MCP servers — are ready by the time the model is asked
+    /// what it can do. A failure here never stops the run; those tools are simply absent.
+    /// </summary>
+    public Func<CancellationToken, Task>? PrepareToolsAsync { get; set; }
 
     public AgentOrchestrator(
         ConfigStore config,
@@ -49,7 +58,8 @@ public sealed class AgentOrchestrator
         IActionLog log,
         IApprovalBroker approvals,
         IKnowledgeStore knowledge,
-        ISecretStore? secrets = null)
+        ISecretStore? secrets = null,
+        ISkillStore? skills = null)
     {
         _config = config;
         _factory = factory;
@@ -61,6 +71,7 @@ public sealed class AgentOrchestrator
         // Optional: tools that need a key degrade without one rather than vanishing, so a run
         // with no secret store still works — it just gets keyless web search.
         _secrets = secrets;
+        _skills = skills;
     }
 
     public async Task<RunResult> RunAsync(
@@ -119,6 +130,19 @@ public sealed class AgentOrchestrator
                 Secrets = _secrets,
             };
 
+            if (PrepareToolsAsync is not null)
+            {
+                try
+                {
+                    await PrepareToolsAsync(cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    _log.Failure(runId, AgentOrgan.Brain, "tools.prepare",
+                        "Some external tools could not be prepared", ex.Message);
+                }
+            }
+
             var descriptors = _registry.Build(context, config.ResolveVisionModel());
             var tools = descriptors
                 .Select(d => (AITool)new ObservableAIFunction(d, runId, report))
@@ -142,7 +166,8 @@ public sealed class AgentOrchestrator
             var messages = new List<ChatMessage>
             {
                 new(ChatRole.System, Prompts.BuildExecutorSystem(
-                    config.Permissions, descriptors, context.WorkingDirectory, knowledge)),
+                    config.Permissions, descriptors, context.WorkingDirectory, knowledge,
+                    _skills?.List())),
                 new(ChatRole.User, goal),
             };
 

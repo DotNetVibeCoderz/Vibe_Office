@@ -16,7 +16,8 @@ internal static class Prompts
         PermissionPolicy policy,
         IReadOnlyList<ToolDescriptor> tools,
         string workingDirectory,
-        IReadOnlyList<KnowledgeHit> knowledge)
+        IReadOnlyList<KnowledgeHit> knowledge,
+        IReadOnlyList<AutoWork.Core.Skills.Skill>? skills = null)
     {
         var builder = new StringBuilder();
 
@@ -50,6 +51,14 @@ internal static class Prompts
             builder.AppendLine("Available capabilities, grouped:");
             foreach (var group in tools.GroupBy(t => t.Category).OrderBy(g => g.Key, StringComparer.Ordinal))
                 builder.AppendLine($"  {group.Key}: {string.Join(", ", group.Select(t => t.Name))}");
+        }
+
+        // Names and one-liners only. The body of a skill is fetched with skill_open when the
+        // model decides it is relevant, so an unused skill costs almost nothing.
+        if (skills is { Count: > 0 })
+        {
+            builder.AppendLine();
+            builder.AppendLine(SkillTools.Describe(skills));
         }
 
         if (knowledge.Count > 0)

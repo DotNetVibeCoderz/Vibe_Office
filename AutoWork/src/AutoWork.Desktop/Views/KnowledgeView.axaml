@@ -44,8 +44,12 @@
           </ScrollViewer>
 
           <Grid Grid.Row="2" ColumnDefinitions="*,Auto" Margin="0,12,0,0">
-            <TextBox Grid.Column="0" Text="{Binding NewBaseName}" Watermark="{Binding L[knowledge.new]}" />
-            <Button Grid.Column="1" Margin="6,0,0,0" Content="+" Command="{Binding CreateBaseCommand}" />
+            <TextBox Grid.Column="0" Text="{Binding NewBaseName}"
+                     AutomationProperties.AutomationId="NewKnowledgeBase"
+                     Watermark="{Binding L[knowledge.new]}" />
+            <Button Grid.Column="1" Margin="6,0,0,0" Content="+"
+                    AutomationProperties.AutomationId="CreateKnowledgeBase"
+                    Command="{Binding CreateBaseCommand}" />
           </Grid>
         </Grid>
       </Border>
@@ -89,9 +93,15 @@
             <TextBox Text="{Binding EntryText}" Watermark="{Binding L[knowledge.entry.text]}"
                      AcceptsReturn="True" TextWrapping="Wrap" MinHeight="70" />
             <StackPanel Orientation="Horizontal" Spacing="10">
-              <Button Classes="primary" Content="{Binding L[knowledge.add]}" Command="{Binding AddEntryCommand}" />
-              <TextBlock Text="{Binding Status}" Classes="faint" VerticalAlignment="Center" />
+              <Button Classes="primary"
+                      AutomationProperties.AutomationId="AddNote"
+                      Content="{Binding L[knowledge.add]}" Command="{Binding AddEntryCommand}" />
+              <Button AutomationProperties.AutomationId="AddFromFile"
+                      Content="{Binding L[knowledge.addfile]}" Command="{Binding AddFromFileCommand}" />
+              <TextBlock Text="{Binding Status}" Classes="faint" VerticalAlignment="Center"
+                         TextWrapping="Wrap" MaxWidth="420" />
             </StackPanel>
+            <TextBlock Text="{Binding L[knowledge.addfile.hint]}" Classes="faint" TextWrapping="Wrap" />
           </StackPanel>
         </Grid>
       </Border>
