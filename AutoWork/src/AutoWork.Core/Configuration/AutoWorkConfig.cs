@@ -42,6 +42,15 @@ public sealed class AgentOptions
     /// <summary>Model used to embed knowledge-base entries.</summary>
     public string? EmbeddingModelId { get; set; }
 
+    /// <summary>
+    /// Embed knowledge here rather than calling a provider.
+    ///
+    /// Off by default, because a hosted embedding model understands meaning better and most
+    /// people have one configured. On, nothing about a note ever leaves the machine — which is
+    /// the point for anyone whose knowledge base is the reason they run AutoWork locally.
+    /// </summary>
+    public bool UseLocalEmbedding { get; set; }
+
     /// <summary>Hard ceiling on agent turns before a run is abandoned.</summary>
     public int MaxSteps { get; set; } = 40;
 
@@ -70,6 +79,15 @@ public sealed class AgentOptions
 
     /// <summary>Pause and ask before any step that writes, deletes or runs a command.</summary>
     public bool ConfirmDestructiveActions { get; set; } = true;
+
+    /// <summary>
+    /// Show the model's reply as it is written rather than when the step ends.
+    ///
+    /// On by default: a step that thinks for forty seconds looks identical to a hung one
+    /// otherwise. A provider that cannot stream falls back to waiting, so this costs nothing when
+    /// it is not supported.
+    /// </summary>
+    public bool EnableStreaming { get; set; } = true;
 }
 
 /// <summary>
@@ -173,6 +191,19 @@ public sealed class AutoWorkConfig
     public List<string> SkillRepositories { get; set; } = [];
 
     /// <summary>Persist run transcripts to disk so past work can be reopened.</summary>
+    /// <summary>
+    /// Speech to text. Off until configured, and local unless the user chooses otherwise — a
+    /// meeting recording contains people who never agreed to anything.
+    /// </summary>
+    public Meetings.TranscriptionSettings Transcription { get; set; } = new();
+
+    /// <summary>
+    /// Driving a real, signed-in browser. Off by default and separate from
+    /// <see cref="PermissionPolicy.AllowNetwork"/>: fetching a public page and acting as the
+    /// logged-in user are not the same permission.
+    /// </summary>
+    public Browsing.BrowserSettings Browser { get; set; } = new();
+
     public bool KeepRunHistory { get; set; } = true;
 
     public int RunHistoryRetentionDays { get; set; } = 30;

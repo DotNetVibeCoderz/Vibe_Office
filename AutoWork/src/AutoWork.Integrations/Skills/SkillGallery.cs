@@ -18,6 +18,12 @@ public sealed record SkillListing
     public string Source => $"{Repository} · {System.IO.Path.GetDirectoryName(Path)?.Replace('\\', '/')}";
 }
 
+/// <summary>One file that ships alongside a skill's manifest: a template, a script, a schema.</summary>
+public sealed record SkillFile(string RelativePath, byte[] Content);
+
+/// <summary>A skill's manifest plus everything in its folder, and what had to be left behind.</summary>
+public sealed record SkillBundle(string Markdown, IReadOnlyList<SkillFile> Files, IReadOnlyList<string> Notes);
+
 /// <summary>A repository the gallery searches.</summary>
 public sealed record SkillRepository(string Owner, string Name, string Branch = "main")
 {
@@ -69,7 +75,18 @@ public sealed class SkillGallery
 
     private const string ManifestFile = "SKILL.md";
 
+    /// <summary>
+    /// Bounds on what one skill may bring with it. A skill is a folder in someone else's
+    /// repository, and nothing stops it holding a gigabyte of sample data — so the limits are
+    /// generous enough for the real ones (`docx` ships 61 files of schemas and fonts) and finite
+    /// anyway. Anything skipped is reported rather than dropped quietly.
+    /// </summary>
+    private const int MaxFiles = 250;
+    private const long MaxFileBytes = 8L * 1024 * 1024;
+    private const long MaxBundleBytes = 40L * 1024 * 1024;
+
     private readonly HttpClient _http;
+    private readonly Dictionary<string, IReadOnlyList<TreeEntry>> _trees = new(StringComparer.OrdinalIgnoreCase);
 
     public SkillGallery(HttpClient? http = null)
     {
@@ -119,18 +136,112 @@ public sealed class SkillGallery
         return listings.OrderBy(l => l.Name, StringComparer.OrdinalIgnoreCase).ToArray();
     }
 
-    /// <summary>Fetches the full manifest so it can be installed.</summary>
-    public Task<string?> DownloadAsync(SkillListing listing, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Fetches everything in the skill's folder, not just the manifest.
+    ///
+    /// Real skills are not one file. `anthropics/skills/pdf` ships eight Python scripts plus a
+    /// reference and a forms guide, and its SKILL.md says in so many words "see REFERENCE.md".
+    /// Installing the manifest alone leaves the model following instructions that point at files
+    /// which are not there — worse than not installing it at all.
+    /// </summary>
+    public async Task<SkillBundle?> DownloadBundleAsync(
+        SkillListing listing, CancellationToken cancellationToken = default)
     {
         var repository = SkillRepository.Parse(listing.Repository);
-        return repository is null
-            ? Task.FromResult<string?>(null)
-            : ReadRawAsync(repository, listing.Path, cancellationToken);
+        if (repository is null) return null;
+
+        var markdown = await ReadRawAsync(repository, listing.Path, cancellationToken).ConfigureAwait(false);
+        if (markdown is null) return null;
+
+        var folder = Folder(listing.Path);
+        var entries = await ListFolderAsync(repository, folder, cancellationToken).ConfigureAwait(false);
+
+        var files = new List<SkillFile>();
+        var notes = new List<string>();
+        var total = 0L;
+
+        foreach (var entry in entries)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var relative = entry.Path[folder.Length..].TrimStart('/');
+
+            // The manifest is carried separately; everything else is a bundled resource.
+            if (relative.Equals(ManifestFile, StringComparison.OrdinalIgnoreCase)) continue;
+
+            if (files.Count >= MaxFiles)
+            {
+                notes.Add($"stopped after {MaxFiles} files");
+                break;
+            }
+
+            if (entry.Size > MaxFileBytes)
+            {
+                notes.Add($"skipped {relative} ({Human(entry.Size)})");
+                continue;
+            }
+
+            if (total + entry.Size > MaxBundleBytes)
+            {
+                notes.Add($"stopped at {Human(MaxBundleBytes)}");
+                break;
+            }
+
+            var content = await ReadBytesAsync(repository, entry.Path, cancellationToken).ConfigureAwait(false);
+            if (content is null)
+            {
+                notes.Add($"could not download {relative}");
+                continue;
+            }
+
+            files.Add(new SkillFile(relative, content));
+            total += content.Length;
+        }
+
+        return new SkillBundle(markdown, files, notes);
+    }
+
+    /// <summary>Folder holding the manifest, with a trailing slash. "" for a root-level SKILL.md.</summary>
+    private static string Folder(string manifestPath)
+    {
+        var slash = manifestPath.LastIndexOf('/');
+        return slash < 0 ? "" : manifestPath[..(slash + 1)];
+    }
+
+    private async Task<IReadOnlyList<TreeEntry>> ListFolderAsync(
+        SkillRepository repository, string folder, CancellationToken cancellationToken)
+    {
+        var tree = await ReadTreeAsync(repository, cancellationToken).ConfigureAwait(false);
+
+        return tree
+            .Where(e => e.Path.StartsWith(folder, StringComparison.Ordinal))
+            .OrderBy(e => e.Path, StringComparer.Ordinal)
+            .ToArray();
     }
 
     private async Task<IReadOnlyList<string>> FindManifestsAsync(
         SkillRepository repository, CancellationToken cancellationToken)
     {
+        var tree = await ReadTreeAsync(repository, cancellationToken).ConfigureAwait(false);
+
+        return tree
+            .Where(e => e.Path.EndsWith(ManifestFile, StringComparison.OrdinalIgnoreCase))
+            .Select(e => e.Path)
+            .ToArray();
+    }
+
+    private sealed record TreeEntry(string Path, long Size);
+
+    /// <summary>
+    /// The repository's file list, with sizes. Cached per repository for the life of the gallery:
+    /// browsing then installing several skills would otherwise fetch the same tree each time, and
+    /// unauthenticated GitHub does not take kindly to that.
+    /// </summary>
+    private async Task<IReadOnlyList<TreeEntry>> ReadTreeAsync(
+        SkillRepository repository, CancellationToken cancellationToken)
+    {
+        if (_trees.TryGetValue(repository.FullName, out var cached)) return cached;
+
         try
         {
             var url = $"https://api.github.com/repos/{repository.Owner}/{repository.Name}" +
@@ -145,15 +256,48 @@ public sealed class SkillGallery
             if (!document.RootElement.TryGetProperty("tree", out var tree) || tree.ValueKind != JsonValueKind.Array)
                 return [];
 
-            return tree.EnumerateArray()
-                .Select(e => e.TryGetProperty("path", out var p) ? p.GetString() : null)
-                .Where(p => p is not null && p.EndsWith(ManifestFile, StringComparison.OrdinalIgnoreCase))
-                .Select(p => p!)
+            var entries = tree.EnumerateArray()
+                .Where(e => e.TryGetProperty("type", out var t) && t.GetString() == "blob")
+                .Select(e => new TreeEntry(
+                    e.TryGetProperty("path", out var p) ? p.GetString() ?? "" : "",
+                    e.TryGetProperty("size", out var s) && s.TryGetInt64(out var size) ? size : 0))
+                .Where(e => e.Path.Length > 0)
                 .ToArray();
+
+            _trees[repository.FullName] = entries;
+            return entries;
         }
         catch (OperationCanceledException) { throw; }
         catch (Exception) { return []; }
     }
+
+    private async Task<byte[]?> ReadBytesAsync(
+        SkillRepository repository, string path, CancellationToken cancellationToken)
+    {
+        try
+        {
+            // Escaped per segment: the separators have to stay separators, but a skill folder
+            // named with a space or a hash must not break the URL.
+            var encoded = string.Join('/', path.Split('/').Select(Uri.EscapeDataString));
+
+            var url = $"https://raw.githubusercontent.com/{repository.Owner}/{repository.Name}" +
+                      $"/{repository.Branch}/{encoded}";
+
+            using var response = await _http.GetAsync(url, cancellationToken).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode) return null;
+
+            return await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception) { return null; }
+    }
+
+    private static string Human(long bytes) => bytes switch
+    {
+        < 1024 => $"{bytes} B",
+        < 1024 * 1024 => $"{bytes / 1024.0:0.#} KB",
+        _ => $"{bytes / (1024.0 * 1024):0.#} MB",
+    };
 
     private async Task<string?> ReadRawAsync(
         SkillRepository repository, string path, CancellationToken cancellationToken)

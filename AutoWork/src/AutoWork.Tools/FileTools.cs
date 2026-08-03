@@ -258,6 +258,9 @@ public sealed class FileTools : ToolSetBase, IToolProvider
     {
         var target = Locate(path);
 
+        // Computed before the prompt, because the prompt is the only moment it is useful.
+        var preview = PreviewChange(target, existing => content);
+
         return GuardedAsync("files.write", $"Write {PathGuard.Describe(target)}", async () =>
         {
             var canonical = Guard.EnsureWritable(target);
@@ -271,7 +274,8 @@ public sealed class FileTools : ToolSetBase, IToolProvider
             return Ok($"Wrote {Human(new FileInfo(canonical).Length)} to {PathGuard.Describe(canonical)}.");
         },
         [target], ApprovalKind.WriteFiles,
-        $"{content.Length:N0} characters → {PathGuard.Describe(target)}");
+        $"{content.Length:N0} characters → {PathGuard.Describe(target)}",
+        preview);
     }
 
     [Description("Append text to a file.")]
@@ -281,6 +285,8 @@ public sealed class FileTools : ToolSetBase, IToolProvider
     {
         var target = Locate(path);
 
+        var preview = PreviewChange(target, existing => existing + content);
+
         return GuardedAsync("files.append", $"Append to {PathGuard.Describe(target)}", async () =>
         {
             var canonical = Guard.EnsureWritable(target);
@@ -288,7 +294,58 @@ public sealed class FileTools : ToolSetBase, IToolProvider
             await File.AppendAllTextAsync(canonical, content).ConfigureAwait(false);
             return Ok($"Appended {content.Length:N0} characters to {PathGuard.Describe(canonical)}.");
         },
-        [target], ApprovalKind.WriteFiles);
+        [target], ApprovalKind.WriteFiles, null, preview);
+    }
+
+    /// <summary>Above this the file is summarised rather than diffed — a consent card is not an editor.</summary>
+    private const long MaxPreviewBytes = 2 * 1024 * 1024;
+
+    /// <summary>
+    /// What the file would look like afterwards, against what it looks like now.
+    ///
+    /// Returns null for a file that does not exist yet: "creating a file" and "changing every
+    /// line of a file" are different things, and a diff that renders the first as a wall of
+    /// additions teaches the user to skim past the second. It also reads through
+    /// <see cref="PathGuard"/> — a preview must not become a way to see a file the agent could
+    /// not otherwise touch.
+    /// </summary>
+    private Core.Diff.TextDiffResult? PreviewChange(string target, Func<string, string> transform)
+    {
+        try
+        {
+            var canonical = Guard.EnsureWritable(target);
+            if (!File.Exists(canonical)) return null;
+
+            var info = new FileInfo(canonical);
+            if (info.Length == 0) return null;
+
+            if (info.Length > MaxPreviewBytes)
+            {
+                return new Core.Diff.TextDiffResult
+                {
+                    Truncated = true,
+                    Note = $"{PathGuard.Describe(canonical)} is {Human(info.Length)} — too large to preview.",
+                };
+            }
+
+            if (LooksBinaryAsync(canonical).GetAwaiter().GetResult())
+            {
+                return new Core.Diff.TextDiffResult
+                {
+                    Truncated = true,
+                    Note = $"{PathGuard.Describe(canonical)} is not a text file, so there is nothing to compare line by line.",
+                };
+            }
+
+            var existing = File.ReadAllText(canonical);
+            return Core.Diff.TextDiff.Compare(existing, transform(existing));
+        }
+        catch (Exception ex) when (ex is SandboxViolationException or IOException or UnauthorizedAccessException)
+        {
+            // No preview. The write itself will refuse or fail for the same reason, with a
+            // message written for the model rather than for this card.
+            return null;
+        }
     }
 
     [Description("Create a folder.")]
@@ -427,19 +484,16 @@ public sealed class FileTools : ToolSetBase, IToolProvider
     /// <summary>
     /// Soft delete moves into AutoWork's own directory, which PathGuard treats as protected —
     /// so the agent cannot read recycled files back out.
+    ///
+    /// The bin records where each item came from. Without that, "it can be restored" was a claim
+    /// only someone willing to work out the original path themselves could act on.
     /// </summary>
-    private static string Recycle(string path, bool isDirectory)
+    private string Recycle(string path, bool isDirectory)
     {
-        var bin = Path.Combine(AppPaths.Root, "recycle", DateTime.Now.ToString("yyyyMMdd"));
-        Directory.CreateDirectory(bin);
+        Context.Recycle.Store(path, isDirectory, RunId);
 
-        var name = Path.GetFileName(path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-        var destination = Path.Combine(bin, $"{DateTime.Now:HHmmss}-{name}");
-
-        if (isDirectory) Directory.Move(path, destination);
-        else File.Move(path, destination);
-
-        return $"Moved {PathGuard.Describe(path)} to AutoWork's recycle folder. It can be restored from there.";
+        return $"Moved {PathGuard.Describe(path)} to AutoWork's recycle folder. " +
+               "It can be put back from the Recycle page.";
     }
 
     // ── Batch operations ──────────────────────────────────────────────────────────────────

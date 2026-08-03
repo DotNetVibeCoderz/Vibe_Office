@@ -1,6 +1,8 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using AutoWork.Core.Agents;
+using AutoWork.Core.Automation;
+using AutoWork.Core.Runs;
 using AutoWork.Desktop.Localization;
 using AutoWork.Desktop.Services;
 using Avalonia.Threading;
@@ -23,6 +25,7 @@ public sealed partial class WorkViewModel : ObservableObject
 
     private CancellationTokenSource? _cancellation;
     private TapeEntryViewModel? _currentStep;
+    private RunController? _controller;
 
     public WorkViewModel(AppServices services)
     {
@@ -54,6 +57,37 @@ public sealed partial class WorkViewModel : ObservableObject
     [ObservableProperty] private AgentOrgan? _activeOrgan;
     [ObservableProperty] private string? _compactionNote;
 
+    /// <summary>True from the click until the run actually reaches a step boundary and stops.</summary>
+    [ObservableProperty] private bool _isPausing;
+
+    [ObservableProperty] private bool _isPaused;
+    [ObservableProperty] private string _correction = "";
+    [ObservableProperty] private bool _correctionQueued;
+
+    /// <summary>Set while the tape is showing a saved run rather than a live one.</summary>
+    [ObservableProperty] private bool _isViewingHistory;
+
+    /// <summary>Says which saved job started this run, and why. Null for a run you typed.</summary>
+    [ObservableProperty] private string? _jobNote;
+
+    public bool HasJobNote => !string.IsNullOrWhiteSpace(JobNote);
+
+    private string? _nextJobNote;
+
+    // ── Meter ─────────────────────────────────────────────────────────────────────────────
+
+    [ObservableProperty] private string? _tokenNote;
+    [ObservableProperty] private string? _costNote;
+
+    public bool HasUsage => !string.IsNullOrWhiteSpace(TokenNote);
+
+    /// <summary>
+    /// Shown only when a price is set on the model. There is no built-in price table, so a run
+    /// against an unpriced model reports tokens and says nothing about money — which is honest,
+    /// and better than a confident figure derived from a number nobody checked.
+    /// </summary>
+    public bool HasCost => !string.IsNullOrWhiteSpace(CostNote);
+
     public bool HasTape => Tape.Count > 0;
     public bool HasPlan => PlanSteps.Count > 0;
     public bool HasSummary => !string.IsNullOrWhiteSpace(Summary);
@@ -62,9 +96,20 @@ public sealed partial class WorkViewModel : ObservableObject
     public bool HasModel => _services.Config.Current.ResolveExecutorModel() is not null;
     public bool CanStart => !IsRunning && !string.IsNullOrWhiteSpace(Goal) && HasModel;
 
-    public string Elapsed => _stopwatch.Elapsed.TotalHours >= 1
-        ? _stopwatch.Elapsed.ToString(@"h\:mm\:ss")
-        : _stopwatch.Elapsed.ToString(@"m\:ss");
+    /// <summary>Set while a past run is on the tape, so the readout shows its time, not zero.</summary>
+    private TimeSpan? _frozenElapsed;
+
+    public string Elapsed
+    {
+        get
+        {
+            var elapsed = _frozenElapsed ?? _stopwatch.Elapsed;
+
+            return elapsed.TotalHours >= 1
+                ? elapsed.ToString(@"h\:mm\:ss")
+                : elapsed.ToString(@"m\:ss");
+        }
+    }
 
     /// <summary>Starter prompts, phrased as things a person would actually ask for.</summary>
     public IReadOnlyList<string> Examples => L.IsIndonesian
@@ -101,12 +146,13 @@ public sealed partial class WorkViewModel : ObservableObject
         _ticker.Start();
 
         _cancellation = new CancellationTokenSource();
+        _controller = new RunController();
 
         var progress = new Progress<RunEvent>(Apply);
 
         try
         {
-            await _services.Orchestrator.RunAsync(goal, progress, _cancellation.Token).ConfigureAwait(true);
+            await _services.Orchestrator.RunAsync(goal, progress, _cancellation.Token, _controller).ConfigureAwait(true);
         }
         catch (OperationCanceledException)
         {
@@ -126,7 +172,48 @@ public sealed partial class WorkViewModel : ObservableObject
 
             _cancellation?.Dispose();
             _cancellation = null;
+            _controller = null;
+
+            IsPausing = false;
+            IsPaused = false;
+            CorrectionQueued = false;
         }
+    }
+
+    /// <summary>
+    /// Starts a saved job as if the user had typed it.
+    ///
+    /// Deliberately the same path as a manual run — same tape, same consent cards, same history
+    /// — because a scheduled run that behaves differently from one you watched is a scheduled run
+    /// you cannot trust. It refuses while something else is going rather than queuing: two runs
+    /// competing for one set of consent prompts is worse than a missed occurrence.
+    /// </summary>
+    public async Task RunJobAsync(SavedJob job, string reason)
+    {
+        if (IsRunning) return;
+
+        Goal = job.Goal;
+        _nextJobNote = string.Format(L["work.job.running"], job.DisplayName, reason);
+
+        try
+        {
+            await StartAsync().ConfigureAwait(true);
+        }
+        finally
+        {
+            // Written back so the Jobs page can show what happened without keeping its own log.
+            var updated = job.Clone();
+            updated.LastRunAt = DateTimeOffset.Now;
+            updated.LastOutcome = string.IsNullOrWhiteSpace(Summary) ? L["work.job.finished"] : Trim(Summary, 120);
+
+            _services.Jobs.Save(updated);
+        }
+    }
+
+    private static string Trim(string text, int max)
+    {
+        var flat = text.ReplaceLineEndings(" ").Trim();
+        return flat.Length <= max ? flat : flat[..max] + "…";
     }
 
     [RelayCommand]
@@ -134,9 +221,58 @@ public sealed partial class WorkViewModel : ObservableObject
     {
         _cancellation?.Cancel();
 
+        // A paused run is parked on the controller, not on the token, so releasing it is what
+        // actually lets the cancellation be noticed.
+        _controller?.Abandon();
+
         // Anything blocked on a consent prompt has to be released, or the agent thread parks
         // forever waiting for an answer that is never coming.
         _services.Approvals.ReleaseAll();
+    }
+
+    /// <summary>
+    /// Asks the run to stop at the next step boundary. It cannot take effect immediately: a step
+    /// in flight may have a tool call already sent, and abandoning that would leave the
+    /// conversation — and possibly a half-written file — in a state nothing could resume from.
+    /// </summary>
+    [RelayCommand]
+    private void Pause()
+    {
+        if (_controller is null || IsPaused) return;
+
+        _controller.Pause();
+        IsPausing = true;
+    }
+
+    [RelayCommand]
+    private void Resume()
+    {
+        if (_controller is null) return;
+
+        var correction = Correction.Trim();
+
+        _controller.Resume(correction.Length == 0 ? null : correction);
+
+        Correction = "";
+        CorrectionQueued = false;
+        IsPaused = false;
+        IsPausing = false;
+    }
+
+    /// <summary>
+    /// Hands over a correction without waiting for the run to stop. The orchestrator picks it up
+    /// at the next boundary, so a user who spots the mistake early does not have to pause first.
+    /// </summary>
+    [RelayCommand]
+    private void Steer()
+    {
+        var correction = Correction.Trim();
+        if (_controller is null || correction.Length == 0) return;
+
+        _controller.Steer(correction);
+
+        Correction = "";
+        CorrectionQueued = true;
     }
 
     [RelayCommand]
@@ -161,11 +297,57 @@ public sealed partial class WorkViewModel : ObservableObject
         Summary = null;
         PlanNotes = null;
         CompactionNote = null;
+        TokenNote = null;
+        CostNote = null;
         CompletedSteps = 0;
         HasVerification = false;
         ActiveOrgan = null;
+        IsViewingHistory = false;
+
+        // Carried through the reset that starting a run performs, then consumed — so a job run
+        // keeps its label and everything else clears it.
+        JobNote = _nextJobNote;
+        _nextJobNote = null;
+        OnPropertyChanged(nameof(HasJobNote));
+
+        Correction = "";
+        CorrectionQueued = false;
+        _currentStep = null;
+        _frozenElapsed = null;
+
+        RaiseCollectionFlags();
+        OnPropertyChanged(nameof(HasUsage));
+        OnPropertyChanged(nameof(HasCost));
+    }
+
+    /// <summary>
+    /// Rebuilds the Work Tape from a saved run.
+    ///
+    /// It replays the stored events through the same handler a live run uses, rather than through
+    /// a second read-only renderer. One renderer means a past run looks exactly like the run
+    /// looked while it was happening — and there is no second place for the two to drift apart.
+    /// </summary>
+    public void ShowTranscript(RunTranscript transcript)
+    {
+        if (IsRunning) return;
+
+        Reset();
+
+        Goal = transcript.Entry.Goal;
+        ModelName = transcript.Entry.ModelDisplayName;
+
+        foreach (var evt in transcript.Events) Apply(evt);
+
+        // Replay leaves the live-run flags set as they were at the moment each event fired.
+        IsPaused = false;
+        IsPausing = false;
+        ActiveOrgan = null;
         _currentStep = null;
 
+        IsViewingHistory = true;
+        _frozenElapsed = TimeSpan.FromMilliseconds(transcript.Entry.ElapsedMs);
+
+        OnPropertyChanged(nameof(Elapsed));
         RaiseCollectionFlags();
     }
 
@@ -237,8 +419,67 @@ public sealed partial class WorkViewModel : ObservableObject
                 ApplySubAgent(sub);
                 break;
 
+            // The running total, not the fragment: an update that arrives out of order — or a
+            // view that started watching late — still shows the whole reply so far.
+            case AssistantDeltaEvent delta when _currentStep is not null:
+                _currentStep.Detail = delta.Text;
+                break;
+
             case AssistantMessageEvent message when _currentStep is not null:
                 _currentStep.Detail = message.Text;
+                break;
+
+            case UsageEvent usage:
+                // "at least" when a provider answered some calls without reporting usage — the
+                // total is then a floor, and presenting it as exact would be a small lie that
+                // compounds over a long run.
+                TokenNote = usage.CallsWithoutUsage > 0
+                    ? string.Format(L["work.tokens.atleast"], usage.TotalTokens)
+                    : $"{usage.TotalTokens:N0}";
+
+                CostNote = usage.Cost is { } cost ? $"{cost:0.####} {usage.Currency}" : null;
+
+                OnPropertyChanged(nameof(HasUsage));
+                OnPropertyChanged(nameof(HasCost));
+                break;
+
+            case RunPausedEvent paused:
+                IsPausing = false;
+                IsPaused = true;
+                ActiveOrgan = null;
+
+                Tape.Add(new TapeEntryViewModel
+                {
+                    Kind = TapeKind.Note,
+                    Organ = AgentOrgan.Brain,
+                    Stamp = "‖",
+                    Title = L["work.paused"],
+                    Detail = paused.BeforeStep > 0 ? string.Format(L["work.paused.before"], paused.BeforeStep) : null,
+                    Status = StepStatus.Pending,
+                });
+                RaiseCollectionFlags();
+                break;
+
+            case RunResumedEvent resumed:
+                IsPaused = false;
+                IsPausing = false;
+                CorrectionQueued = false;
+
+                // Only worth a row when the user actually said something; a bare resume is
+                // already obvious from the next step appearing.
+                if (!string.IsNullOrWhiteSpace(resumed.Correction))
+                {
+                    Tape.Add(new TapeEntryViewModel
+                    {
+                        Kind = TapeKind.Note,
+                        Organ = AgentOrgan.Brain,
+                        Stamp = "✎",
+                        Title = L["work.corrected"],
+                        Detail = resumed.Correction,
+                        Status = StepStatus.Succeeded,
+                    });
+                    RaiseCollectionFlags();
+                }
                 break;
 
             case RunFinishedEvent done:

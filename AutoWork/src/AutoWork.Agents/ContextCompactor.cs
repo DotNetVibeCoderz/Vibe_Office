@@ -135,10 +135,19 @@ public sealed class ContextCompactor
              """));
         rebuilt.AddRange(messages.Skip(preserveFrom));
 
+        var after = TokenEstimator.Estimate(rebuilt);
+
+        // A summary can come out longer than the turns it replaces — a handful of short tool
+        // calls summarised into careful prose, plus this wrapper, and the context has grown.
+        // Keeping that would be the worst of both worlds: a model call paid for, more tokens than
+        // before, and the threshold still crossed, so the next step compacts again and again.
+        //
+        // Observed live: 5,102 tokens in, 5,184 out, four times in one run.
+        if (after >= before) return new CompactionOutcome(false, before, before, 0);
+
         messages.Clear();
         messages.AddRange(rebuilt);
 
-        var after = TokenEstimator.Estimate(messages);
         return new CompactionOutcome(true, before, after, middle.Count);
     }
 

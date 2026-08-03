@@ -36,18 +36,108 @@ public sealed record McpCatalogEntry
     public string Requires { get; init; } = "Node.js (npx)";
 
     public string HomeUrl { get; init; } = "";
+
+    /// <summary>
+    /// True when the vendor publishes this themselves. Shown in the gallery, because "Figma's own
+    /// server" and "someone's Figma server" are very different things to hand your account to.
+    /// </summary>
+    public bool Official { get; init; } = true;
+
+    /// <summary>Set when something must be installed or enabled outside AutoWork first.</summary>
+    public string Setup { get; init; } = "";
+}
+
+/// <summary>Where to go looking for servers this catalogue does not carry.</summary>
+public sealed record McpSource(string Name, string Url, string Description);
+
+/// <summary>
+/// Reading what a vendor's page tells you to run into something launchable.
+///
+/// Lives here rather than in the view model because it is parsing, not presentation — and
+/// because getting it wrong produces a server that fails to start with an unhelpful message.
+/// </summary>
+public static class McpManualEntry
+{
+    /// <summary>
+    /// Splits an argument line the way a shell would, honouring quotes. Paths under
+    /// "Program Files" are common in vendor READMEs, and splitting on whitespace alone turns one
+    /// argument into two broken ones.
+    /// </summary>
+    public static List<string> SplitArguments(string line)
+    {
+        var parts = new List<string>();
+        var current = new System.Text.StringBuilder();
+        var quote = '\0';
+
+        foreach (var c in line)
+        {
+            if (quote != '\0')
+            {
+                if (c == quote) quote = '\0';
+                else current.Append(c);
+            }
+            else if (c is '"' or '\'')
+            {
+                quote = c;
+            }
+            else if (char.IsWhiteSpace(c))
+            {
+                if (current.Length > 0) { parts.Add(current.ToString()); current.Clear(); }
+            }
+            else
+            {
+                current.Append(c);
+            }
+        }
+
+        if (current.Length > 0) parts.Add(current.ToString());
+        return parts;
+    }
+
+    /// <summary>One <c>NAME=value</c> per line, the shape every vendor README shows.</summary>
+    public static IReadOnlyList<(string Key, string Value)> ParseEnvironment(string text)
+    {
+        var pairs = new List<(string, string)>();
+
+        foreach (var raw in text.ReplaceLineEndings("\n").Split('\n'))
+        {
+            var line = raw.Trim();
+            if (line.Length == 0 || line.StartsWith('#')) continue;
+
+            var split = line.IndexOf('=');
+            if (split <= 0) continue;
+
+            var key = line[..split].Trim();
+            var value = line[(split + 1)..].Trim().Trim('"');
+
+            if (key.Length > 0 && value.Length > 0) pairs.Add((key, value));
+        }
+
+        return pairs;
+    }
 }
 
 /// <summary>
 /// The MCP servers offered out of the box.
 ///
-/// Every entry was checked against its registry and none is deprecated — a gallery that offers
-/// abandoned packages wastes the user's time in a way that looks like the app is broken. The
-/// official servers that *are* deprecated (github, slack, postgres, brave-search) are
-/// deliberately absent rather than listed with a warning.
+/// Every entry was read off the vendor's own documentation, not off a directory listing or a
+/// search result. That matters more here than anywhere else in the product: a catalogue entry is
+/// an instruction to run somebody's code with the user's full rights, and a package name that is
+/// merely plausible is exactly how a typosquat gets installed. Where a vendor publishes the
+/// server themselves it is marked as official; the one that is not — Blender — says so.
 ///
-/// This is a starting point, not a whitelist: the gallery lets any command or URL be added by
-/// hand, because the interesting MCP server is usually the company's own.
+/// Also checked for deprecation: a gallery that offers abandoned packages wastes the user's time
+/// in a way that looks like the app is broken. The official servers that *are* deprecated
+/// (slack, postgres, brave-search) are deliberately absent rather than listed with a warning.
+///
+/// Two things are deliberately missing. **Unreal Engine** has no canonical server — eight
+/// competing community projects, each needing its own C++ plugin built, and picking one would be
+/// blessing a stranger's repository. **Unity** ships an official integration, but it is an
+/// in-Editor relay that writes the client configuration for you rather than a command anyone can
+/// paste. Both are exactly what "add one by hand" is for.
+///
+/// This is a starting point, not a whitelist: any command or URL can be added by hand, because
+/// the interesting MCP server is usually the company's own.
 /// </summary>
 public static class McpCatalog
 {
@@ -157,6 +247,169 @@ public static class McpCatalog
             Arguments = ["-y", "@modelcontextprotocol/server-everything"],
             HomeUrl = "https://github.com/modelcontextprotocol/servers",
         },
+        // ── Design and creative ───────────────────────────────────────────────────────────
+
+        new()
+        {
+            Id = "figma",
+            Name = "Figma",
+            Category = "Design",
+            Description = "Read your Figma files: frames, components, variables and design tokens, " +
+                          "so a design can be turned into code or documentation without screenshots.",
+            Arguments = ["-y", "mcp-remote", "https://mcp.figma.com/mcp"],
+            Requires = "Node.js (npx). Signs in through your browser on first use.",
+            HomeUrl = "https://developers.figma.com/docs/figma-mcp-server/",
+        },
+        new()
+        {
+            Id = "canva",
+            Name = "Canva",
+            Category = "Design",
+            Description = "Canva's own developer server, for building and working with Canva apps.",
+            Arguments = ["-y", "@canva/cli@latest", "mcp"],
+            HomeUrl = "https://www.canva.dev/docs/apps/mcp-server/",
+        },
+        new()
+        {
+            Id = "blender",
+            Name = "Blender",
+            Category = "3D",
+            Description = "Drives Blender: build scenes, place and modify objects, set materials, " +
+                          "and inspect what is in the file.",
+            Command = "uvx",
+            Arguments = ["blender-mcp"],
+            Requires = "Python with uv (uvx), and Blender.",
+            Setup = "Install addon.py from the project's repository through Blender's " +
+                    "Edit › Preferences › Add-ons, then start the server from the BlenderMCP panel.",
+            Official = false,
+            HomeUrl = "https://github.com/ahujasid/blender-mcp",
+        },
+
+        // ── Developer platforms ───────────────────────────────────────────────────────────
+
+        new()
+        {
+            Id = "github",
+            Name = "GitHub",
+            Category = "Development",
+            Description = "GitHub's own server: repositories, issues, pull requests, code search " +
+                          "and actions, against your real account.",
+            Arguments = ["-y", "mcp-remote", "https://api.githubcopilot.com/mcp/"],
+            Requires = "Node.js (npx). Signs in through your browser on first use.",
+            HomeUrl = "https://github.com/github/github-mcp-server",
+        },
+        new()
+        {
+            Id = "atlassian",
+            Name = "Atlassian (Jira, Confluence, Bitbucket)",
+            Category = "Productivity",
+            Description = "Atlassian's own server for Jira issues, Confluence pages, Jira Service " +
+                          "Management, Bitbucket and Compass.",
+            Arguments = ["-y", "mcp-remote", "https://mcp.atlassian.com/v1/mcp/authv2"],
+            Requires = "Node.js (npx). Signs in through your browser on first use.",
+            HomeUrl = "https://github.com/atlassian/atlassian-mcp-server",
+        },
+        new()
+        {
+            Id = "linear",
+            Name = "Linear",
+            Category = "Productivity",
+            Description = "Linear's own server: read and update issues, projects and cycles.",
+            Arguments = ["-y", "mcp-remote", "https://mcp.linear.app/sse"],
+            Requires = "Node.js (npx). Signs in through your browser on first use.",
+            HomeUrl = "https://linear.app/docs/mcp",
+        },
+        new()
+        {
+            Id = "asana",
+            Name = "Asana",
+            Category = "Productivity",
+            Description = "Asana's own server: tasks, projects and portfolios.",
+            Arguments = ["-y", "mcp-remote", "https://mcp.asana.com/sse"],
+            Requires = "Node.js (npx). Signs in through your browser on first use.",
+            HomeUrl = "https://developers.asana.com/docs/mcp-server",
+        },
+        new()
+        {
+            Id = "chrome-devtools",
+            Name = "Chrome DevTools",
+            Category = "Web",
+            Description = "Inspect and control a live Chrome: performance traces, console, network " +
+                          "and the DOM. Chrome's own server, published by the DevTools team.",
+            Arguments = ["-y", "chrome-devtools-mcp@latest"],
+            Requires = "Node.js (npx), and Chrome.",
+            HomeUrl = "https://github.com/ChromeDevTools/chrome-devtools-mcp",
+        },
+
+        // ── Microsoft ─────────────────────────────────────────────────────────────────────
+
+        new()
+        {
+            Id = "microsoft-learn",
+            Name = "Microsoft Learn",
+            Category = "Reference",
+            Description = "Official Microsoft and Azure documentation, fetched live rather than " +
+                          "recalled from training data. No account needed.",
+            Transport = McpTransport.Http,
+            Url = "https://learn.microsoft.com/api/mcp",
+            Requires = "Nothing — it is a hosted service.",
+            HomeUrl = "https://github.com/microsoft/mcp",
+        },
+        new()
+        {
+            Id = "azure-devops",
+            Name = "Azure DevOps",
+            Category = "Development",
+            Description = "Microsoft's own server for Azure DevOps: work items, repositories, " +
+                          "pipelines and pull requests.",
+            Arguments = ["-y", "@azure-devops/mcp"],
+            Parameters =
+            [
+                new() { Key = "arg", Label = "Azure DevOps organisation name", Placeholder = "contoso" },
+            ],
+            HomeUrl = "https://github.com/microsoft/mcp",
+        },
+        new()
+        {
+            Id = "markitdown",
+            Name = "MarkItDown",
+            Category = "Documents",
+            Description = "Microsoft's converter for turning PDFs, Office files and web pages into " +
+                          "Markdown. The same family as AutoWork's own document reading.",
+            Command = "uvx",
+            Arguments = ["markitdown-mcp"],
+            Requires = "Python with uv (uvx).",
+            HomeUrl = "https://github.com/microsoft/markitdown",
+        },
+
+        // ── AWS ───────────────────────────────────────────────────────────────────────────
+
+        new()
+        {
+            Id = "aws-documentation",
+            Name = "AWS Documentation",
+            Category = "Reference",
+            Description = "Search and read the official AWS documentation. No AWS account needed.",
+            Command = "uvx",
+            Arguments = ["awslabs.aws-documentation-mcp-server@latest"],
+            Requires = "Python with uv (uvx).",
+            HomeUrl = "https://github.com/awslabs/mcp",
+        },
+        new()
+        {
+            Id = "aws-knowledge",
+            Name = "AWS Knowledge (hosted)",
+            Category = "Reference",
+            Description = "AWS's own hosted knowledge server — documentation, blog posts, " +
+                          "architectural guidance and API references. No AWS account needed.",
+            Command = "uvx",
+            Arguments = ["mcp-proxy-for-aws@latest", "https://aws-mcp.us-east-1.api.aws/mcp"],
+            Requires = "Python with uv (uvx).",
+            HomeUrl = "https://github.com/awslabs/mcp",
+        },
+
+        // ── Anything else ─────────────────────────────────────────────────────────────────
+
         new()
         {
             Id = "remote",
@@ -171,6 +424,32 @@ public static class McpCatalog
             ],
             HomeUrl = "https://github.com/geelen/mcp-remote",
         },
+    ];
+
+    /// <summary>
+    /// Where to find servers this catalogue does not carry.
+    ///
+    /// Offered as links rather than scraped into the list. A catalogue entry is an instruction to
+    /// run somebody's code with the user's full rights, so every one above was read off the
+    /// vendor's own page; pulling a directory in automatically would mean shipping whatever it
+    /// happened to contain that day.
+    /// </summary>
+    public static IReadOnlyList<McpSource> Sources { get; } =
+    [
+        new("Official MCP servers", "https://github.com/modelcontextprotocol/servers",
+            "The reference servers, plus a long list of community and vendor ones."),
+
+        new("Microsoft", "https://github.com/microsoft/mcp",
+            "Azure, Fabric, Dev Box, SQL, Dataverse, Microsoft 365 and more."),
+
+        new("Google", "https://github.com/google/mcp",
+            "Google Cloud databases, Workspace, Firebase, Maps and Chrome DevTools."),
+
+        new("AWS", "https://github.com/awslabs/mcp",
+            "Documentation, infrastructure-as-code, and one server per AWS service."),
+
+        new("Remote servers", "https://mcpservers.org/remote-mcp-servers",
+            "Hosted servers you connect to by URL, with no local install."),
     ];
 
     public static McpCatalogEntry? Find(string id) =>

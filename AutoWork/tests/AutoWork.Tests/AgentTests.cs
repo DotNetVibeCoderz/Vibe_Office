@@ -88,6 +88,36 @@ public sealed class ContextCompactionTests
         Assert.True(compactor.ShouldCompact(messages, contextWindow: 4_000));
     }
 
+    /// <summary>
+    /// Compaction that grows the context is worse than none: a model call paid for, more tokens
+    /// than before, and — because the threshold is still crossed — the same thing again on the
+    /// next step. Seen live at 5,102 tokens in and 5,184 out, four times in one run.
+    /// </summary>
+    [Fact]
+    public async Task A_summary_longer_than_what_it_replaces_is_discarded()
+    {
+        // A verbose summariser standing in for a model that elaborates on terse tool output.
+        var compactor = new ContextCompactor(
+            new StubChatClient(new string('s', 40_000)),
+            new AgentOptions { EnableAutoCompact = true, AutoCompactThreshold = 0.3, CompactKeepRecentTurns = 2 });
+
+        var messages = new List<ChatMessage> { new(ChatRole.System, "rules"), new(ChatRole.User, "goal") };
+        for (var i = 0; i < 8; i++)
+            messages.Add(new ChatMessage(i % 2 == 0 ? ChatRole.Assistant : ChatRole.User, new string('y', 400)));
+
+        var before = messages.Count;
+
+        var outcome = await compactor.CompactAsync(messages, contextWindow: 8_000,
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.False(outcome.Compacted);
+        Assert.Equal(outcome.TokensBefore, outcome.TokensAfter);
+
+        // And the conversation is left exactly as it was, not half-rewritten.
+        Assert.Equal(before, messages.Count);
+        Assert.DoesNotContain(messages, m => m.Text?.Contains("has been summarised") == true);
+    }
+
     [Fact]
     public void Disabling_auto_compact_is_honoured()
     {

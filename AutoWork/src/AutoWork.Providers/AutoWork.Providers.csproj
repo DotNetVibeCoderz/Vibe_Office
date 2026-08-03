@@ -10,4 +10,8 @@
     <ProjectReference Include="..\AutoWork.Core\AutoWork.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="AutoWork.Tests" />
+  </ItemGroup>
+
 </Project>

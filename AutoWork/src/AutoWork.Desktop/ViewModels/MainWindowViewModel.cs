@@ -9,6 +9,9 @@ namespace AutoWork.Desktop.ViewModels;
 public enum Section
 {
     Work,
+    Jobs,
+    History,
+    Recycle,
     Activity,
     Knowledge,
     Skills,
@@ -32,6 +35,21 @@ public sealed partial class MainWindowViewModel : ObservableObject
         Services = services;
 
         Work = new WorkViewModel(services);
+        JobsPage = new JobsViewModel(services);
+        History = new HistoryViewModel(services, Work, () => Section = Section.Work);
+
+        // The scheduler decides when a job is due; running it goes through the same Work view a
+        // person uses, on the UI thread, so a scheduled run raises its consent cards where they
+        // can be answered.
+        services.RunJob = async (job, reason, _) =>
+            await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(async () =>
+            {
+                Section = Section.Work;
+                await Work.RunJobAsync(job, reason);
+            });
+
+        services.Scheduler.Start();
+        Recycle = new RecycleViewModel(services);
         Activity = new ActivityViewModel(services);
         Knowledge = new KnowledgeViewModel(services);
         Skills = new SkillsViewModel(services);
@@ -46,6 +64,10 @@ public sealed partial class MainWindowViewModel : ObservableObject
             // The MCP capability switch lives in Permissions, so the gallery has to be told
             // when it changes or it keeps claiming servers are blocked.
             Mcp.Refresh();
+
+            // Turning history off — or shortening how long it is kept — has to show up here,
+            // otherwise the page keeps promising to record runs that are no longer being kept.
+            History.Reload();
 
             OnPropertyChanged(nameof(L));
         };
@@ -64,6 +86,9 @@ public sealed partial class MainWindowViewModel : ObservableObject
     public Strings L => Services.Strings;
 
     public WorkViewModel Work { get; }
+    public JobsViewModel JobsPage { get; }
+    public HistoryViewModel History { get; }
+    public RecycleViewModel Recycle { get; }
     public ActivityViewModel Activity { get; }
     public KnowledgeViewModel Knowledge { get; }
     public SkillsViewModel Skills { get; }
@@ -74,6 +99,9 @@ public sealed partial class MainWindowViewModel : ObservableObject
     [ObservableProperty] private Section _section;
 
     public bool IsWork => Section == Section.Work;
+    public bool IsJobs => Section == Section.Jobs;
+    public bool IsHistory => Section == Section.History;
+    public bool IsRecycle => Section == Section.Recycle;
     public bool IsActivity => Section == Section.Activity;
     public bool IsKnowledge => Section == Section.Knowledge;
     public bool IsSkills => Section == Section.Skills;
@@ -91,6 +119,9 @@ public sealed partial class MainWindowViewModel : ObservableObject
     partial void OnSectionChanged(Section value)
     {
         OnPropertyChanged(nameof(IsWork));
+        OnPropertyChanged(nameof(IsJobs));
+        OnPropertyChanged(nameof(IsHistory));
+        OnPropertyChanged(nameof(IsRecycle));
         OnPropertyChanged(nameof(IsActivity));
         OnPropertyChanged(nameof(IsKnowledge));
         OnPropertyChanged(nameof(IsSkills));
@@ -99,6 +130,14 @@ public sealed partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(IsSettings));
 
         if (value == Section.Knowledge) Knowledge.ReloadCommand.Execute(null);
+
+        // Reads from disk, so it refreshes on arrival — a run that just finished has to be
+        // there without the user thinking to press anything.
+        if (value == Section.History) History.Reload();
+        if (value == Section.Jobs) JobsPage.Reload();
+
+        // Same reason: a file deleted a moment ago has to be there without a manual refresh.
+        if (value == Section.Recycle) Recycle.Reload();
 
         // Not a browse: that costs network requests and stays a deliberate click.
         if (value == Section.Mcp) Mcp.Refresh();

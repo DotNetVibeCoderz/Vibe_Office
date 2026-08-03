@@ -57,6 +57,107 @@ public sealed class ConfigurationTests : IDisposable
         Assert.Equal("https://proxy.internal/v1", deepseek.Endpoint);
     }
 
+    /// <summary>
+    /// config.json is documented and meant to be hand-edited, so a file written the documented
+    /// way has to load. It did not: the app wrote PascalCase, the docs showed camelCase, and a
+    /// documented file parsed cleanly into all-defaults — silently discarding the user's folder
+    /// grants, which is the single worst setting to lose without being told.
+    /// </summary>
+    [Fact]
+    public void A_config_written_the_way_the_documentation_shows_is_actually_loaded()
+    {
+        var path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"autowork-cfg-{Guid.NewGuid():n}.json");
+
+        System.IO.File.WriteAllText(path, """
+            {
+              "schemaVersion": 1,
+              "permissions": {
+                "roots": [
+                  { "path": "/home/fadhil/Projects", "access": "ReadWrite", "includeSubfolders": true }
+                ],
+                "allowShell": true,
+                "allowNetwork": false
+              },
+              "agent": { "maxSteps": 12 }
+            }
+            """);
+
+        try
+        {
+            var config = new ConfigStore(path).Current;
+
+            var root = Assert.Single(config.Permissions.Roots);
+            Assert.Equal("/home/fadhil/Projects", root.Path);
+            Assert.Equal(FolderAccess.ReadWrite, root.Access);
+
+            Assert.True(config.Permissions.AllowShell);
+            Assert.False(config.Permissions.AllowNetwork);
+            Assert.Equal(12, config.Agent.MaxSteps);
+        }
+        finally
+        {
+            System.IO.File.Delete(path);
+        }
+    }
+
+    /// <summary>Files written by earlier builds are PascalCase and must keep loading.</summary>
+    [Fact]
+    public void A_config_written_by_an_earlier_build_still_loads()
+    {
+        var path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"autowork-cfg-{Guid.NewGuid():n}.json");
+
+        System.IO.File.WriteAllText(path, """
+            {
+              "SchemaVersion": 1,
+              "Permissions": {
+                "Roots": [ { "Path": "/srv/work", "Access": "Read", "IncludeSubfolders": false } ],
+                "AllowDelete": true
+              }
+            }
+            """);
+
+        try
+        {
+            var config = new ConfigStore(path).Current;
+
+            var root = Assert.Single(config.Permissions.Roots);
+            Assert.Equal("/srv/work", root.Path);
+            Assert.Equal(FolderAccess.Read, root.Access);
+            Assert.True(config.Permissions.AllowDelete);
+        }
+        finally
+        {
+            System.IO.File.Delete(path);
+        }
+    }
+
+    /// <summary>What is saved must be what the documentation tells people to expect.</summary>
+    [Fact]
+    public void Saving_writes_camel_case_property_names()
+    {
+        var path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"autowork-cfg-{Guid.NewGuid():n}.json");
+
+        try
+        {
+            var store = new ConfigStore(path);
+            store.Update(config => config.Permissions.Roots =
+                [new PermissionRoot { Path = "/tmp/x", Access = FolderAccess.ReadWrite }]);
+
+            var written = System.IO.File.ReadAllText(path);
+
+            Assert.Contains("\"permissions\"", written);
+            Assert.Contains("\"schemaVersion\"", written);
+            Assert.DoesNotContain("\"Permissions\"", written);
+
+            // Enum values stay PascalCase, as the documented examples show.
+            Assert.Contains("\"ReadWrite\"", written);
+        }
+        finally
+        {
+            System.IO.File.Delete(path);
+        }
+    }
+
     [Fact]
     public void An_azure_key_alone_seeds_nothing_because_its_endpoint_cannot_be_guessed()
     {

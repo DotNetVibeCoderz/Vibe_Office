@@ -28,14 +28,14 @@ public sealed class ParameterCompatibilityChatClient : DelegatingChatClient
     /// changes the shape of a reply but never its correctness. Nothing that affects what the
     /// model is asked to *do* (tools, messages, response format) is ever stripped.
     /// </summary>
-    private static readonly (string Wire, string Friendly, Action<ChatOptions> Strip)[] Droppable =
+    private static readonly (string Wire, string Friendly, Action<ChatOptions> Strip, Func<ChatOptions?, bool> IsSet)[] Droppable =
     [
-        ("temperature", "temperature", o => o.Temperature = null),
-        ("top_p", "top-p", o => o.TopP = null),
-        ("max_tokens", "output token limit", o => o.MaxOutputTokens = null),
-        ("max_completion_tokens", "output token limit", o => o.MaxOutputTokens = null),
-        ("frequency_penalty", "frequency penalty", o => o.FrequencyPenalty = null),
-        ("presence_penalty", "presence penalty", o => o.PresencePenalty = null),
+        ("temperature", "temperature", o => o.Temperature = null, o => o?.Temperature is not null),
+        ("top_p", "top-p", o => o.TopP = null, o => o?.TopP is not null),
+        ("max_tokens", "output token limit", o => o.MaxOutputTokens = null, o => o?.MaxOutputTokens is not null),
+        ("max_completion_tokens", "output token limit", o => o.MaxOutputTokens = null, o => o?.MaxOutputTokens is not null),
+        ("frequency_penalty", "frequency penalty", o => o.FrequencyPenalty = null, o => o?.FrequencyPenalty is not null),
+        ("presence_penalty", "presence penalty", o => o.PresencePenalty = null, o => o?.PresencePenalty is not null),
     ];
 
     private static readonly Regex QuotedName = new("['\"`]([a-z_]+)['\"`]", RegexOptions.Compiled);
@@ -96,7 +96,7 @@ public sealed class ParameterCompatibilityChatClient : DelegatingChatClient
             {
                 response = await base.GetResponseAsync(messages, attempt, cancellationToken).ConfigureAwait(false);
             }
-            catch (Exception ex) when (round < Droppable.Length && Learn(ex))
+            catch (Exception ex) when (round < Droppable.Length && Learn(ex, attempt))
             {
                 attempt = Sanitise(options);
                 continue;
@@ -152,7 +152,7 @@ public sealed class ParameterCompatibilityChatClient : DelegatingChatClient
 
             var copy = options.Clone();
 
-            foreach (var (wire, _, strip) in Droppable)
+            foreach (var (wire, _, strip, _) in Droppable)
                 if (_dropped.Contains(wire))
                     strip(copy);
 
@@ -165,9 +165,15 @@ public sealed class ParameterCompatibilityChatClient : DelegatingChatClient
 
     /// <summary>
     /// Reads a provider rejection for the name of a parameter worth dropping.
-    /// Returns true only when something new was learned — which is what makes a retry worthwhile.
+    ///
+    /// Returns true when retrying would send something different — judged against the attempt
+    /// that just failed, not against whether this call was the one that recorded the parameter.
+    /// That distinction is load-bearing: several sub-agents share one client, so their first
+    /// requests race. Whoever gets there first records the parameter; if the others treated
+    /// "already known" as "nothing learned", they would rethrow the raw 400 and fail while their
+    /// sibling succeeded.
     /// </summary>
-    private bool Learn(Exception exception)
+    private bool Learn(Exception exception, ChatOptions? attempt)
     {
         if (!IsBadRequest(exception)) return false;
 
@@ -188,10 +194,13 @@ public sealed class ParameterCompatibilityChatClient : DelegatingChatClient
 
         lock (_gate)
         {
-            var learned = false;
-            foreach (var name in named) learned |= _dropped.Add(name);
-            return learned;
+            foreach (var name in named) _dropped.Add(name);
         }
+
+        // Worth retrying only if the attempt that failed actually carried one of these.
+        return named.Any(name => Droppable
+            .Where(d => string.Equals(d.Wire, name, StringComparison.OrdinalIgnoreCase))
+            .Any(d => d.IsSet(attempt)));
     }
 
     private static bool IsBadRequest(Exception exception) => exception switch

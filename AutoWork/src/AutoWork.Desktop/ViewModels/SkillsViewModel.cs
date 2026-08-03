@@ -162,16 +162,23 @@ public sealed partial class SkillsViewModel : ObservableObject
 
         try
         {
-            var markdown = await _services.SkillGallery.DownloadAsync(item.Listing).ConfigureAwait(true);
+            var bundle = await _services.SkillGallery.DownloadBundleAsync(item.Listing).ConfigureAwait(true);
 
-            if (markdown is null)
+            if (bundle is null)
             {
                 Status = string.Format(L["skills.failed"], item.Name);
                 return;
             }
 
-            _services.Skills.Install(markdown, item.Listing.Source, item.Name);
-            Status = string.Format(L["skills.installed.msg"], item.Name);
+            var installed = _services.Skills.Install(
+                bundle.Markdown, item.Listing.Source, item.Name,
+                [.. bundle.Files.Select(f => (f.RelativePath, f.Content))]);
+
+            // Say how much came with it: a skill is often a folder of scripts and references,
+            // and "installed" alone hides that entirely.
+            Status = string.Format(L["skills.installed.msg"], installed.Name, installed.Files.Count);
+
+            if (bundle.Notes.Count > 0) Status += " " + string.Join("; ", bundle.Notes) + ".";
         }
         finally
         {

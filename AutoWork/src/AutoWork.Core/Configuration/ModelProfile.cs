@@ -73,6 +73,31 @@ public sealed class ModelProfile
     /// <summary>Extra headers some gateways require (e.g. OpenRouter attribution).</summary>
     public Dictionary<string, string> Headers { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// Price per million input tokens, and per million output tokens.
+    ///
+    /// Left empty on purpose. AutoWork ships no price table: model ids drift, prices drift
+    /// faster, and a stale built-in figure that quietly under-reports what a run cost is worse
+    /// than no figure at all. Fill these in from your provider's pricing page and the meter
+    /// shows money; leave them and it shows tokens, which are true whatever the price is.
+    /// </summary>
+    public decimal? InputPricePerMillion { get; set; }
+
+    public decimal? OutputPricePerMillion { get; set; }
+
+    /// <summary>Whatever the prices above are quoted in. Only ever displayed, never converted.</summary>
+    public string Currency { get; set; } = "USD";
+
+    /// <summary>True when both prices are known, which is the only case a cost can be shown for.</summary>
+    public bool HasPricing => InputPricePerMillion is not null && OutputPricePerMillion is not null;
+
+    /// <summary>Null when this model has no price set — the caller must not substitute zero.</summary>
+    public decimal? CostOf(long inputTokens, long outputTokens) =>
+        HasPricing
+            ? inputTokens / 1_000_000m * InputPricePerMillion!.Value
+              + outputTokens / 1_000_000m * OutputPricePerMillion!.Value
+            : null;
+
     public bool Enabled { get; set; } = true;
 
     public bool Supports(ModelCapabilities capability) => (Capabilities & capability) == capability;

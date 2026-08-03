@@ -269,6 +269,27 @@
   <Style Selector="TextBlock.organ-see"><Setter Property="Foreground" Value="{DynamicResource See}" /></Style>
   <Style Selector="TextBlock.organ-act"><Setter Property="Foreground" Value="{DynamicResource Act}" /></Style>
 
+  <!-- ── Diff preview ─────────────────────────────────────────────────────────────────── -->
+  <!--
+    Same reasoning as the organ tints: classes, not converters, so the colours survive a live
+    theme switch. Unchanged lines stay dim on purpose — the eye should land on the change.
+  -->
+
+  <Style Selector="TextBlock.diffLine">
+    <Setter Property="Foreground" Value="{DynamicResource TextDim}" />
+    <Setter Property="LineHeight" Value="17" />
+  </Style>
+  <Style Selector="TextBlock.diffLine.added"><Setter Property="Foreground" Value="{DynamicResource Success}" /></Style>
+  <Style Selector="TextBlock.diffLine.removed"><Setter Property="Foreground" Value="{DynamicResource Danger}" /></Style>
+  <Style Selector="TextBlock.diffLine.skipped"><Setter Property="Foreground" Value="{DynamicResource TextFaint}" /></Style>
+
+  <Style Selector="TextBlock.diffSign">
+    <Setter Property="Foreground" Value="{DynamicResource TextFaint}" />
+    <Setter Property="LineHeight" Value="17" />
+  </Style>
+  <Style Selector="TextBlock.diffSign.added"><Setter Property="Foreground" Value="{DynamicResource Success}" /></Style>
+  <Style Selector="TextBlock.diffSign.removed"><Setter Property="Foreground" Value="{DynamicResource Danger}" /></Style>
+
   <Style Selector="Border.stamp">
     <Setter Property="BorderBrush" Value="{DynamicResource TextFaint}" />
   </Style>

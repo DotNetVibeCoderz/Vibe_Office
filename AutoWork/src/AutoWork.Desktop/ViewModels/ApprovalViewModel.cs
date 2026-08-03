@@ -1,9 +1,36 @@
+using AutoWork.Core.Diff;
 using AutoWork.Core.Security;
 using AutoWork.Desktop.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
 namespace AutoWork.Desktop.ViewModels;
+
+/// <summary>
+/// One line of a diff. The marker is exposed as three booleans rather than as an enum with a
+/// converter, so the styling classes follow a live theme switch like everything else does.
+/// </summary>
+public sealed class DiffLineViewModel
+{
+    public DiffLineViewModel(DiffLine line) => Line = line;
+
+    public DiffLine Line { get; }
+
+    public string Text => Line.Text;
+
+    public bool IsAdded => Line.Marker == DiffMarker.Added;
+    public bool IsRemoved => Line.Marker == DiffMarker.Removed;
+    public bool IsSkipped => Line.Marker == DiffMarker.Skipped;
+
+    /// <summary>The gutter character, so a copied diff still reads correctly as text.</summary>
+    public string Sign => Line.Marker switch
+    {
+        DiffMarker.Added => "+",
+        DiffMarker.Removed => "−",
+        DiffMarker.Skipped => "⋯",
+        _ => " ",
+    };
+}
 
 /// <summary>
 /// An inline consent card rather than a modal dialog.
@@ -33,6 +60,23 @@ public sealed partial class ApprovalViewModel : ObservableObject
     public bool HasPaths => Request.AffectedPaths.Count > 0;
 
     public string Paths => string.Join('\n', Request.AffectedPaths);
+
+    // ── Diff preview ──────────────────────────────────────────────────────────────────────
+
+    public bool HasPreview => Request.Preview is not null;
+
+    public bool HasDiffLines => Request.Preview is { Lines.Count: > 0 };
+
+    public bool HasPreviewNote => !string.IsNullOrWhiteSpace(Request.Preview?.Note);
+
+    public string PreviewNote => Request.Preview?.Note ?? "";
+
+    /// <summary>"+12 −3". Empty when the preview is only a note.</summary>
+    public string PreviewSummary => Request.Preview is { Lines.Count: > 0 } p ? p.Summary : "";
+
+    public IReadOnlyList<DiffLineViewModel> DiffLines => Request.Preview is null
+        ? []
+        : [.. Request.Preview.Lines.Select(l => new DiffLineViewModel(l))];
 
     /// <summary>
     /// "Allow for this run" is offered only for repeatable, non-destructive kinds. Deleting and

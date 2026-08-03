@@ -18,6 +18,12 @@ public sealed record Skill
     /// <summary>Where it came from — "anthropics/skills · skills/pdf", or "local".</summary>
     public string Source { get; init; } = "";
 
+    /// <summary>Absolute path to the skill's folder, so bundled files can be reached.</summary>
+    public string Folder { get; init; } = "";
+
+    /// <summary>Bundled files, relative to <see cref="Folder"/> — templates, references, scripts.</summary>
+    public IReadOnlyList<string> Files { get; init; } = [];
+
     public DateTimeOffset InstalledAt { get; init; } = DateTimeOffset.Now;
 }
 
@@ -115,8 +121,11 @@ public interface ISkillStore
     IReadOnlyList<Skill> List();
     Skill? Get(string id);
 
-    /// <summary>Installs (or replaces) a skill. Returns what was stored.</summary>
-    Skill Install(string markdown, string source, string fallbackName);
+    /// <summary>
+    /// Installs (or replaces) a skill and everything bundled with it. Returns what was stored.
+    /// </summary>
+    Skill Install(string markdown, string source, string fallbackName,
+        IReadOnlyList<(string RelativePath, byte[] Content)>? files = null);
 
     void Remove(string id);
 
@@ -168,23 +177,75 @@ public sealed class FileSkillStore : ISkillStore
         lock (_gate) return Load(Path.Combine(_directory, ToId(id)));
     }
 
-    public Skill Install(string markdown, string source, string fallbackName)
+    public Skill Install(string markdown, string source, string fallbackName,
+        IReadOnlyList<(string RelativePath, byte[] Content)>? files = null)
     {
         var (name, description, body) = SkillManifest.Parse(markdown, fallbackName);
         var id = ToId(name);
+        var written = new List<string>();
 
         lock (_gate)
         {
             var folder = Path.Combine(_directory, id);
+
+            // Replace rather than merge: a re-install of a skill that dropped a script should
+            // not leave the old one lying around to be executed.
+            if (Directory.Exists(folder)) Directory.Delete(folder, recursive: true);
             Directory.CreateDirectory(folder);
 
             File.WriteAllText(Path.Combine(folder, ManifestFile), markdown);
             File.WriteAllText(Path.Combine(folder, SourceFile), source);
+
+            foreach (var (relative, content) in files ?? [])
+            {
+                // Every path here came out of someone else's repository. Resolve it and confirm
+                // it landed inside the skill's own folder before writing a single byte.
+                var target = Contain(folder, relative);
+                if (target is null) continue;
+
+                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                File.WriteAllBytes(target, content);
+
+                written.Add(relative.Replace('\\', '/'));
+            }
         }
 
         Changed?.Invoke();
 
-        return new Skill { Id = id, Name = name, Description = description, Body = body, Source = source };
+        return new Skill
+        {
+            Id = id,
+            Name = name,
+            Description = description,
+            Body = body,
+            Source = source,
+            Folder = Path.Combine(_directory, id),
+            Files = written,
+        };
+    }
+
+    /// <summary>
+    /// Resolves a bundled file's path inside its skill folder, or null if it would escape.
+    ///
+    /// A repository can name a file anything — `../../../secrets`, an absolute path, a Windows
+    /// drive. This is the one place those names touch the filesystem, so containment is checked
+    /// on the resolved path rather than by pattern-matching the input.
+    ///
+    /// Also used when reading and running bundled files, so a path the model supplies is held to
+    /// exactly the same rule as one the repository supplied.
+    /// </summary>
+    public static string? Contain(string folder, string relativePath)
+    {
+        if (string.IsNullOrWhiteSpace(relativePath)) return null;
+        if (Path.IsPathRooted(relativePath)) return null;
+        if (relativePath.Contains(':')) return null;
+
+        var root = Path.GetFullPath(folder);
+        var combined = Path.GetFullPath(Path.Combine(root, relativePath));
+
+        var prefix = root.EndsWith(Path.DirectorySeparatorChar) ? root : root + Path.DirectorySeparatorChar;
+
+        return combined.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) ? combined : null;
     }
 
     public void Remove(string id)
@@ -227,6 +288,8 @@ public sealed class FileSkillStore : ISkillStore
                 Description = description,
                 Body = body,
                 Source = source,
+                Folder = folder,
+                Files = BundledFiles(folder),
                 InstalledAt = Directory.GetCreationTime(folder),
             };
         }
@@ -234,6 +297,28 @@ public sealed class FileSkillStore : ISkillStore
         {
             // One unreadable skill must not hide the rest.
             return null;
+        }
+    }
+
+    /// <summary>Everything bundled with the skill, relative and slash-separated, manifest aside.</summary>
+    private static IReadOnlyList<string> BundledFiles(string folder)
+    {
+        try
+        {
+            return Directory.EnumerateFiles(folder, "*", SearchOption.AllDirectories)
+                .Select(p => Path.GetRelativePath(folder, p).Replace('\\', '/'))
+                .Where(p => !p.Equals(ManifestFile, StringComparison.OrdinalIgnoreCase)
+                            && !p.Equals(SourceFile, StringComparison.OrdinalIgnoreCase)
+
+                            // A provisioned environment is thousands of files AutoWork put there
+                            // itself. Listing them would drown the skill's actual contents.
+                            && !p.StartsWith(".venv/", StringComparison.OrdinalIgnoreCase))
+                .OrderBy(p => p, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return [];
         }
     }
 

@@ -106,6 +106,35 @@ public sealed class ParameterCompatibilityTests
     }
 
     /// <summary>
+    /// Sub-agents share one client, so their first requests race. Every one of them must recover,
+    /// not just whichever thread happened to record the rejected parameter first.
+    ///
+    /// This is a real defect that only appeared under live parallel sub-agents: two of three
+    /// agents died on a raw 400 while the third succeeded, because "already known" was being read
+    /// as "nothing learned, do not retry".
+    /// </summary>
+    [Fact]
+    public async Task Concurrent_first_requests_all_recover_not_just_the_one_that_learned_first()
+    {
+        var inner = new FussyChatClient(rejects: ["temperature"]);
+        var client = new ParameterCompatibilityChatClient(inner);
+
+        var calls = Enumerable.Range(0, 8).Select(async i =>
+        {
+            var response = await client.GetResponseAsync(
+                [new ChatMessage(ChatRole.User, $"request {i}")],
+                new ChatOptions { Temperature = 0.2f },
+                TestContext.Current.CancellationToken);
+
+            return response.Text;
+        });
+
+        var answers = await Task.WhenAll(calls);
+
+        Assert.All(answers, a => Assert.Equal("ok", a));
+    }
+
+    /// <summary>
     /// A 400 that is not about a droppable parameter — a malformed tool schema, say — must
     /// surface immediately rather than being retried into a loop.
     /// </summary>

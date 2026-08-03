@@ -8,4 +8,8 @@
     <PackageReference Include="System.Numerics.Tensors" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="AutoWork.Tests" />
+  </ItemGroup>
+
 </Project>

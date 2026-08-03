@@ -89,6 +89,66 @@ That means `config.json` is safe to copy between machines or commit to a private
 To use an external secret manager, type `env:MY_VAR` into the API key box and inject `MY_VAR`
 however you like.
 
+## Skills
+
+Skills are `SKILL.md` files — YAML front matter carrying a name and a description of when the
+skill applies, followed by instructions in Markdown. AutoWork reads them from GitHub
+repositories you list in **Skills › Repositories**, seeded with `anthropics/skills` and
+`obra/superpowers`.
+
+Add any public repository as `owner/name` or a GitHub URL; a company's internal skills repository
+works the same way. The list is stored in `config.json` under `skillRepositories`, and installed
+skills live in `skills/` inside the data folder.
+
+A skill installs as its whole folder, not just the manifest: reference documents, templates,
+schemas and scripts all come with it, up to 250 files and 40 MB. Anything skipped for size is
+reported rather than dropped quietly.
+
+Only a skill's name and description reach the model on every request. The body is fetched by
+`skill_open` when the model judges it relevant, bundled files by `skill_file`, so installing a
+dozen skills does not make every request a dozen times more expensive.
+
+When a script needs libraries, AutoWork installs them into a virtual environment inside the
+skill's own folder: whatever `requirements.txt` declares, plus imports it can resolve through a
+fixed name table. An import it does not recognise is reported rather than guessed at. The package
+list appears in the approval card before anything is fetched, and installing happens once per
+skill.
+
+Scripts are run by `skill_run`, which exists only when
+**Settings › Permissions › Allow running scripts bundled with skills** is on. It is off by
+default and asks before every execution — see
+[security.md](security.md#skills-instructions-and-sometimes-code).
+
+## MCP servers
+
+**Settings › Permissions › Allow MCP servers** must be on; it is off by default because a stdio
+server is a program started with your full rights. See
+[security.md](security.md#mcp-servers-are-outside-the-sandbox).
+
+Servers are stored in `config.json` under `mcpServers`, each with a transport, a command line or
+URL, and an environment map whose values are secret references rather than secrets:
+
+```jsonc
+{
+  "id": "a1b2c3d4",
+  "name": "Tavily Search",
+  "catalogId": "tavily",
+  "transport": "Stdio",
+  "command": "npx",
+  "arguments": ["-y", "tavily-mcp"],
+  "environment": { "TAVILY_API_KEY": "mcp.a1b2c3d4.TAVILY_API_KEY" },
+  "enabled": false
+}
+```
+
+The built-in catalogue covers filesystem, memory, sequential thinking, Playwright, Context7,
+Tavily, Firecrawl, Notion, the protocol's reference server, and `mcp-remote` for hosted servers.
+Anything else can be added by hand. Most need Node.js on PATH, which the gallery states per entry.
+
+Servers are connected once at the start of a run, not at launch — starting `npx` takes seconds
+and the window should not wait for it. A server that cannot be reached is logged and skipped; the
+run continues without its tools.
+
 ## Environment variables
 
 ### Provider keys
@@ -193,7 +253,13 @@ Annotated excerpt:
       "maxOutputTokens": 8192,
       "temperature": 0.2,
       "capabilities": "Tools, Vision, Reasoning",
-      "enabled": true
+      "enabled": true,
+
+      // Optional, and empty by default. Fill both in from your provider's pricing page and
+      // each run reports what it cost; leave them and it reports tokens only.
+      "inputPricePerMillion": 3.00,
+      "outputPricePerMillion": 15.00,
+      "currency": "USD"
     }
   ],
   "agent": {
@@ -220,9 +286,18 @@ Annotated excerpt:
     "allowScreenCapture": true,
     "allowInputControl": false,
     "maxReadBytes": 33554432,
-    "maxBatchSize": 500
+    "maxBatchSize": 500,
+
+    // Standing answers to consent prompts. Empty by default.
+    "approvalRules": [
+      { "effect": "Allow", "kind": "WriteFiles", "path": "/home/fadhil/Projects" },
+      { "effect": "Deny",  "kind": "DeleteFiles" }
+    ]
   },
-  "appearance": { "theme": "System", "language": "System", "reduceMotion": false }
+  "appearance": { "theme": "System", "language": "System", "reduceMotion": false },
+
+  "keepRunHistory": true,          // record each run so it can be reopened later
+  "runHistoryRetentionDays": 30    // older runs are removed after each run finishes
 }
 ```
 
@@ -240,3 +315,153 @@ as `config.json.broken-<timestamp>` and defaults are used rather than blocking s
 | `autoCompactThreshold` | Fraction of the window that triggers compaction | Lower for models that degrade when nearly full |
 | `compactKeepRecentTurns` | Turns kept verbatim when compacting | Raise if it loses its footing after a compaction |
 | `toolTimeoutSeconds` | Per-tool-call wall clock limit | Raise for slow shell commands |
+
+## Run history
+
+Every run is written to `runs/` under the AutoWork data folder as two files: a small headline
+that the History list reads, and the full transcript, loaded only when you open a run. Opening a
+past run replays it onto the Work Tape exactly as it looked while it was happening.
+
+| Setting | What it does | When to change it |
+|---|---|---|
+| `keepRunHistory` | Record each run | Turn off if you would rather nothing was written down |
+| `runHistoryRetentionDays` | How long a run is kept | Shorten on a shared machine; lengthen if you refer back |
+
+Transcripts contain whatever the run saw — file contents a tool read, search results, the
+model's replies. They are stored in plain JSON alongside your other AutoWork data, protected by
+the same file permissions and nothing more. Individual tool results are capped at about 4,000
+characters so one run that read a large folder does not leave megabytes behind.
+
+Pruning happens when a run finishes, so turning the retention down takes effect on the next run
+rather than immediately. Deleting a run from the History page removes both its files at once.
+
+## Approval rules
+
+Rules answer a class of consent prompt once instead of every time. Each has an `effect`
+(`Allow` or `Deny`), an optional `kind`, and a `path`.
+
+```jsonc
+"approvalRules": [
+  // Stop asking about writes inside one project tree.
+  { "effect": "Allow", "kind": "WriteFiles", "path": "/home/fadhil/Projects" },
+
+  // Refuse every delete, everywhere, without asking.
+  { "effect": "Deny", "kind": "DeleteFiles" },
+
+  // Refuse anything at all inside one folder.
+  { "effect": "Deny", "path": "/home/fadhil/Archive" }
+]
+```
+
+Four constraints apply, and they are enforced rather than advisory:
+
+- **Deny wins** over allow, in any order, and over an "allow for this run" clicked earlier.
+- **A rule never widens what is permitted.** An allowed action still goes through the sandbox, so
+  an allow rule outside your granted folders changes nothing.
+- **An allow must have both a `path` and a `kind`.** One without them is ignored.
+- **Only `WriteFiles` and `DeleteFiles` can be allowed.** `RunCommand`, `ControlInput`,
+  `CaptureScreen` and `NetworkAccess` have no folder to be scoped to, so they stay per-action —
+  their capability switches in Permissions are where that choice lives. Denies may use any kind.
+
+Paths are matched at a folder boundary, so a rule for `/home/fadhil/Proj` does not cover
+`/home/fadhil/Proj-private`.
+
+## Model pricing
+
+`inputPricePerMillion` and `outputPricePerMillion` are empty unless you fill them in, and
+AutoWork ships no price table. That is deliberate: prices move faster than model ids, and a stale
+built-in figure quietly under-reporting what a run cost is worse than reporting no cost at all.
+
+With both set, each run reports a cost in `currency` alongside its token count. With either
+missing, it reports tokens only. If a provider answers some calls without saying what they used,
+the total is shown as "at least *n*" rather than as an exact figure.
+
+## Saved jobs
+
+Jobs live in `jobs.json` beside `config.json`. Each has a goal, a trigger, and an on/off switch
+that starts off.
+
+```jsonc
+[
+  {
+    "name": "Monday invoices",
+    "goal": "Summarise last week's invoices into a Word document",
+    "trigger": "Schedule",
+    "enabled": true,
+    "period": "Weekly",
+    "dayOfWeek": "Monday",
+    "timeOfDay": "08:30:00"
+  },
+  {
+    "name": "File new scans",
+    "goal": "Sort anything new in the Scans folder by date",
+    "trigger": "FolderChange",
+    "enabled": true,
+    "watchFolder": "/home/fadhil/Scans",
+    "watchFilter": "*.pdf",
+    "quietSeconds": 20
+  }
+]
+```
+
+A job runs in the Work view exactly as if you had typed it, so it asks for the same permissions.
+Three things are worth knowing:
+
+- **A folder trigger can only watch a folder you have granted.** One pointing anywhere else is
+  reported and ignored rather than watched.
+- **Jobs do not queue.** One coming due while another run is going is skipped, and says so.
+- **Missed time does not accumulate.** Due times come from the clock, so an app closed over the
+  weekend runs once when it next opens, not three times.
+
+## Meetings and recordings
+
+Off until configured, and local unless you say otherwise. AutoWork ships no speech model; point
+it at one you have.
+
+```jsonc
+"transcription": {
+  "mode": "Local",                 // Off | Local | Remote
+  "command": "whisper-cli",
+  "arguments": "-m {model} -f {audio} --output-txt --no-prints",
+  "modelPath": "C:/models/ggml-base.en.bin",
+  "language": ""
+}
+```
+
+`{audio}`, `{model}` and `{language}` are filled in. The template is split into arguments
+*before* substitution, so a recording whose path contains a space stays one argument.
+whisper.cpp, faster-whisper and openai-whisper all work; each wants its own arguments. Output is
+read from the command's own output or from a `.txt`/`.srt` written beside the recording.
+
+`"mode": "Remote"` uploads the recording to a Whisper-compatible endpoint. It is never the
+default, it is a separate consent prompt, and it is worth remembering that a meeting recording
+contains people who never agreed to anything.
+
+## A signed-in browser
+
+```jsonc
+"browser": {
+  "enabled": false,
+  "executablePath": "",     // empty finds Edge or Chrome
+  "headless": false
+}
+```
+
+Off by default and **separate from `permissions.allowNetwork`** — fetching a public page and
+acting as the signed-in user are not the same permission. Both must be on for the browser tools
+to appear at all.
+
+The profile lives in `browser-profile/` under the AutoWork data folder, not your real browser
+profile: attaching to the browser you have open would fight it for the profile lock. It persists,
+so you sign in once and stay signed in. Navigation and clicks follow the same
+`permissions.networkAllowList` as the web tools, and each asks first.
+
+## Deleted files
+
+With `permissions.softDelete` on (the default), deletions move into `recycle/` under the AutoWork
+data folder along with an index recording where each came from. The Recycle page lists them and
+puts them back. Nothing can be restored into AutoWork's own folder, and restoring over an
+existing file needs a second, explicit confirmation.
+
+Items recycled by builds before the index existed are listed as unrestorable rather than hidden —
+they still take up space, and you may still want to clear them.

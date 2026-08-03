@@ -6,6 +6,7 @@ using AutoWork.Core.Agents;
 using AutoWork.Core.Configuration;
 using AutoWork.Core.Knowledge;
 using AutoWork.Core.Logging;
+using AutoWork.Core.Runs;
 using AutoWork.Core.Security;
 using AutoWork.Core.Skills;
 using AutoWork.Providers;
@@ -43,6 +44,7 @@ public sealed class AgentOrchestrator
     private readonly IKnowledgeStore _knowledge;
     private readonly ISecretStore? _secrets;
     private readonly ISkillStore? _skills;
+    private readonly IRunHistoryStore? _history;
 
     /// <summary>
     /// Called once before the tool set is built, so tool providers that need to reach the
@@ -59,7 +61,8 @@ public sealed class AgentOrchestrator
         IApprovalBroker approvals,
         IKnowledgeStore knowledge,
         ISecretStore? secrets = null,
-        ISkillStore? skills = null)
+        ISkillStore? skills = null,
+        IRunHistoryStore? history = null)
     {
         _config = config;
         _factory = factory;
@@ -72,26 +75,49 @@ public sealed class AgentOrchestrator
         // with no secret store still works — it just gets keyless web search.
         _secrets = secrets;
         _skills = skills;
+        _history = history;
     }
 
     public async Task<RunResult> RunAsync(
         string goal,
         IProgress<RunEvent>? progress = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        RunController? controller = null)
     {
         var runId = Guid.NewGuid().ToString("n")[..10];
         var stopwatch = Stopwatch.StartNew();
         var config = _config.Current;
-        var coordinator = new ApprovalCoordinator(_approvals);
+
+        var coordinator = new ApprovalCoordinator(
+            _approvals,
+            new ApprovalRuleEngine(() => config.Permissions.ApprovalRules),
+            onRuleApplied: (rule, request, decision) =>
+            {
+                // Logged at the same level as a human answer, and with the rule quoted, so the
+                // Activity log never shows an action nobody appears to have agreed to.
+                var summary = $"{request.Title} — {(decision == ApprovalDecision.Approved ? "allowed" : "refused")} by your rule";
+                var detail = $"Rule: {rule}";
+
+                if (decision == ApprovalDecision.Approved)
+                    _log.Success(runId, AgentOrgan.Brain, "approval.rule", summary, request.AffectedPaths);
+                else
+                    _log.Denied(runId, AgentOrgan.Brain, "approval.rule", summary, detail, request.AffectedPaths);
+            });
 
         // Every event passes through the tracker on its way to the UI, so step success can be
         // judged on what the tools actually returned rather than on the model's account of it.
         var tracker = new FailureTracker();
         var forward = progress is null ? new Action<RunEvent>(_ => { }) : progress.Report;
 
+        // The transcript, kept as it happens. Sub-agents report from their own threads, so this
+        // is locked — a torn list would show up as a missing tool call in the saved history.
+        var transcript = new List<RunEvent>();
+        var keepHistory = _history is not null && config.KeepRunHistory;
+
         void Report(RunEvent evt)
         {
             if (evt is ToolCallEvent call) tracker.Observe(call);
+            if (keepHistory) lock (transcript) transcript.Add(evt);
             forward(evt);
         }
 
@@ -127,6 +153,8 @@ public sealed class AgentOrchestrator
                 RunId = runId,
                 WorkingDirectory = ResolveWorkingDirectory(config, guard),
                 Search = config.Search,
+                Transcription = config.Transcription,
+                Browser = config.Browser,
                 Secrets = _secrets,
             };
 
@@ -148,11 +176,18 @@ public sealed class AgentOrchestrator
                 .Select(d => (AITool)new ObservableAIFunction(d, runId, report))
                 .ToList();
 
-            var client = _factory.CreateChatClient(executorModel);
+            // Every provider round trip goes through the meter, including the extra ones the
+            // function-invocation loop makes inside a single step — those are billed too.
+            var meter = new RunMeter();
+
+            var client = new UsageTrackingChatClient(_factory.CreateChatClient(executorModel), meter, executorModel);
 
             // ── Plan ──────────────────────────────────────────────────────────────────────
             var plannerModel = config.ResolvePlannerModel() ?? executorModel;
-            var plannerClient = plannerModel.Id == executorModel.Id ? client : _factory.CreateChatClient(plannerModel);
+
+            var plannerClient = plannerModel.Id == executorModel.Id
+                ? client
+                : new UsageTrackingChatClient(_factory.CreateChatClient(plannerModel), meter, plannerModel);
 
             var plan = await new Planner(plannerClient)
                 .CreatePlanAsync(goal, descriptors, DescribePermissions(config.Permissions), cancellationToken)
@@ -180,6 +215,47 @@ public sealed class AgentOrchestrator
 
             var compactor = new ContextCompactor(client, config.Agent);
 
+            // ── Pause and steer ───────────────────────────────────────────────────────────
+            // Held at step boundaries only. Stopping mid-step would mean abandoning a tool call
+            // already in flight or leaving a half-written file behind; waiting for the boundary
+            // costs the user a few seconds and keeps the conversation valid — the same reason
+            // compaction happens here and nowhere else.
+            async Task PauseGateAsync(int beforeStep)
+            {
+                if (controller is null) return;
+
+                var held = controller.IsPaused;
+
+                if (held)
+                {
+                    report(new RunPausedEvent { RunId = runId, BeforeStep = beforeStep });
+                    _log.Success(runId, AgentOrgan.Brain, "run.pause", $"Paused before step {beforeStep}");
+
+                    await controller.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
+                }
+
+                var correction = controller.TakeCorrection();
+
+                if (correction is not null)
+                {
+                    // Phrased so the model treats it as the user changing their mind rather than
+                    // as one more requirement to satisfy alongside the original wording.
+                    messages.Add(new ChatMessage(ChatRole.User,
+                        $"""
+                         The user interrupted the run to correct you. This supersedes anything earlier
+                         that conflicts with it — adjust the remaining work accordingly, and do not
+                         redo what is already done unless the correction asks for it.
+
+                         {correction}
+                         """));
+
+                    _log.Success(runId, AgentOrgan.Brain, "run.steer", $"Correction: {Trim(correction, 160)}");
+                }
+
+                if (held || correction is not null)
+                    report(new RunResumedEvent { RunId = runId, Correction = correction });
+            }
+
             // ── Execute ───────────────────────────────────────────────────────────────────
             var executed = 0;
             var consecutiveFailures = 0;
@@ -201,12 +277,16 @@ public sealed class AgentOrchestrator
 
                 if (runInParallel)
                 {
+                    await PauseGateAsync(group[0].Index).ConfigureAwait(false);
+
                     var outcome = await new SubAgentCoordinator(client, config.Agent, tools)
                         .RunAsync(runId, goal, group, config.Permissions, context.WorkingDirectory, report, cancellationToken)
                         .ConfigureAwait(false);
 
                     messages.Add(new ChatMessage(ChatRole.User,
                         $"Parallel sub-tasks finished. Their reports:\n\n{outcome.Transcript}"));
+
+                    ReportUsage(runId, meter, report);
 
                     executed += group.Count;
                     consecutiveFailures = outcome.AllFailed ? consecutiveFailures + 1 : 0;
@@ -217,9 +297,13 @@ public sealed class AgentOrchestrator
                     {
                         cancellationToken.ThrowIfCancellationRequested();
 
+                        await PauseGateAsync(step.Index).ConfigureAwait(false);
+
                         var succeeded = await ExecuteStepAsync(
                             runId, step, messages, options, client, compactor, executorModel,
                             tracker, report, cancellationToken).ConfigureAwait(false);
+
+                        ReportUsage(runId, meter, report);
 
                         executed++;
                         consecutiveFailures = succeeded ? 0 : consecutiveFailures + 1;
@@ -261,6 +345,10 @@ public sealed class AgentOrchestrator
 
             var summary = await SummariseRunAsync(client, goal, messages, cancellationToken).ConfigureAwait(false);
             stopwatch.Stop();
+
+            // After the summariser and the verifier, so the closing figure is the whole run
+            // rather than everything up to the last step.
+            ReportUsage(runId, meter, report);
 
             var status = verification is { Passed: false } ? RunStatus.Failed : RunStatus.Succeeded;
 
@@ -317,7 +405,53 @@ public sealed class AgentOrchestrator
         finally
         {
             coordinator.ForgetRun(runId);
+
+            // Nothing may sit waiting on a controller for a run that has ended.
+            controller?.Abandon();
+
+            if (keepHistory)
+            {
+                RunEvent[] saved;
+                lock (transcript) saved = [.. transcript];
+
+                try
+                {
+                    // Deliberately not the run's token: a cancelled run is exactly the kind the
+                    // user wants to look back at, and passing the cancelled token here would
+                    // throw before anything reached disk.
+                    await _history!.SaveAsync(runId, goal, saved, CancellationToken.None).ConfigureAwait(false);
+                    _history.Prune(config.RunHistoryRetentionDays);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+                {
+                    // History is a convenience. Failing to write it must never change the result
+                    // of work that has already been done.
+                    _log.Failure(runId, AgentOrgan.Brain, "run.history",
+                        "The run finished but its transcript could not be saved", ex.Message);
+                }
+            }
         }
+    }
+
+    /// <summary>
+    /// Emits the meter's running total. Silent until at least one call has been made, so a run
+    /// that fails before reaching a provider does not report a confident "0 tokens".
+    /// </summary>
+    private static void ReportUsage(string runId, RunMeter meter, Action<RunEvent> report)
+    {
+        var usage = meter.Snapshot();
+        if (!usage.HasAnything) return;
+
+        report(new UsageEvent
+        {
+            RunId = runId,
+            InputTokens = usage.InputTokens,
+            OutputTokens = usage.OutputTokens,
+            Calls = usage.Calls,
+            CallsWithoutUsage = usage.CallsWithoutUsage,
+            Cost = usage.Cost,
+            Currency = usage.Currency,
+        });
     }
 
     // ── Steps ─────────────────────────────────────────────────────────────────────────────
@@ -354,7 +488,10 @@ public sealed class AgentOrchestrator
 
         try
         {
-            var response = await client.GetResponseAsync(messages, options, cancellationToken).ConfigureAwait(false);
+            var response = _config.Current.Agent.EnableStreaming
+                ? await StreamStepAsync(runId, step, messages, options, client, report, cancellationToken).ConfigureAwait(false)
+                : await client.GetResponseAsync(messages, options, cancellationToken).ConfigureAwait(false);
+
             messages.AddRange(response.Messages);
 
             stopwatch.Stop();
@@ -404,6 +541,66 @@ public sealed class AgentOrchestrator
 
             return false;
         }
+    }
+
+    /// <summary>
+    /// Runs a step with the reply streamed, so long reasoning is visible as it forms rather than
+    /// arriving as a block when the step is already over.
+    ///
+    /// Tool calls are not this method's problem: the function-invocation layer sits below and
+    /// handles a call that arrives in fragments, then continues the stream with the result. What
+    /// this does is accumulate the updates back into one response — the step loop still wants a
+    /// whole reply and a set of messages to append — while emitting the text as it arrives.
+    ///
+    /// If streaming fails <em>before any content arrives</em>, the same request is made again
+    /// without it. Some gateways advertise streaming and then reject it, and a run that dies for
+    /// that reason would be a worse outcome than one that quietly went back to waiting. A failure
+    /// after content has arrived is a real failure and is left to the caller: retrying then would
+    /// risk repeating a tool call that already ran.
+    /// </summary>
+    private async Task<ChatResponse> StreamStepAsync(
+        string runId,
+        PlanStep step,
+        List<ChatMessage> messages,
+        ChatOptions options,
+        IChatClient client,
+        Action<RunEvent> report,
+        CancellationToken cancellationToken)
+    {
+        var updates = new List<ChatResponseUpdate>();
+        var streamed = new StringBuilder();
+
+        try
+        {
+            await foreach (var update in client
+                               .GetStreamingResponseAsync(messages, options, cancellationToken)
+                               .ConfigureAwait(false))
+            {
+                updates.Add(update);
+
+                var text = update.Text;
+                if (string.IsNullOrEmpty(text)) continue;
+
+                streamed.Append(text);
+
+                report(new AssistantDeltaEvent
+                {
+                    RunId = runId,
+                    StepIndex = step.Index,
+                    Delta = text,
+                    Text = streamed.ToString(),
+                });
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException && updates.Count == 0)
+        {
+            _log.Failure(runId, AgentOrgan.Brain, "stream.fallback",
+                "Streaming was not available, so the step ran without it", ex.Message);
+
+            return await client.GetResponseAsync(messages, options, cancellationToken).ConfigureAwait(false);
+        }
+
+        return updates.ToChatResponse();
     }
 
     private static string BuildStepInstruction(PlanStep step)

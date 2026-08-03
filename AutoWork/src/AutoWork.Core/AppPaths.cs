@@ -20,6 +20,12 @@ public static class AppPaths
     public static string ScreenshotsDirectory => Path.Combine(Root, "screenshots");
 
     /// <summary>
+    /// Soft-deleted files, plus the index recording where each came from. Inside <see cref="Root"/>
+    /// so the guard refuses it: the agent must not be able to read back something it deleted.
+    /// </summary>
+    public static string RecycleDirectory => Path.Combine(Root, "recycle");
+
+    /// <summary>
     /// Installed agent skills, one folder each. Inside <see cref="Root"/> on purpose: the guard
     /// refuses everything under here, so the agent cannot edit its own instructions with the
     /// file tools.
@@ -76,6 +82,7 @@ public static class AppPaths
         Directory.CreateDirectory(RunsDirectory);
         Directory.CreateDirectory(ScreenshotsDirectory);
         Directory.CreateDirectory(SkillsDirectory);
+        Directory.CreateDirectory(RecycleDirectory);
 
         // Lives outside Root and belongs to the user, but must exist before it can be granted.
         Directory.CreateDirectory(WorkspaceDirectory);

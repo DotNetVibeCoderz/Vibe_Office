@@ -31,6 +31,16 @@ public sealed class PermissionPolicy
     public List<PermissionRoot> Roots { get; set; } = [];
 
     /// <summary>
+    /// Standing answers to consent prompts. Empty by default — every action is asked about until
+    /// the user says otherwise.
+    ///
+    /// These decide what gets <em>asked</em>, never what is permitted: an allowed request still
+    /// goes through <see cref="PathGuard"/> when it runs, so no rule can reach outside
+    /// <see cref="Roots"/>.
+    /// </summary>
+    public List<ApprovalRule> ApprovalRules { get; set; } = [];
+
+    /// <summary>
     /// Glob patterns refused even inside an allowed root. Supports *, ? and **.
     /// Seeded with the obvious credential traps.
     /// </summary>
@@ -68,6 +78,16 @@ public sealed class PermissionPolicy
     /// and gets the same explicit switch rather than riding in on "add a server".
     /// </summary>
     public bool AllowMcpServers { get; set; } = false;
+
+    /// <summary>
+    /// Whether a skill's bundled scripts may be run. Off by default, and deliberately separate
+    /// from <see cref="AllowShell"/>: this is code downloaded from a repository, so agreeing to
+    /// run your own shell commands is not the same as agreeing to run someone else's script.
+    /// </summary>
+    public bool AllowSkillScripts { get; set; } = false;
+
+    /// <summary>Ask before each script. On by default — the point of the gate is the asking.</summary>
+    public bool SkillScriptsRequireApproval { get; set; } = true;
 
     /// <summary>If non-empty, only commands whose executable matches one of these may run.</summary>
     public List<string> ShellAllowList { get; set; } = [];

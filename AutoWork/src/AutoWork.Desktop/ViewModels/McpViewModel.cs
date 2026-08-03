@@ -30,6 +30,17 @@ public sealed partial class McpCatalogViewModel : ObservableObject
     public string Requires => Entry.Requires;
     public string HomeUrl => Entry.HomeUrl;
 
+    /// <summary>
+    /// "Figma's own server" and "someone's Figma server" are very different things to hand your
+    /// account to, so the gallery says which this is rather than leaving it to be assumed.
+    /// </summary>
+    public bool Official => Entry.Official;
+
+    public bool Community => !Entry.Official;
+
+    public string Setup => Entry.Setup;
+    public bool HasSetup => !string.IsNullOrWhiteSpace(Entry.Setup);
+
     public ObservableCollection<McpParameterViewModel> Parameters { get; } = [];
 
     public bool HasParameters => Parameters.Count > 0;
@@ -174,6 +185,99 @@ public sealed partial class McpViewModel : ObservableObject
         }
 
         _services.Config.Update(config => config.McpServers.Add(settings));
+
+        ReloadServers();
+        Status = string.Format(L["mcp.added"], settings.Name);
+    }
+
+    // ── Adding one by hand ────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The form for a server the catalogue does not carry — which is most of them. The vendor's
+    /// own server usually is the interesting one, and Unity and Unreal only exist this way.
+    /// </summary>
+    [ObservableProperty] private bool _manualOpen;
+
+    [ObservableProperty] private string _manualName = "";
+    [ObservableProperty] private int _manualTransport;
+    [ObservableProperty] private string _manualCommand = "npx";
+    [ObservableProperty] private string _manualArguments = "";
+    [ObservableProperty] private string _manualUrl = "";
+    [ObservableProperty] private string _manualEnvironment = "";
+
+    public IReadOnlyList<string> ManualTransports => [L["mcp.manual.stdio"], L["mcp.manual.http"]];
+
+    public bool ManualIsStdio => ManualTransport == (int)McpTransport.Stdio;
+    public bool ManualIsHttp => ManualTransport == (int)McpTransport.Http;
+
+    partial void OnManualTransportChanged(int value)
+    {
+        OnPropertyChanged(nameof(ManualIsStdio));
+        OnPropertyChanged(nameof(ManualIsHttp));
+    }
+
+    /// <summary>Where to look for a server this catalogue does not carry.</summary>
+    public IReadOnlyList<McpSource> Sources => McpCatalog.Sources;
+
+    [RelayCommand]
+    private void ToggleManual() => ManualOpen = !ManualOpen;
+
+    [RelayCommand]
+    private void OpenSource(McpSource? source)
+    {
+        if (source is not null) ActivityViewModel.OpenUrl(source.Url);
+    }
+
+    [RelayCommand]
+    private void AddManual()
+    {
+        var transport = (McpTransport)ManualTransport;
+        var name = ManualName.Trim();
+
+        if (name.Length == 0)
+        {
+            Status = L["mcp.manual.needname"];
+            return;
+        }
+
+        if (transport == McpTransport.Stdio && ManualCommand.Trim().Length == 0)
+        {
+            Status = L["mcp.manual.needcommand"];
+            return;
+        }
+
+        if (transport == McpTransport.Http && !Uri.TryCreate(ManualUrl.Trim(), UriKind.Absolute, out _))
+        {
+            Status = L["mcp.manual.needurl"];
+            return;
+        }
+
+        var settings = new McpServerSettings
+        {
+            Name = name,
+            Description = L["mcp.manual.added.note"],
+            Transport = transport,
+            Command = transport == McpTransport.Stdio ? ManualCommand.Trim() : "",
+            Arguments = transport == McpTransport.Stdio ? [.. McpManualEntry.SplitArguments(ManualArguments)] : [],
+            Url = transport == McpTransport.Http ? ManualUrl.Trim() : "",
+        };
+
+        foreach (var (key, value) in McpManualEntry.ParseEnvironment(ManualEnvironment))
+        {
+            // A value typed here could be a token, so it goes to the secret store like any other
+            // and config.json keeps only the reference.
+            var secretName = $"mcp.{settings.Id}.{key}";
+            _services.Secrets.Set(secretName, value);
+            settings.Environment[key] = secretName;
+        }
+
+        _services.Config.Update(config => config.McpServers.Add(settings));
+
+        ManualOpen = false;
+        ManualName = "";
+        ManualArguments = "";
+        ManualUrl = "";
+        ManualEnvironment = "";
 
         ReloadServers();
         Status = string.Format(L["mcp.added"], settings.Name);

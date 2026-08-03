@@ -25,6 +25,16 @@ namespace AutoWork.Tests;
 /// </summary>
 public sealed class LiveResearchTests : IDisposable
 {
+    /// <summary>
+    /// A stable copy of the events seen so far. `Progress&lt;T&gt;` delivers on another thread, so a
+    /// callback can still arrive while the assertions enumerate — which is exactly how one live
+    /// run failed with "Collection was modified".
+    /// </summary>
+    private static RunEvent[] Snapshot(List<RunEvent> events)
+    {
+        lock (events) return [.. events];
+    }
+
     private const string Topic = "retrieval augmented generation";
 
     private readonly string _sandbox;
@@ -95,11 +105,11 @@ public sealed class LiveResearchTests : IDisposable
              Keep both brief. Mention "{Topic}" by name in each file. Base the content on what the
              search actually returned rather than on memory.
              """,
-            new Progress<RunEvent>(events.Add),
+            new Progress<RunEvent>(e => { lock (events) events.Add(e); }),
             TestContext.Current.CancellationToken);
 
-        var searched = events.OfType<ToolCallEvent>().Any(e => e.Tool == "web_search" && e.Result is not null);
-        var toolsUsed = string.Join(", ", events.OfType<ToolCallEvent>().Select(e => e.Tool).Distinct());
+        var searched = Snapshot(events).OfType<ToolCallEvent>().Any(e => e.Tool == "web_search" && e.Result is not null);
+        var toolsUsed = string.Join(", ", Snapshot(events).OfType<ToolCallEvent>().Select(e => e.Tool).Distinct());
 
         Assert.True(searched, $"The run never searched the web. Tools used: {toolsUsed}. Summary: {result.Summary}");
 
@@ -118,7 +128,7 @@ public sealed class LiveResearchTests : IDisposable
         var text = document.MainDocumentPart?.Document?.Body?.InnerText ?? "";
 
         Assert.True(text.Length > 200, $"report.docx holds only {text.Length} characters of text.");
-        Assert.Contains(Topic, text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(Topic, Normalise(text), StringComparison.OrdinalIgnoreCase);
     }
 
     private static void AssertPowerPointDeck(string path, RunResult result, string toolsUsed)
@@ -134,8 +144,15 @@ public sealed class LiveResearchTests : IDisposable
         Assert.True(slides.Count >= 3, $"The deck has {slides.Count} slide(s); at least three were asked for.");
 
         var text = string.Join(" ", slides.Select(s => s.Slide?.InnerText ?? ""));
-        Assert.Contains(Topic, text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(Topic, Normalise(text), StringComparison.OrdinalIgnoreCase);
     }
+
+    /// <summary>
+    /// "Retrieval-Augmented Generation" and "retrieval augmented generation" are the same topic.
+    /// A deck was once rejected purely for hyphenating its own title, which tested punctuation
+    /// rather than whether the research landed.
+    /// </summary>
+    private static string Normalise(string text) => text.Replace('-', ' ').Replace('‑', ' ');
 
     /// <summary>A missing file is the interesting failure, so say what the run actually did.</summary>
     private static string Explain(string name, string path, RunResult result, string toolsUsed) =>

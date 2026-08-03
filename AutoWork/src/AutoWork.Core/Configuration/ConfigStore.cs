@@ -13,10 +13,27 @@ namespace AutoWork.Core.Configuration;
 /// </summary>
 public sealed class ConfigStore
 {
+    /// <summary>
+    /// camelCase out, either casing in.
+    ///
+    /// This file is documented and meant to be hand-edited, so the two settings matter more than
+    /// they look. Without the naming policy the app wrote `"Permissions"` while the documentation
+    /// showed `"permissions"`; without case-insensitive reading, a config written the documented
+    /// way parsed cleanly into *nothing* — every section silently replaced by its default. The
+    /// first thing lost that way is the user's folder grants, and losing a permission quietly is
+    /// the worst possible way to lose one.
+    ///
+    /// Reading is case-insensitive rather than camelCase-only so that files written by earlier
+    /// builds still load; they are rewritten in the new casing on the next save.
+    /// </summary>
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
         WriteIndented = true,
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        PropertyNameCaseInsensitive = true,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        // Enum values stay PascalCase — "ReadWrite", "Anthropic" — which is what the documented
+        // examples show and what every existing file contains.
         Converters = { new JsonStringEnumConverter() },
     };
 

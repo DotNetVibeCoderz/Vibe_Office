@@ -35,6 +35,27 @@
                        CommandParameter="{x:Static vm:Section.Work}" />
 
           <RadioButton Classes="nav" GroupName="section"
+                       AutomationProperties.AutomationId="NavJobs"
+                       Content="{Binding L[nav.jobs]}"
+                       IsChecked="{Binding IsJobs, Mode=OneWay}"
+                       Command="{Binding NavigateCommand}"
+                       CommandParameter="{x:Static vm:Section.Jobs}" />
+
+          <RadioButton Classes="nav" GroupName="section"
+                       AutomationProperties.AutomationId="NavHistory"
+                       Content="{Binding L[nav.history]}"
+                       IsChecked="{Binding IsHistory, Mode=OneWay}"
+                       Command="{Binding NavigateCommand}"
+                       CommandParameter="{x:Static vm:Section.History}" />
+
+          <RadioButton Classes="nav" GroupName="section"
+                       AutomationProperties.AutomationId="NavRecycle"
+                       Content="{Binding L[nav.recycle]}"
+                       IsChecked="{Binding IsRecycle, Mode=OneWay}"
+                       Command="{Binding NavigateCommand}"
+                       CommandParameter="{x:Static vm:Section.Recycle}" />
+
+          <RadioButton Classes="nav" GroupName="section"
                        AutomationProperties.AutomationId="NavActivity"
                        Content="{Binding L[nav.activity]}"
                        IsChecked="{Binding IsActivity, Mode=OneWay}"
@@ -104,14 +125,28 @@
 
           <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="16" VerticalAlignment="Center"
                       IsVisible="{Binding Work.IsRunning}">
+            <TextBlock Text="{Binding Work.TokenNote}" Classes="mono faint" VerticalAlignment="Center"
+                       IsVisible="{Binding Work.HasUsage}" />
             <TextBlock Text="{Binding Work.Elapsed}" Classes="mono dim" VerticalAlignment="Center" />
-            <Button Classes="ghost" Content="{Binding L[work.stop]}" Command="{Binding Work.StopCommand}" />
+            <Button Classes="ghost"
+                    AutomationProperties.AutomationId="PauseRun"
+                    Content="{Binding L[work.pause]}"
+                    Command="{Binding Work.PauseCommand}"
+                    IsEnabled="{Binding !Work.IsPausing}"
+                    IsVisible="{Binding !Work.IsPaused}" />
+            <Button Classes="ghost"
+                    AutomationProperties.AutomationId="StopRun"
+                    Content="{Binding L[work.stop]}"
+                    Command="{Binding Work.StopCommand}" />
           </StackPanel>
         </Grid>
       </Border>
 
       <Panel Grid.Row="1">
         <views:WorkView DataContext="{Binding Work}" IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).IsWork}" />
+        <views:JobsView DataContext="{Binding JobsPage}" IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).IsJobs}" />
+        <views:HistoryView DataContext="{Binding History}" IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).IsHistory}" />
+        <views:RecycleView DataContext="{Binding Recycle}" IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).IsRecycle}" />
         <views:ActivityView DataContext="{Binding Activity}" IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).IsActivity}" />
         <views:KnowledgeView DataContext="{Binding Knowledge}" IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).IsKnowledge}" />
         <views:SkillsView DataContext="{Binding Skills}" IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).IsSkills}" />

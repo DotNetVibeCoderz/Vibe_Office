@@ -18,6 +18,7 @@ public partial class MainWindow : Window
             if (DataContext is not MainWindowViewModel model) return;
 
             model.SettingsPage.PickFolder = PickFolderAsync;
+            model.JobsPage.PickFolder = PickFolderAsync;
             model.Knowledge.PickFiles = PickDocumentsAsync;
         };
     }

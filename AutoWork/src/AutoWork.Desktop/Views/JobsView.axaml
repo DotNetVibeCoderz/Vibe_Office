@@ -1,0 +1,125 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:AutoWork.Desktop.ViewModels"
+             x:Class="AutoWork.Desktop.Views.JobsView"
+             x:DataType="vm:JobsViewModel">
+
+  <Grid RowDefinitions="Auto,*" Margin="26,22,26,0">
+
+    <StackPanel Grid.Row="0" Spacing="12" Margin="0,0,0,16">
+      <Grid ColumnDefinitions="*,Auto">
+        <StackPanel Grid.Column="0" Spacing="3">
+          <TextBlock Text="{Binding L[jobs.title]}" Classes="title" />
+          <TextBlock Text="{Binding L[jobs.subtitle]}" Classes="dim" TextWrapping="Wrap" />
+        </StackPanel>
+
+        <Button Grid.Column="1" Classes="primary" VerticalAlignment="Center"
+                AutomationProperties.AutomationId="AddJob"
+                Content="{Binding L[jobs.add]}"
+                Command="{Binding AddCommand}" />
+      </Grid>
+
+      <Border Classes="inset" IsVisible="{Binding HasStatus}">
+        <TextBlock Text="{Binding Status}" TextWrapping="Wrap" />
+      </Border>
+    </StackPanel>
+
+    <ScrollViewer Grid.Row="1" Margin="0,0,0,26">
+      <StackPanel Spacing="12">
+
+        <StackPanel Spacing="4" IsVisible="{Binding IsEmpty}" Margin="2,4,0,0">
+          <TextBlock Text="{Binding L[jobs.empty]}" Classes="dim" />
+          <TextBlock Text="{Binding L[jobs.empty.hint]}" Classes="faint" />
+        </StackPanel>
+
+        <ItemsControl ItemsSource="{Binding Jobs}" AutomationProperties.AutomationId="JobList">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:JobViewModel">
+              <Border Classes="card" Margin="0,0,0,10">
+                <StackPanel Spacing="10">
+
+                  <Grid ColumnDefinitions="Auto,*,Auto">
+                    <CheckBox Grid.Column="0" IsChecked="{Binding Enabled}"
+                              Content="{Binding L[jobs.enabled]}" />
+
+                    <TextBox Grid.Column="1" Text="{Binding Name}" Margin="12,0,0,0"
+                             Watermark="{Binding L[jobs.name]}" />
+
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" Margin="8,0,0,0">
+                      <Button Classes="ghost"
+                              AutomationProperties.AutomationId="RunJobNow"
+                              Content="{Binding L[jobs.runnow]}"
+                              Command="{Binding $parent[ItemsControl].((vm:JobsViewModel)DataContext).RunNowCommand}"
+                              CommandParameter="{Binding}" />
+                      <Button Classes="ghost"
+                              AutomationProperties.AutomationId="ApplyJob"
+                              Content="{Binding L[jobs.apply]}"
+                              Command="{Binding $parent[ItemsControl].((vm:JobsViewModel)DataContext).ApplyCommand}"
+                              CommandParameter="{Binding}" />
+                      <Button Classes="ghost danger" Content="×"
+                              Command="{Binding $parent[ItemsControl].((vm:JobsViewModel)DataContext).RemoveCommand}"
+                              CommandParameter="{Binding}" />
+                    </StackPanel>
+                  </Grid>
+
+                  <TextBox Text="{Binding Goal}"
+                           AutomationProperties.AutomationId="JobGoal"
+                           Watermark="{Binding L[jobs.goal]}"
+                           AcceptsReturn="True" TextWrapping="Wrap"
+                           MinHeight="56" MaxHeight="140" />
+
+                  <Grid ColumnDefinitions="180,*">
+                    <ComboBox Grid.Column="0" ItemsSource="{Binding Triggers}" SelectedIndex="{Binding TriggerIndex}"
+                              AutomationProperties.AutomationId="JobTrigger"
+                              HorizontalAlignment="Stretch" />
+
+                    <!-- Schedule -->
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" Margin="10,0,0,0"
+                                IsVisible="{Binding IsScheduled}">
+                      <ComboBox ItemsSource="{Binding Periods}" SelectedIndex="{Binding PeriodIndex}" MinWidth="120" />
+                      <ComboBox ItemsSource="{Binding Days}" SelectedIndex="{Binding DayIndex}"
+                                MinWidth="130" IsVisible="{Binding NeedsDay}" />
+                      <NumericUpDown Value="{Binding Hour}" Minimum="0" Maximum="23" FormatString="00"
+                                     Width="86" IsVisible="{Binding NeedsTime}" />
+                      <NumericUpDown Value="{Binding Minute}" Minimum="0" Maximum="59" FormatString="00"
+                                     Width="86" IsVisible="{Binding NeedsTime}" />
+                    </StackPanel>
+
+                    <!-- Folder trigger -->
+                    <Grid Grid.Column="1" ColumnDefinitions="*,Auto,Auto" Margin="10,0,0,0"
+                          IsVisible="{Binding IsFolder}">
+                      <TextBox Grid.Column="0" Text="{Binding WatchFolder}"
+                               Watermark="{Binding L[jobs.folder]}" />
+                      <TextBox Grid.Column="1" Text="{Binding WatchFilter}" Width="110" Margin="8,0,0,0"
+                               Watermark="{Binding L[jobs.filter]}" />
+                      <Button Grid.Column="2" Classes="ghost" Margin="8,0,0,0"
+                              Content="{Binding L[rules.browse]}"
+                              Command="{Binding $parent[ItemsControl].((vm:JobsViewModel)DataContext).PickFolderCommand}"
+                              CommandParameter="{Binding}" />
+                    </Grid>
+                  </Grid>
+
+                  <StackPanel Orientation="Horizontal" Spacing="16" IsVisible="{Binding IsFolder}">
+                    <CheckBox IsChecked="{Binding WatchSubfolders}" Content="{Binding L[jobs.subfolders]}" />
+                    <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                      <TextBlock Text="{Binding L[jobs.quiet]}" Classes="faint" VerticalAlignment="Center" />
+                      <NumericUpDown Value="{Binding QuietSeconds}" Minimum="1" Maximum="3600" FormatString="0" Width="96" />
+                    </StackPanel>
+                  </StackPanel>
+
+                  <TextBlock Text="{Binding NextRun}" Classes="mono faint" IsVisible="{Binding HasNextRun}" />
+                  <TextBlock Text="{Binding LastRun}" Classes="mono faint" IsVisible="{Binding HasLastRun}" />
+
+                  <TextBlock Text="{Binding Problem}"
+                             Foreground="{DynamicResource Warning}"
+                             TextWrapping="Wrap"
+                             IsVisible="{Binding HasProblem}" />
+                </StackPanel>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
+</UserControl>

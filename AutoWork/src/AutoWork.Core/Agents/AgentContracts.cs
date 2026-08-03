@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using AutoWork.Core.Logging;
 using AutoWork.Core.Security;
 using Microsoft.Extensions.AI;
@@ -86,6 +87,18 @@ public sealed class ToolContext
 
     public Configuration.WebSearchOptions Search { get; init; } = new();
 
+    /// <summary>Speech-to-text settings. Off by default, so the tool refuses until configured.</summary>
+    public Meetings.TranscriptionSettings Transcription { get; init; } = new();
+
+    /// <summary>Signed-in browser automation. Off by default — it is every account the user has.</summary>
+    public Browsing.BrowserSettings Browser { get; init; } = new();
+
+    /// <summary>
+    /// Where soft-deleted files go. Defaulted rather than required so a tool set can be built in
+    /// a test without one, and shared so the Recycle page and the delete tool agree on the index.
+    /// </summary>
+    public Storage.IRecycleBin Recycle { get; init; } = new Storage.RecycleBin();
+
     /// <summary>
     /// Resolves API keys a tool needs, the same way models resolve theirs — so a key still
     /// lives in the secret store or an environment variable and never in config.json.
@@ -107,6 +120,26 @@ public interface IToolProvider
 // The orchestrator reports progress as immutable events. Core stays free of UI types; the
 // desktop layer turns these into observable rows on the Work Tape.
 
+/// <summary>
+/// The discriminators exist so a run can be written to disk and read back as the same events.
+/// They are short and fixed: a saved transcript outlives the build that wrote it, so renaming a
+/// class must not make yesterday's history unreadable.
+/// </summary>
+[JsonPolymorphic(TypeDiscriminatorPropertyName = "kind")]
+[JsonDerivedType(typeof(RunStartedEvent), "run.started")]
+[JsonDerivedType(typeof(PlanReadyEvent), "plan")]
+[JsonDerivedType(typeof(StepStartedEvent), "step.started")]
+[JsonDerivedType(typeof(StepFinishedEvent), "step.finished")]
+[JsonDerivedType(typeof(ToolCallEvent), "tool")]
+[JsonDerivedType(typeof(AssistantMessageEvent), "assistant")]
+[JsonDerivedType(typeof(AssistantDeltaEvent), "assistant.delta")]
+[JsonDerivedType(typeof(CompactionEvent), "compaction")]
+[JsonDerivedType(typeof(ApprovalRequestedEvent), "approval")]
+[JsonDerivedType(typeof(SubAgentEvent), "subagent")]
+[JsonDerivedType(typeof(UsageEvent), "usage")]
+[JsonDerivedType(typeof(RunPausedEvent), "run.paused")]
+[JsonDerivedType(typeof(RunResumedEvent), "run.resumed")]
+[JsonDerivedType(typeof(RunFinishedEvent), "run.finished")]
 public abstract record RunEvent
 {
     public string RunId { get; init; } = "";
@@ -154,6 +187,20 @@ public sealed record AssistantMessageEvent : RunEvent
     public required string Text { get; init; }
 }
 
+/// <summary>
+/// A fragment of the assistant's reply, as it arrives. <see cref="Text"/> carries everything so
+/// far, so a consumer that misses one update — or joins late — still shows the right thing.
+///
+/// A closing <see cref="AssistantMessageEvent"/> always follows, so anything that only cares
+/// about the finished reply can ignore these entirely.
+/// </summary>
+public sealed record AssistantDeltaEvent : RunEvent
+{
+    public required string Delta { get; init; }
+    public required string Text { get; init; }
+    public int StepIndex { get; init; }
+}
+
 /// <summary>Emitted when the context window filled up and older turns were summarised away.</summary>
 public sealed record CompactionEvent : RunEvent
 {
@@ -175,6 +222,44 @@ public sealed record SubAgentEvent : RunEvent
     public required string Task { get; init; }
     public required StepStatus Status { get; init; }
     public string? Result { get; init; }
+}
+
+/// <summary>
+/// What the run has spent so far, as the provider reported it. Emitted at step boundaries rather
+/// than per request — a meter that flickers on every tool round trip is noise, not information.
+/// </summary>
+public sealed record UsageEvent : RunEvent
+{
+    public required long InputTokens { get; init; }
+    public required long OutputTokens { get; init; }
+    public int Calls { get; init; }
+
+    /// <summary>
+    /// Calls the provider answered without reporting usage. When this is above zero the token
+    /// counts are a floor, and the UI shows them as "at least" rather than as a total.
+    /// </summary>
+    public int CallsWithoutUsage { get; init; }
+
+    /// <summary>Null unless the model has both prices filled in. Never inferred.</summary>
+    public decimal? Cost { get; init; }
+
+    public string Currency { get; init; } = "USD";
+
+    public long TotalTokens => InputTokens + OutputTokens;
+}
+
+/// <summary>The run stopped between steps at the user's request and is waiting to be resumed.</summary>
+public sealed record RunPausedEvent : RunEvent
+{
+    /// <summary>Which step the run is holding in front of, 1-based. 0 before the plan exists.</summary>
+    public int BeforeStep { get; init; }
+}
+
+/// <summary>The run picked up again, carrying whatever correction the user typed while it waited.</summary>
+public sealed record RunResumedEvent : RunEvent
+{
+    /// <summary>Null when the user simply resumed without changing anything.</summary>
+    public string? Correction { get; init; }
 }
 
 public sealed record RunFinishedEvent : RunEvent

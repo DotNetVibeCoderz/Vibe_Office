@@ -7,6 +7,23 @@
   <ScrollViewer Padding="26,22,26,32">
     <StackPanel Spacing="18" MaxWidth="880" HorizontalAlignment="Left">
 
+      <!-- ── Started by a saved job ──────────────────────────────────────────────────── -->
+      <Border Classes="inset" IsVisible="{Binding HasJobNote}">
+        <TextBlock Text="{Binding JobNote}" Classes="dim" TextWrapping="Wrap" />
+      </Border>
+
+      <!-- ── Viewing a past run ──────────────────────────────────────────────────────── -->
+      <Border Classes="card" IsVisible="{Binding IsViewingHistory}">
+        <Grid ColumnDefinitions="*,Auto">
+          <TextBlock Grid.Column="0" Text="{Binding L[history.viewing]}" Classes="dim" VerticalAlignment="Center" />
+          <Button Grid.Column="1"
+                  Classes="ghost"
+                  AutomationProperties.AutomationId="CloseHistory"
+                  Content="{Binding L[history.close]}"
+                  Command="{Binding ClearCommand}" />
+        </Grid>
+      </Border>
+
       <!-- ── Composer ────────────────────────────────────────────────────────────────── -->
       <Border Classes="card">
         <StackPanel Spacing="12">
@@ -32,6 +49,7 @@
                     Command="{Binding StartCommand}" />
 
             <Button Grid.Column="1"
+                    AutomationProperties.AutomationId="ClearRun"
                     Classes="ghost"
                     Margin="8,0,0,0"
                     Content="{Binding L[work.clear]}"
@@ -47,6 +65,53 @@
           <Border Classes="inset" IsVisible="{Binding !HasModel}">
             <TextBlock Text="{Binding L[work.nomodel]}" Foreground="{DynamicResource Warning}" />
           </Border>
+        </StackPanel>
+      </Border>
+
+      <!-- ── Pause and steer ─────────────────────────────────────────────────────────── -->
+      <!--
+        Available for the whole run, not only once paused: someone who spots the mistake while
+        it is still working should be able to say so without stopping it first. Either way the
+        correction lands at the next step boundary.
+      -->
+      <Border Classes="card" IsVisible="{Binding IsRunning}">
+        <StackPanel Spacing="10">
+          <TextBlock Text="{Binding L[work.steer]}" Classes="eyebrow" />
+
+          <Border Classes="inset" IsVisible="{Binding IsPausing}">
+            <TextBlock Text="{Binding L[work.pausing]}" Classes="dim" />
+          </Border>
+
+          <Border Classes="inset" IsVisible="{Binding IsPaused}">
+            <TextBlock Text="{Binding L[work.paused]}" Foreground="{DynamicResource Warning}" />
+          </Border>
+
+          <TextBox Text="{Binding Correction}"
+                   AutomationProperties.AutomationId="CorrectionInput"
+                   AutomationProperties.Name="{Binding L[work.steer]}"
+                   Watermark="{Binding L[work.steer.hint]}"
+                   AcceptsReturn="True"
+                   TextWrapping="Wrap"
+                   MinHeight="56"
+                   MaxHeight="140" />
+
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <Button Classes="primary"
+                    AutomationProperties.AutomationId="ResumeRun"
+                    Content="{Binding L[work.resume]}"
+                    Command="{Binding ResumeCommand}"
+                    IsVisible="{Binding IsPaused}" />
+
+            <Button AutomationProperties.AutomationId="SteerRun"
+                    Content="{Binding L[work.steer.send]}"
+                    Command="{Binding SteerCommand}"
+                    IsVisible="{Binding !IsPaused}" />
+
+            <TextBlock Text="{Binding L[work.steer.queued]}"
+                       Classes="faint"
+                       VerticalAlignment="Center"
+                       IsVisible="{Binding CorrectionQueued}" />
+          </StackPanel>
         </StackPanel>
       </Border>
 
@@ -113,6 +178,51 @@
                 <Border Classes="inset" IsVisible="{Binding HasDetail}">
                   <TextBlock Text="{Binding Detail}" Classes="mono dim" />
                 </Border>
+
+                <!-- What the write would change. Only present when there is an existing file to
+                     compare against, so a new file is not shown as a wall of additions. -->
+                <StackPanel Spacing="5" IsVisible="{Binding HasPreview}">
+                  <Grid ColumnDefinitions="Auto,*">
+                    <TextBlock Grid.Column="0"
+                               Text="{Binding $parent[ItemsControl].((vm:WorkViewModel)DataContext).L[approval.changes]}"
+                               Classes="eyebrow" />
+                    <TextBlock Grid.Column="1"
+                               Text="{Binding PreviewSummary}"
+                               Classes="mono faint"
+                               Margin="10,0,0,0" />
+                  </Grid>
+
+                  <TextBlock Text="{Binding PreviewNote}"
+                             Classes="faint"
+                             TextWrapping="Wrap"
+                             IsVisible="{Binding HasPreviewNote}" />
+
+                  <Border Classes="inset" Padding="0" IsVisible="{Binding HasDiffLines}">
+                    <ScrollViewer MaxHeight="260" HorizontalScrollBarVisibility="Auto">
+                      <ItemsControl ItemsSource="{Binding DiffLines}" Margin="10,8">
+                        <ItemsControl.ItemTemplate>
+                          <DataTemplate x:DataType="vm:DiffLineViewModel">
+                            <Grid ColumnDefinitions="14,*">
+                              <TextBlock Grid.Column="0"
+                                         Text="{Binding Sign}"
+                                         Classes="mono diffSign"
+                                         Classes.added="{Binding IsAdded}"
+                                         Classes.removed="{Binding IsRemoved}"
+                                         Classes.skipped="{Binding IsSkipped}" />
+                              <TextBlock Grid.Column="1"
+                                         Text="{Binding Text}"
+                                         Classes="mono diffLine"
+                                         Classes.added="{Binding IsAdded}"
+                                         Classes.removed="{Binding IsRemoved}"
+                                         Classes.skipped="{Binding IsSkipped}"
+                                         TextWrapping="NoWrap" />
+                            </Grid>
+                          </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                      </ItemsControl>
+                    </ScrollViewer>
+                  </Border>
+                </StackPanel>
 
                 <StackPanel Spacing="3" IsVisible="{Binding HasPaths}">
                   <TextBlock Text="{Binding $parent[ItemsControl].((vm:WorkViewModel)DataContext).L[approval.affected]}"
@@ -269,6 +379,14 @@
             <StackPanel Spacing="2">
               <TextBlock Text="{Binding L[work.elapsed]}" Classes="eyebrow" />
               <TextBlock Text="{Binding Elapsed}" Classes="mono" />
+            </StackPanel>
+            <StackPanel Spacing="2" IsVisible="{Binding HasUsage}">
+              <TextBlock Text="{Binding L[work.tokens]}" Classes="eyebrow" />
+              <TextBlock Text="{Binding TokenNote}" Classes="mono" />
+            </StackPanel>
+            <StackPanel Spacing="2" IsVisible="{Binding HasCost}">
+              <TextBlock Text="{Binding L[work.cost]}" Classes="eyebrow" />
+              <TextBlock Text="{Binding CostNote}" Classes="mono" />
             </StackPanel>
             <StackPanel Spacing="2" IsVisible="{Binding CompactionNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
               <TextBlock Text="{Binding L[work.compacted]}" Classes="eyebrow" />

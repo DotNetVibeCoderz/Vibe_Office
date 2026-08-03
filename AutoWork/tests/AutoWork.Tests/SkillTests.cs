@@ -162,6 +162,114 @@ public sealed class SkillStoreTests : IDisposable
     }
 
     [Fact]
+    public void A_bundle_is_installed_alongside_the_manifest()
+    {
+        var skill = _store.Install(
+            """
+            ---
+            name: pdf
+            description: Handle PDFs.
+            ---
+
+            See reference.md.
+            """,
+            "anthropics/skills", "pdf",
+            [
+                ("reference.md", "Full reference."u8.ToArray()),
+                ("scripts/fill.py", "print('hi')"u8.ToArray()),
+            ]);
+
+        Assert.Equal(["reference.md", "scripts/fill.py"], skill.Files);
+        Assert.True(File.Exists(Path.Combine(skill.Folder, "reference.md")));
+        Assert.True(File.Exists(Path.Combine(skill.Folder, "scripts", "fill.py")));
+
+        // And it survives a reload, because the folder is the state.
+        Assert.Equal(2, Assert.Single(_store.List()).Files.Count);
+    }
+
+    /// <summary>
+    /// Re-installing must not leave the previous version's scripts behind. A skill that removed
+    /// a script upstream should not still have it sitting on disk, runnable.
+    /// </summary>
+    [Fact]
+    public void Reinstalling_replaces_the_bundle_rather_than_merging_with_it()
+    {
+        const string manifest = """
+            ---
+            name: pdf
+            description: d
+            ---
+
+            Body.
+            """;
+
+        _store.Install(manifest, "repo", "pdf", [("scripts/old.py", "old"u8.ToArray())]);
+        _store.Install(manifest, "repo", "pdf", [("scripts/new.py", "new"u8.ToArray())]);
+
+        var skill = Assert.Single(_store.List());
+
+        Assert.Equal(["scripts/new.py"], skill.Files);
+        Assert.False(File.Exists(Path.Combine(skill.Folder, "scripts", "old.py")));
+    }
+
+    /// <summary>
+    /// Bundled paths come out of someone else's repository, and the model later supplies paths
+    /// too. Both go through the same containment check, so it is worth pinning down directly.
+    /// </summary>
+    [Theory]
+    [InlineData("../escaped.txt")]
+    [InlineData("../../escaped.txt")]
+    [InlineData("scripts/../../escaped.txt")]
+    [InlineData("/etc/passwd")]
+    [InlineData(@"C:\Windows\System32\drivers\etc\hosts")]
+    [InlineData("")]
+    public void A_bundled_path_that_would_escape_the_skill_folder_is_refused(string path)
+    {
+        var folder = Path.Combine(_dir, "pdf");
+        Directory.CreateDirectory(folder);
+
+        Assert.Null(FileSkillStore.Contain(folder, path));
+    }
+
+    [Theory]
+    [InlineData("reference.md")]
+    [InlineData("scripts/fill.py")]
+    [InlineData("scripts/office/helpers/theme.py")]
+    public void An_ordinary_bundled_path_resolves_inside_the_skill_folder(string path)
+    {
+        var folder = Path.Combine(_dir, "pdf");
+        Directory.CreateDirectory(folder);
+
+        var resolved = FileSkillStore.Contain(folder, path);
+
+        Assert.NotNull(resolved);
+        Assert.StartsWith(Path.GetFullPath(folder), resolved);
+    }
+
+    /// <summary>A file whose name tries to escape is dropped, not written outside the store.</summary>
+    [Fact]
+    public void A_bundle_entry_that_escapes_is_dropped_and_the_rest_still_install()
+    {
+        var skill = _store.Install(
+            """
+            ---
+            name: pdf
+            description: d
+            ---
+
+            Body.
+            """,
+            "repo", "pdf",
+            [
+                ("../../../escaped.txt", "nope"u8.ToArray()),
+                ("reference.md", "fine"u8.ToArray()),
+            ]);
+
+        Assert.Equal(["reference.md"], skill.Files);
+        Assert.False(File.Exists(Path.Combine(_dir, "..", "..", "..", "escaped.txt")));
+    }
+
+    [Fact]
     public void A_hostile_skill_name_writes_inside_the_store_and_nowhere_else()
     {
         _store.Install("---\nname: ../../escaped\ndescription: d\n---\n\nBody.", "repo", "x");
@@ -170,6 +278,55 @@ public sealed class SkillStoreTests : IDisposable
 
         Assert.True(Directory.Exists(Path.Combine(_dir, skill.Id)));
         Assert.False(File.Exists(Path.Combine(_dir, "..", "..", "escaped", "SKILL.md")));
+    }
+}
+
+/// <summary>
+/// The gallery against the real repositories. Runs with the rest of the live suite, because it
+/// needs the network and GitHub's unauthenticated rate limit is worth spending deliberately.
+/// </summary>
+public sealed class LiveSkillGalleryTests : IDisposable
+{
+    private readonly string _dir = Path.Combine(Path.GetTempPath(), "autowork-live-skills", Guid.NewGuid().ToString("n")[..8]);
+
+    public void Dispose()
+    {
+        try { Directory.Delete(_dir, recursive: true); } catch (IOException) { }
+    }
+
+    /// <summary>
+    /// `anthropics/skills/pdf` ships eight Python scripts and two reference documents alongside
+    /// its manifest, and its instructions refer to them by name. Installing the manifest alone
+    /// left the model following directions to files that were not there.
+    /// </summary>
+    [Fact]
+    public async Task A_real_skill_installs_with_the_scripts_and_references_it_depends_on()
+    {
+        Assert.SkipWhen(string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("AUTOWORK_LIVE_API_KEY")),
+            "Runs with the live suite. Skipped.");
+
+        var gallery = new SkillGallery();
+        var repository = new SkillRepository("anthropics", "skills");
+
+        var listings = await gallery.BrowseAsync(repository, TestContext.Current.CancellationToken);
+        var pdf = listings.FirstOrDefault(l => l.Name.Equals("pdf", StringComparison.OrdinalIgnoreCase));
+
+        Assert.NotNull(pdf);
+
+        var bundle = await gallery.DownloadBundleAsync(pdf, TestContext.Current.CancellationToken);
+        Assert.NotNull(bundle);
+
+        var store = new FileSkillStore(_dir);
+        var skill = store.Install(bundle.Markdown, pdf.Source, pdf.Name,
+            [.. bundle.Files.Select(f => (f.RelativePath, f.Content))]);
+
+        Assert.Contains("reference.md", skill.Files, StringComparer.OrdinalIgnoreCase);
+        Assert.Contains(skill.Files, f => f.StartsWith("scripts/", StringComparison.OrdinalIgnoreCase)
+                                          && f.EndsWith(".py", StringComparison.OrdinalIgnoreCase));
+
+        // The files are on disk, not just named in a list.
+        foreach (var file in skill.Files)
+            Assert.True(File.Exists(Path.Combine(skill.Folder, file.Replace('/', Path.DirectorySeparatorChar))));
     }
 }
 

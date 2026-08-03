@@ -72,6 +72,26 @@
                         <TextBlock Text="{Binding $parent[ItemsControl].((vm:SettingsViewModel)DataContext).L[models.apikey.hint]}" Classes="faint" />
                       </StackPanel>
 
+                      <!-- Prices are blank until the user fills them in: no price table ships,
+                           so the meter shows tokens by default and money only when told. -->
+                      <StackPanel Spacing="4">
+                        <TextBlock Text="{Binding $parent[ItemsControl].((vm:SettingsViewModel)DataContext).L[models.pricing]}" Classes="eyebrow" />
+                        <Grid ColumnDefinitions="*,*,90">
+                          <NumericUpDown Grid.Column="0" Value="{Binding InputPrice}"
+                                         AutomationProperties.AutomationId="ModelInputPrice"
+                                         Minimum="0" Maximum="10000" Increment="0.1"
+                                         FormatString="0.####" ShowButtonSpinner="False"
+                                         Watermark="{Binding $parent[ItemsControl].((vm:SettingsViewModel)DataContext).L[models.price.in]}" />
+                          <NumericUpDown Grid.Column="1" Value="{Binding OutputPrice}" Margin="8,0,0,0"
+                                         AutomationProperties.AutomationId="ModelOutputPrice"
+                                         Minimum="0" Maximum="10000" Increment="0.1"
+                                         FormatString="0.####" ShowButtonSpinner="False"
+                                         Watermark="{Binding $parent[ItemsControl].((vm:SettingsViewModel)DataContext).L[models.price.out]}" />
+                          <TextBox Grid.Column="2" Text="{Binding Currency}" Margin="8,0,0,0" MaxLength="6" />
+                        </Grid>
+                        <TextBlock Text="{Binding $parent[ItemsControl].((vm:SettingsViewModel)DataContext).L[models.pricing.hint]}" Classes="faint" />
+                      </StackPanel>
+
                       <Grid ColumnDefinitions="180,*">
                         <StackPanel Grid.Column="0" Spacing="4">
                           <TextBlock Text="{Binding $parent[ItemsControl].((vm:SettingsViewModel)DataContext).L[models.context]}" Classes="eyebrow" />
@@ -205,6 +225,72 @@
               </StackPanel>
             </Border>
 
+            <!--
+              Standing answers to consent prompts. These decide what gets asked, never what is
+              permitted: an allowed action still goes through the sandbox when it runs.
+            -->
+            <Border Classes="card">
+              <StackPanel Spacing="10">
+                <StackPanel Spacing="3">
+                  <TextBlock Text="{Binding L[rules.title]}" Classes="eyebrow" />
+                  <TextBlock Text="{Binding L[rules.subtitle]}" Classes="faint" TextWrapping="Wrap" />
+                </StackPanel>
+
+                <TextBlock Text="{Binding L[rules.none]}" Classes="dim" IsVisible="{Binding NoRules}" />
+
+                <ItemsControl ItemsSource="{Binding Rules}" AutomationProperties.AutomationId="ApprovalRules">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:ApprovalRuleViewModel">
+                      <Border Classes="inset" Margin="0,0,0,8">
+                        <StackPanel Spacing="8">
+                          <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto">
+                            <CheckBox Grid.Column="0" IsChecked="{Binding Enabled}" />
+
+                            <!-- Items come from the row itself: $parent[ItemsControl] inside a
+                                 ComboBox finds the ComboBox, not the list of rules. -->
+                            <ComboBox Grid.Column="1"
+                                      ItemsSource="{Binding Effects}"
+                                      SelectedIndex="{Binding EffectIndex}"
+                                      AutomationProperties.AutomationId="RuleEffect"
+                                      MinWidth="150" Margin="0,0,8,0" />
+
+                            <ComboBox Grid.Column="2" ItemsSource="{Binding Kinds}" SelectedItem="{Binding Kind}"
+                                      HorizontalAlignment="Stretch" />
+
+                            <CheckBox Grid.Column="3" IsChecked="{Binding AnyKind}" Margin="8,0"
+                                      IsEnabled="{Binding CanBeAnyKind}"
+                                      Content="{Binding $parent[ItemsControl].((vm:SettingsViewModel)DataContext).L[rules.anykind]}" />
+
+                            <Button Grid.Column="4" Classes="ghost danger" Content="×"
+                                    Command="{Binding $parent[ItemsControl].((vm:SettingsViewModel)DataContext).RemoveRuleCommand}"
+                                    CommandParameter="{Binding}" />
+                          </Grid>
+
+                          <Grid ColumnDefinitions="*,Auto">
+                            <TextBox Grid.Column="0" Text="{Binding Path}"
+                                     Watermark="{Binding $parent[ItemsControl].((vm:SettingsViewModel)DataContext).L[rules.path]}" />
+                            <Button Grid.Column="1" Classes="ghost" Margin="8,0,0,0"
+                                    Content="{Binding L[rules.browse]}"
+                                    Command="{Binding $parent[ItemsControl].((vm:SettingsViewModel)DataContext).PickRuleFolderCommand}"
+                                    CommandParameter="{Binding}" />
+                          </Grid>
+
+                          <TextBlock Text="{Binding Problem}"
+                                     Foreground="{DynamicResource Warning}"
+                                     TextWrapping="Wrap"
+                                     IsVisible="{Binding HasProblem}" />
+                        </StackPanel>
+                      </Border>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <Button Content="{Binding L[rules.add]}" Command="{Binding AddRuleCommand}"
+                        AutomationProperties.AutomationId="AddApprovalRule"
+                        HorizontalAlignment="Left" />
+              </StackPanel>
+            </Border>
+
             <Border Classes="card">
               <StackPanel Spacing="10">
                 <TextBlock Text="{Binding L[perm.capabilities]}" Classes="eyebrow" />
@@ -217,11 +303,30 @@
                 <CheckBox IsChecked="{Binding ShellApproval}" Content="{Binding L[perm.shellapproval]}"
                           Margin="22,0,0,0" IsEnabled="{Binding AllowShell}" />
 
+                <!-- Separate from network access on purpose: fetching a public page and acting
+                     as the signed-in user are not the same permission. -->
+                <CheckBox IsChecked="{Binding AllowBrowser}"
+                          AutomationProperties.AutomationId="AllowBrowser"
+                          Content="{Binding L[perm.browser]}" />
+
+                <StackPanel Margin="22,0,0,0" Spacing="6" IsEnabled="{Binding AllowBrowser}">
+                  <TextBlock Text="{Binding L[perm.browser.hint]}" Classes="faint" TextWrapping="Wrap" />
+                  <TextBox Text="{Binding BrowserPath}" Watermark="{Binding L[browser.path]}" />
+                  <TextBlock Text="{Binding BrowserFound}" Classes="mono faint" />
+                  <CheckBox IsChecked="{Binding BrowserHeadless}" Content="{Binding L[browser.headless]}" />
+                </StackPanel>
+
                 <CheckBox IsChecked="{Binding AllowScreen}" Content="{Binding L[perm.screen]}" />
 
                 <CheckBox IsChecked="{Binding AllowInput}" Content="{Binding L[perm.input]}" />
                 <CheckBox IsChecked="{Binding InputApproval}" Content="{Binding L[perm.inputapproval]}"
                           Margin="22,0,0,0" IsEnabled="{Binding AllowInput}" />
+
+                <CheckBox IsChecked="{Binding AllowSkillScripts}" Content="{Binding L[perm.skillscripts]}" />
+                <CheckBox IsChecked="{Binding SkillScriptApproval}" Content="{Binding L[perm.skillscripts.approval]}"
+                          Margin="22,0,0,0" IsEnabled="{Binding AllowSkillScripts}" />
+                <TextBlock Text="{Binding L[perm.skillscripts.hint]}" Classes="faint"
+                           TextWrapping="Wrap" Margin="22,0,0,4" />
 
                 <CheckBox IsChecked="{Binding AllowMcp}" Content="{Binding L[perm.mcp]}" />
                 <TextBlock Text="{Binding L[perm.mcp.hint]}" Classes="faint"
@@ -268,6 +373,59 @@
                   <NumericUpDown Grid.Column="1" Value="{Binding CompactThreshold}" Minimum="0.3" Maximum="0.95"
                                  Increment="0.05" FormatString="0.00" />
                 </Grid>
+
+                <CheckBox AutomationProperties.AutomationId="UseLocalEmbedding"
+                          IsChecked="{Binding UseLocalEmbedding}"
+                          Content="{Binding L[agent.localembed]}" />
+
+                <TextBlock Text="{Binding L[agent.localembed.hint]}" Classes="faint"
+                           Margin="22,0,0,0" TextWrapping="Wrap" />
+
+                <CheckBox AutomationProperties.AutomationId="EnableStreaming"
+                          IsChecked="{Binding EnableStreaming}"
+                          Content="{Binding L[agent.streaming]}" />
+
+                <CheckBox AutomationProperties.AutomationId="KeepRunHistory"
+                          IsChecked="{Binding KeepRunHistory}"
+                          Content="{Binding L[agent.history]}" />
+
+                <Grid ColumnDefinitions="*,120" IsEnabled="{Binding KeepRunHistory}">
+                  <TextBlock Grid.Column="0" Text="{Binding L[agent.retention]}" VerticalAlignment="Center" Margin="22,0,0,0" />
+                  <NumericUpDown Grid.Column="1" Value="{Binding RunHistoryRetentionDays}"
+                                 Minimum="1" Maximum="3650" FormatString="0" />
+                </Grid>
+              </StackPanel>
+            </Border>
+
+            <!-- Speech to text. Local by default and off until configured: a recording holds
+                 people who never agreed to anything, so uploading one is a deliberate choice. -->
+            <Border Classes="card">
+              <StackPanel Spacing="12">
+                <StackPanel Spacing="3">
+                  <TextBlock Text="{Binding L[speech.title]}" Classes="eyebrow" />
+                  <TextBlock Text="{Binding L[speech.subtitle]}" Classes="faint" TextWrapping="Wrap" />
+                </StackPanel>
+
+                <ComboBox ItemsSource="{Binding SpeechModes}" SelectedIndex="{Binding SpeechMode}"
+                          AutomationProperties.AutomationId="SpeechMode"
+                          HorizontalAlignment="Stretch" />
+
+                <StackPanel Spacing="8" IsVisible="{Binding SpeechIsLocal}">
+                  <TextBox Text="{Binding SpeechCommand}" Watermark="{Binding L[speech.command]}" />
+                  <TextBox Text="{Binding SpeechArguments}" Watermark="{Binding L[speech.arguments]}" />
+                  <TextBox Text="{Binding SpeechModelPath}" Watermark="{Binding L[speech.model]}" />
+                  <TextBlock Text="{Binding L[speech.local.hint]}" Classes="faint" TextWrapping="Wrap" />
+                </StackPanel>
+
+                <StackPanel Spacing="8" IsVisible="{Binding SpeechIsRemote}">
+                  <Border Classes="inset">
+                    <TextBlock Text="{Binding L[speech.remote.warning]}"
+                               Foreground="{DynamicResource Warning}" TextWrapping="Wrap" />
+                  </Border>
+                  <TextBox Text="{Binding SpeechEndpoint}" Watermark="{Binding L[speech.endpoint]}" />
+                  <TextBox Text="{Binding SpeechRemoteModel}" Watermark="{Binding L[speech.remotemodel]}" />
+                  <TextBox Text="{Binding SpeechApiKey}" Watermark="{Binding L[models.apikey]}" />
+                </StackPanel>
               </StackPanel>
             </Border>
           </StackPanel>

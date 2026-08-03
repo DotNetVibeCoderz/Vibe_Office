@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="clr-namespace:AutoWork.Desktop.ViewModels"
+             xmlns:cfg="clr-namespace:AutoWork.Core.Configuration;assembly=AutoWork.Core"
              x:Class="AutoWork.Desktop.Views.McpView"
              x:DataType="vm:McpViewModel">
 
@@ -25,12 +26,63 @@
       <Border Grid.Column="0" Classes="card" Margin="0,0,16,0">
         <Grid RowDefinitions="Auto,Auto,*">
 
-          <TextBox Grid.Row="0" Text="{Binding Search}" Margin="0,0,0,8"
-                   AutomationProperties.AutomationId="McpSearch"
-                   Watermark="{Binding L[mcp.search]}" />
+          <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,8">
+            <TextBox Grid.Column="0" Text="{Binding Search}"
+                     AutomationProperties.AutomationId="McpSearch"
+                     Watermark="{Binding L[mcp.search]}" />
+            <Button Grid.Column="1" Classes="ghost" Margin="8,0,0,0"
+                    AutomationProperties.AutomationId="McpAddManual"
+                    Content="{Binding L[mcp.manual.open]}"
+                    Command="{Binding ToggleManualCommand}" />
+          </Grid>
 
-          <TextBlock Grid.Row="1" Text="{Binding Status}" Classes="faint"
-                     TextWrapping="Wrap" Margin="0,0,0,8" />
+          <StackPanel Grid.Row="1" Spacing="8" Margin="0,0,0,8">
+
+            <!-- Adding one by hand. Most MCP servers are not in any catalogue, and the vendor's
+                 own is usually the interesting one. -->
+            <Border Classes="inset" IsVisible="{Binding ManualOpen}">
+              <StackPanel Spacing="8">
+                <TextBlock Text="{Binding L[mcp.manual.title]}" Classes="eyebrow" />
+                <TextBlock Text="{Binding L[mcp.manual.hint]}" Classes="faint" TextWrapping="Wrap" />
+
+                <Grid ColumnDefinitions="*,180">
+                  <TextBox Grid.Column="0" Text="{Binding ManualName}"
+                           AutomationProperties.AutomationId="McpManualName"
+                           Watermark="{Binding L[mcp.manual.name]}" />
+                  <ComboBox Grid.Column="1" Margin="8,0,0,0" HorizontalAlignment="Stretch"
+                            ItemsSource="{Binding ManualTransports}"
+                            SelectedIndex="{Binding ManualTransport}" />
+                </Grid>
+
+                <StackPanel Spacing="8" IsVisible="{Binding ManualIsStdio}">
+                  <TextBox Text="{Binding ManualCommand}"
+                           AutomationProperties.AutomationId="McpManualCommand"
+                           Watermark="{Binding L[mcp.manual.command]}" />
+                  <TextBox Text="{Binding ManualArguments}"
+                           AutomationProperties.AutomationId="McpManualArguments"
+                           Watermark="{Binding L[mcp.manual.args]}" />
+                </StackPanel>
+
+                <TextBox Text="{Binding ManualUrl}" IsVisible="{Binding ManualIsHttp}"
+                         AutomationProperties.AutomationId="McpManualUrl"
+                         Watermark="{Binding L[mcp.manual.url]}" />
+
+                <TextBox Text="{Binding ManualEnvironment}"
+                         AutomationProperties.AutomationId="McpManualEnvironment"
+                         Watermark="{Binding L[mcp.manual.env]}"
+                         AcceptsReturn="True" TextWrapping="NoWrap"
+                         MinHeight="54" MaxHeight="120" />
+
+                <Button Classes="primary"
+                        AutomationProperties.AutomationId="McpManualSave"
+                        Content="{Binding L[mcp.manual.save]}"
+                        Command="{Binding AddManualCommand}"
+                        HorizontalAlignment="Left" />
+              </StackPanel>
+            </Border>
+
+            <TextBlock Text="{Binding Status}" Classes="faint" TextWrapping="Wrap" />
+          </StackPanel>
 
           <ScrollViewer Grid.Row="2">
             <ItemsControl ItemsSource="{Binding Results}">
@@ -46,9 +98,16 @@
                             <Border Classes="chip">
                               <TextBlock Text="{Binding Category}" Classes="faint" />
                             </Border>
+                            <Border Classes="chip" IsVisible="{Binding Community}">
+                              <TextBlock Classes="faint"
+                                         Foreground="{DynamicResource Warning}"
+                                         Text="{Binding $parent[ItemsControl].((vm:McpViewModel)DataContext).L[mcp.community]}" />
+                            </Border>
                           </StackPanel>
                           <TextBlock Text="{Binding Description}" Classes="dim" TextWrapping="Wrap" />
                           <TextBlock Text="{Binding Requires}" Classes="mono faint" TextWrapping="Wrap" />
+                          <TextBlock Text="{Binding Setup}" Classes="faint" TextWrapping="Wrap"
+                                     IsVisible="{Binding HasSetup}" />
                         </StackPanel>
 
                         <StackPanel Grid.Column="1" VerticalAlignment="Top">
@@ -82,7 +141,7 @@
 
       <!-- ── Configured servers ──────────────────────────────────────────────────────── -->
       <Border Grid.Column="1" Classes="card">
-        <Grid RowDefinitions="Auto,*">
+        <Grid RowDefinitions="Auto,*,Auto">
 
           <StackPanel Grid.Row="0" Spacing="4" Margin="0,0,0,10">
             <TextBlock Text="{Binding L[mcp.yours]}" Classes="eyebrow" />
@@ -129,6 +188,30 @@
               </ItemsControl.ItemTemplate>
             </ItemsControl>
           </ScrollViewer>
+
+          <!-- Where to find the servers this catalogue does not carry. Links rather than a
+               scraped list: an entry here is an instruction to run somebody's code. -->
+          <StackPanel Grid.Row="2" Spacing="6" Margin="0,12,0,0">
+            <Border Classes="divider" />
+            <TextBlock Text="{Binding L[mcp.sources]}" Classes="eyebrow" />
+            <TextBlock Text="{Binding L[mcp.sources.hint]}" Classes="faint" TextWrapping="Wrap" />
+
+            <ItemsControl ItemsSource="{Binding Sources}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="cfg:McpSource">
+                  <Button Classes="ghost" Margin="0,2,0,0" Padding="0,3"
+                          HorizontalAlignment="Left"
+                          Command="{Binding $parent[ItemsControl].((vm:McpViewModel)DataContext).OpenSourceCommand}"
+                          CommandParameter="{Binding}">
+                    <StackPanel Spacing="1">
+                      <TextBlock Text="{Binding Name}" />
+                      <TextBlock Text="{Binding Description}" Classes="faint" TextWrapping="Wrap" MaxWidth="320" />
+                    </StackPanel>
+                  </Button>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
         </Grid>
       </Border>
     </Grid>

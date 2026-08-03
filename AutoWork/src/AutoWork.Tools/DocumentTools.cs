@@ -73,6 +73,32 @@ public sealed class DocumentTools : ToolSetBase, IToolProvider
             Supported: # / ## / ### headings, - bullets, **bold**, and blank lines between paragraphs.
             """));
 
+        yield return Describe(AIFunctionFactory.Create(tools.CreateOpenDocumentTextAsync, "doc_create_odt",
+            """
+            Create an OpenDocument text file (.odt) from the same lightweight Markdown as
+            doc_create_word. Use this when the recipient uses LibreOffice or OpenOffice.
+            """));
+
+        yield return Describe(AIFunctionFactory.Create(tools.CreateOpenDocumentSheetAsync, "doc_create_ods",
+            """
+            Create an OpenDocument spreadsheet (.ods). Pass sheets as JSON:
+            [{"name":"Sales","rows":[["Region","Q1"],["North","100"]]}]
+            Any cell starting with = becomes a live formula.
+            """));
+
+        yield return Describe(AIFunctionFactory.Create(tools.ExportMarkdownAsync, "doc_export_markdown",
+            """
+            Convert an existing Word, Excel, PowerPoint, PDF, CSV or HTML file into a Markdown
+            file. Use this to get a document into a form you can read, quote and edit as text.
+            """));
+
+        yield return Describe(AIFunctionFactory.Create(tools.FillTemplateAsync, "doc_fill_template",
+            """
+            Fill a template and save the result. The template may be .docx or a text file, and
+            uses {{placeholder}} markers. Pass values as JSON: {"name":"Ada","invoice":"INV-42"}
+            Reports any placeholder left unfilled rather than shipping a document with holes in it.
+            """));
+
         yield return Describe(AIFunctionFactory.Create(tools.ReadExcelAsync, "doc_read_excel",
             "Read a sheet from an existing .xlsx workbook as text, including computed values."),
             ToolRisk.Safe);
@@ -458,6 +484,183 @@ public sealed class DocumentTools : ToolSetBase, IToolProvider
     }
 
     // ── Shared Markdown handling ──────────────────────────────────────────────────────────
+
+    // ── OpenDocument ──────────────────────────────────────────────────────────────────────
+
+    [Description("Create an OpenDocument text file.")]
+    private Task<string> CreateOpenDocumentTextAsync(
+        [Description("Destination .odt path.")] string path,
+        [Description("Body as lightweight Markdown.")] string content,
+        [Description("Optional title, written as the first heading.")] string? title = null,
+        [Description("Overwrite if the file exists.")] bool overwrite = false)
+    {
+        var target = Locate(path);
+
+        return GuardedAsync("doc.odt", $"Create document {PathGuard.Describe(target)}", () =>
+        {
+            var canonical = Guard.EnsureWritable(EnsureExtension(target, ".odt"));
+            if (File.Exists(canonical) && !overwrite)
+                return Refused($"{PathGuard.Describe(canonical)} already exists. Call again with overwrite=true to replace it.");
+
+            var blocks = ParseMarkdown(content).ToList();
+            if (blocks.Count == 0 && string.IsNullOrWhiteSpace(title)) return Failed("There was nothing to write.");
+
+            OpenDocumentBuilder.WriteText(canonical, blocks, title);
+
+            return Ok($"Created {PathGuard.Describe(canonical)} — {blocks.Count} blocks.");
+        },
+        [target], ApprovalKind.WriteFiles);
+    }
+
+    [Description("Create an OpenDocument spreadsheet.")]
+    private Task<string> CreateOpenDocumentSheetAsync(
+        [Description("Destination .ods path.")] string path,
+        [Description("Sheets as a JSON array.")] string sheetsJson,
+        [Description("Overwrite if the file exists.")] bool overwrite = false)
+    {
+        var target = Locate(path);
+
+        return GuardedAsync("doc.ods", $"Create spreadsheet {PathGuard.Describe(target)}", () =>
+        {
+            var canonical = Guard.EnsureWritable(EnsureExtension(target, ".ods"));
+            if (File.Exists(canonical) && !overwrite)
+                return Refused($"{PathGuard.Describe(canonical)} already exists. Call again with overwrite=true to replace it.");
+
+            List<SheetSpec>? sheets;
+            try { sheets = JsonSerializer.Deserialize<List<SheetSpec>>(sheetsJson, Json); }
+            catch (JsonException ex) { return Failed($"The sheets JSON could not be parsed: {ex.Message}"); }
+
+            if (sheets is null || sheets.Count == 0) return Failed("No sheets were supplied.");
+
+            var converted = sheets
+                .Select(s => (
+                    Name: SanitizeSheetName(s.Name),
+                    Rows: (IReadOnlyList<IReadOnlyList<string>>)s.Rows
+                        .Select(row => (IReadOnlyList<string>)row.Select(CellText).ToList())
+                        .ToList()))
+                .ToList();
+
+            OpenDocumentBuilder.WriteSheet(canonical, converted);
+
+            var cells = converted.Sum(s => s.Rows.Sum(r => r.Count));
+            return Ok($"Created {PathGuard.Describe(canonical)} — {converted.Count} sheet(s), {cells} cells.");
+        },
+        [target], ApprovalKind.WriteFiles);
+    }
+
+    /// <summary>JSON cells arrive as numbers, strings or nulls; the ODF writer wants text.</summary>
+    private static string CellText(JsonElement element) => element.ValueKind switch
+    {
+        JsonValueKind.String => element.GetString() ?? "",
+        JsonValueKind.Number => element.GetRawText(),
+        JsonValueKind.True => "TRUE",
+        JsonValueKind.False => "FALSE",
+        JsonValueKind.Null or JsonValueKind.Undefined => "",
+        _ => element.GetRawText(),
+    };
+
+    // ── Markdown export ───────────────────────────────────────────────────────────────────
+
+    [Description("Convert an existing document to Markdown.")]
+    private Task<string> ExportMarkdownAsync(
+        [Description("Document to convert.")] string path,
+        [Description("Destination .md path. Defaults to the source name with a .md extension.")] string? destination = null,
+        [Description("Overwrite if the destination exists.")] bool overwrite = false)
+    {
+        var source = Locate(path);
+
+        return GuardedAsync("doc.markdown", $"Export {PathGuard.Describe(source)} to Markdown", async () =>
+        {
+            var canonicalSource = Guard.EnsureReadable(source);
+            if (!File.Exists(canonicalSource)) return Failed($"{PathGuard.Describe(canonicalSource)} does not exist.");
+
+            if (!DocumentText.IsSupported(canonicalSource))
+                return Refused($"{Path.GetExtension(canonicalSource)} cannot be converted. Supported: {string.Join(", ", DocumentText.SupportedExtensions)}.");
+
+            var target = string.IsNullOrWhiteSpace(destination)
+                ? Path.ChangeExtension(canonicalSource, ".md")
+                : Locate(destination);
+
+            var canonicalTarget = Guard.EnsureWritable(EnsureExtension(target, ".md"));
+
+            if (File.Exists(canonicalTarget) && !overwrite)
+                return Refused($"{PathGuard.Describe(canonicalTarget)} already exists. Call again with overwrite=true to replace it.");
+
+            var result = await DocumentText.ReadAsync(canonicalSource).ConfigureAwait(false);
+            if (!result.Success) return Failed(result.Error);
+
+            if (string.IsNullOrWhiteSpace(result.Text))
+                return Failed($"{PathGuard.Describe(canonicalSource)} converted to nothing — it may be empty or image-only.");
+
+            Directory.CreateDirectory(Path.GetDirectoryName(canonicalTarget)!);
+            await File.WriteAllTextAsync(canonicalTarget, result.Text).ConfigureAwait(false);
+
+            return Ok($"Wrote {PathGuard.Describe(canonicalTarget)} — {result.Text.Length:N0} characters from {result.Format}.");
+        },
+        [source], ApprovalKind.WriteFiles);
+    }
+
+    // ── Templates ─────────────────────────────────────────────────────────────────────────
+
+    [Description("Fill a template with values.")]
+    private Task<string> FillTemplateAsync(
+        [Description("Template file — .docx or a text file.")] string templatePath,
+        [Description("Destination path.")] string destination,
+        [Description("Values as a JSON object keyed by placeholder name.")] string valuesJson,
+        [Description("Overwrite if the destination exists.")] bool overwrite = false)
+    {
+        var template = Locate(templatePath);
+        var target = Locate(destination);
+
+        return GuardedAsync("doc.template", $"Fill {PathGuard.Describe(template)} into {PathGuard.Describe(target)}", async () =>
+        {
+            var canonicalTemplate = Guard.EnsureReadable(template);
+            if (!File.Exists(canonicalTemplate)) return Failed($"{PathGuard.Describe(canonicalTemplate)} does not exist.");
+
+            Dictionary<string, JsonElement>? values;
+            try { values = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(valuesJson, Json); }
+            catch (JsonException ex) { return Failed($"The values JSON could not be parsed: {ex.Message}"); }
+
+            if (values is null || values.Count == 0) return Failed("No values were supplied.");
+
+            var lookup = values.ToDictionary(v => v.Key, v => CellText(v.Value), StringComparer.OrdinalIgnoreCase);
+
+            var isWord = canonicalTemplate.EndsWith(".docx", StringComparison.OrdinalIgnoreCase);
+            var canonicalTarget = Guard.EnsureWritable(isWord ? EnsureExtension(target, ".docx") : target);
+
+            if (File.Exists(canonicalTarget) && !overwrite)
+                return Refused($"{PathGuard.Describe(canonicalTarget)} already exists. Call again with overwrite=true to replace it.");
+
+            Directory.CreateDirectory(Path.GetDirectoryName(canonicalTarget)!);
+
+            TemplateFill outcome;
+
+            if (isWord)
+            {
+                File.Copy(canonicalTemplate, canonicalTarget, overwrite: true);
+                outcome = DocumentTemplate.FillWord(canonicalTarget, lookup);
+            }
+            else
+            {
+                var text = await File.ReadAllTextAsync(canonicalTemplate).ConfigureAwait(false);
+                outcome = DocumentTemplate.FillText(text, lookup);
+                await File.WriteAllTextAsync(canonicalTarget, outcome.Text ?? "").ConfigureAwait(false);
+            }
+
+            // A document shipped with {{amount}} still in it is worse than a refusal, so the
+            // leftovers are named rather than mentioned in passing.
+            var unfilled = outcome.Unfilled.Count == 0
+                ? ""
+                : $" Still unfilled: {string.Join(", ", outcome.Unfilled)} — supply these and run it again.";
+
+            var unused = outcome.Unused.Count == 0
+                ? ""
+                : $" Values with no matching placeholder: {string.Join(", ", outcome.Unused)}.";
+
+            return Ok($"Wrote {PathGuard.Describe(canonicalTarget)} — {outcome.Replaced} placeholder(s) filled.{unfilled}{unused}");
+        },
+        [template, target], ApprovalKind.WriteFiles);
+    }
 
     internal enum BlockKind { Paragraph, Heading1, Heading2, Heading3, Bullet, Numbered }
 

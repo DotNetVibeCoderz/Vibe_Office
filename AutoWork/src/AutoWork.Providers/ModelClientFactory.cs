@@ -101,23 +101,35 @@ public sealed class ModelClientFactory : IDisposable
         }
     }
 
-    private IChatClient BuildChatClient(ModelProfile profile) => profile.Kind switch
+    /// <summary>
+    /// Substitutes the wire transport. Set only by tests: it stands in for the provider socket so
+    /// the layers above it — parameter repair, function invocation, the whole agent loop — are
+    /// exercised for real rather than mocked away, which is where the bugs have actually been.
+    /// </summary>
+    internal Func<ModelProfile, IChatClient>? Transport { get; set; }
+
+    private IChatClient BuildChatClient(ModelProfile profile)
     {
-        ProviderKind.Anthropic => new AnthropicChatClient(
-            apiKey: RequireKey(profile),
-            model: profile.ModelId,
-            endpoint: NormalizeEndpoint(profile),
-            defaultMaxTokens: profile.MaxOutputTokens,
-            extraHeaders: profile.Headers),
+        if (Transport is not null) return Transport(profile);
 
-        ProviderKind.Ollama => new OllamaApiClient(new Uri(NormalizeEndpoint(profile)), profile.ModelId),
+        return profile.Kind switch
+        {
+            ProviderKind.Anthropic => new AnthropicChatClient(
+                apiKey: RequireKey(profile),
+                model: profile.ModelId,
+                endpoint: NormalizeEndpoint(profile),
+                defaultMaxTokens: profile.MaxOutputTokens,
+                extraHeaders: profile.Headers),
 
-        ProviderKind.OpenAICompatible => BuildOpenAIClient(profile)
-            .GetChatClient(profile.ModelId)
-            .AsIChatClient(),
+            ProviderKind.Ollama => new OllamaApiClient(new Uri(NormalizeEndpoint(profile)), profile.ModelId),
 
-        _ => throw new NotSupportedException($"Provider kind {profile.Kind} is not supported."),
-    };
+            ProviderKind.OpenAICompatible => BuildOpenAIClient(profile)
+                .GetChatClient(profile.ModelId)
+                .AsIChatClient(),
+
+            _ => throw new NotSupportedException($"Provider kind {profile.Kind} is not supported."),
+        };
+    }
 
     private OpenAIClient BuildOpenAIClient(ModelProfile profile)
     {

@@ -62,6 +62,8 @@ it and is depended on by none of it.
    │                                 explicitly marked independent may run together
    │
    ├─ 5. For each wave
+   │      ├─ pause gate              hold here if the user asked to pause; put any
+   │      │                          correction to the model before the step runs
    │      ├─ compact if needed       summarise older turns before the step, not after,
    │      │                          so the step has room to work
    │      ├─ run the step            executor model + auto-invoked tools
@@ -69,11 +71,166 @@ it and is depended on by none of it.
    │
    ├─ 6. Verify                      check the transcript against the success criteria
    │
-   └─ 7. Report                      summary, elapsed, steps, compaction stats
+   ├─ 7. Report                      summary, elapsed, steps, compaction stats
+   │
+   └─ 8. Save the transcript         written whatever the outcome, including cancellation
 ```
 
 Progress is emitted as immutable `RunEvent` records. Core defines them and holds no UI types;
 the desktop layer turns them into rows on the Work Tape.
+
+## Pause and steer
+
+A user who sees the agent going the wrong way should be able to say so, not cancel and re-type
+the whole job. `RunController` is the handle the UI holds on a run in flight: `Pause`, `Resume`,
+`Steer` and `Abandon`.
+
+Pausing takes effect **at the next step boundary**, never inside a step. Interrupting mid-step
+would mean abandoning a tool call already sent to the provider, or leaving a half-finished write
+behind — and neither leaves a conversation anything could resume from. Waiting for the boundary
+costs a few seconds. It is the same reason compaction only happens there.
+
+A correction is inserted as a user turn **before** the step it is meant to change, phrased so the
+model treats it as the user changing their mind rather than as one more requirement stacked on
+the original wording. Steering without pausing first is allowed: the correction is queued and
+applied at the next boundary either way.
+
+Stopping a run has to release a paused one as well, or the agent thread parks forever waiting for
+a resume that is never coming — the same failure mode as an unanswered consent prompt.
+
+## Run history
+
+Every run is persisted under `runs/` as two files:
+
+- `<id>.json` — the headline: goal, model, status, timings, step and tool counts.
+- `<id>.events.json` — the full `RunEvent` stream.
+
+Split because the History list would otherwise pay for every transcript it is not showing, and a
+transcript carries every tool result the run ever saw. Individual results are capped at ~4,000
+characters before storage.
+
+The events are written polymorphically, with a short fixed discriminator per type. A saved
+transcript outlives the build that wrote it, so a renamed class must not make yesterday's history
+unreadable — and a test fails if any `RunEvent` subtype is added without one.
+
+Opening a past run replays its stored events through the **same handler a live run uses**, rather
+than through a second read-only renderer. One renderer means a past run looks exactly as it did
+while it was happening, and there is no second place for the two to drift apart.
+
+History is a convenience, never a precondition: a transcript that cannot be written is logged and
+the run's result stands.
+
+## The token meter
+
+`UsageTrackingChatClient` wraps each client for the duration of a run and reports what every
+request used into a `RunMeter`. It sits **outside** the function-invocation loop on purpose: one
+agent step can issue several provider round trips as tools are called and their results fed back,
+and every one of those is billed. Counting only the outermost call would report a fraction of a
+tool-heavy run.
+
+Cost is summed per model rather than from the run totals — a run that plans with one model and
+executes with another has two prices, and one blended rate would be wrong for both.
+
+Three things it will not do:
+
+- **Invent a price.** There is no built-in price table. Both prices must be set on the model or
+  no cost is reported. Half a price is not enough.
+- **Round away a gap.** A provider that answers without reporting usage increments a separate
+  counter, and the total is then presented as "at least *n*".
+- **Estimate.** `TokenEstimator` exists for compaction, where over-estimating is the safe error.
+  The meter reports what the provider said, or says it does not know.
+
+## Approval rules
+
+`ApprovalRuleEngine` is consulted by `ApprovalCoordinator` before anything reaches the user or the
+per-run memory. Its constraints are described in
+[security.md](security.md#standing-rules); the one that matters architecturally is that rule
+evaluation happens at the *approval* layer, while `PathGuard` runs inside the tool body afterwards.
+
+That ordering is the whole safety argument. A rule can only ever suppress a question about
+something the sandbox was going to allow anyway — it is not in the path that decides what is
+reachable, and cannot be made to be.
+
+## Streaming
+
+The step loop streams by default and accumulates the updates back into one response, because the
+loop still wants a whole reply and a set of messages to append. Fragments go out as
+`AssistantDeltaEvent`, each carrying the **running total for that step** rather than just the new
+piece — so a view that misses an update, or starts watching late, still shows the right thing.
+
+Partial tool calls are not this layer's problem. The function-invocation client sits underneath
+and reassembles a call that arrives in fragments, then continues the stream with its result. What
+the orchestrator adds is the accumulation and the events.
+
+If streaming fails **before any content arrives**, the same request is made again without it —
+some gateways advertise streaming and then reject it, and a run dying for that reason would be a
+worse outcome than one that quietly waits. A failure *after* content has arrived is a real
+failure and is left to the step's error handling: retrying then could repeat a tool call that
+already ran.
+
+## Saved jobs
+
+`JobScheduler` watches the clock and the folders and asks for a job to be run. It does not know
+what running one means — that is a delegate — so it is tested against a fake clock and a real
+folder with no agent, provider or network in sight.
+
+Three rules shape it:
+
+- **One at a time.** A run holds the Work view and the approval broker. A job that comes due while
+  another is running is skipped, not queued: "summarise yesterday" run twice in quick succession
+  is worse than run once.
+- **Missed time does not accumulate.** Due times are computed from the clock, so an app closed
+  over a weekend wakes owing nothing.
+- **A folder trigger can only watch what the sandbox grants.** Otherwise saving a job would be a
+  way to make AutoWork read a folder it was never given.
+
+Folder triggers wait for a quiet period before firing. Copying fifty files raises fifty events;
+without it the job starts on the first one and reads a half-copied folder.
+
+## Meetings
+
+Transcription is off until configured and local unless the user chooses otherwise. AutoWork ships
+no speech model — a few hundred megabytes of weights is not something to install behind someone's
+back — so `LocalTranscriber` runs whichever one is already installed, as a command, and reads
+back either its stdout or the `.txt`/`.srt` it wrote beside the audio.
+
+Only transcription is a tool. Pulling out decisions and owners is reasoning, which the agent
+already does better than a fixed prompt buried in a tool would, and writing the result is
+`doc_create_word` or `knowledge_save`, which already exist.
+
+## The browser session
+
+`BrowserSession` drives a browser that is **already installed**, over the DevTools protocol,
+against a profile of its own that persists. That combination is the point: `web_fetch` sees the
+page a stranger sees, and the work worth automating is behind a login.
+
+Three decisions:
+
+- **No bundled browser.** Edge or Chrome is already there; downloading another one to automate is
+  not a reasonable ask.
+- **Its own profile, not the user's.** Attaching to the browser they have open fights for the
+  profile lock. A separate directory still remembers logins between runs, which is what was
+  wanted.
+- **Visible unless asked otherwise.** Something acting as you should be watchable.
+
+The connection is to a **page** target from `/json/list`, not the browser target from
+`/json/version`. The latter is the obvious one to reach for and the wrong one: it speaks `Target`
+and `Browser` but not `Page` or `Runtime`, so navigation and evaluation succeed and do nothing.
+
+## Deleted files
+
+Soft delete moves a file into `recycle/` under `AppPaths.Root`, which `PathGuard` refuses
+unconditionally, so the agent cannot read back something it deleted. Alongside it,
+`RecycleBin` keeps an append-only JSONL index of where each item came from — the piece that makes
+"recoverable" true rather than nominal.
+
+Appends close a torn trailing line first. Without that, a process killed mid-write costs not only
+its own record but the *next* one, which concatenates onto the fragment.
+
+Restoring is a user action on the user's own data, so it is not bound by the agent's folder
+grants — a file deleted from a folder since un-granted must still be recoverable. The one hard
+rule is that nothing may be written into AutoWork's own directory, so a doctored index line
+cannot become a way to drop a file on top of `config.json`.
 
 ## Why step-shaped rather than one long conversation
 
@@ -163,6 +320,37 @@ host allow-list is checked per backend, so a fallback can never reach a host the
 permitted.
 
 ![The Activity view, streaming the action log while a run is in progress](../images/activity.png)
+
+### Skills
+
+A skill is a folder: a manifest, plus the references, templates and scripts that shipped with it.
+Installed skills contribute a line each in the system prompt (name plus when-to-use), and three
+tools — `skill_open` for the instructions, `skill_file` for a bundled resource, and `skill_run`
+for a script when the permission allows it.
+
+That split is the whole design. Pasting a dozen skills into every request would cost tens of
+thousands of tokens to make one of them relevant; naming them costs a few hundred and lets the
+model choose. It is the same trade as searching knowledge bases instead of attaching them.
+
+Both file-taking tools resolve their path and confirm it landed inside the skill's own folder —
+the same check that runs when a bundle is written, because a path from a repository and a path
+from a model deserve equal suspicion.
+
+![The Skills gallery](../images/skills-gallery.png)
+
+### MCP
+
+MCP tools arrive from the C# SDK as `AIFunction`s already, so the integration is thin: connect,
+list, wrap each in a `ToolDescriptor` so the Work Tape can attribute it like any other tool.
+
+The awkward part is timing. `ToolRegistry.Build` is synchronous, but starting a stdio server takes
+seconds. So the orchestrator exposes a `PrepareToolsAsync` hook that runs once before the tool set
+is assembled, and clients are kept for the life of the app rather than per run.
+
+Their tools are marked `ToolRisk.Write`, never `Safe`. AutoWork cannot see what an external tool
+does, and a risk label is a claim about behaviour.
+
+![The MCP gallery](../images/mcp-gallery.png)
 
 ## Knowledge bases
 

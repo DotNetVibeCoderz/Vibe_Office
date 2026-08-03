@@ -42,7 +42,8 @@ public abstract class ToolSetBase
         Func<Task<string>> body,
         IReadOnlyList<string>? paths = null,
         ApprovalKind? approval = null,
-        string? approvalDetail = null)
+        string? approvalDetail = null,
+        Core.Diff.TextDiffResult? preview = null)
     {
         var stopwatch = Stopwatch.StartNew();
 
@@ -57,6 +58,7 @@ public abstract class ToolSetBase
                     Title = summary,
                     Detail = approvalDetail ?? "",
                     AffectedPaths = paths ?? [],
+                    Preview = preview,
                 }).ConfigureAwait(false);
 
                 if (decision == ApprovalDecision.Denied)

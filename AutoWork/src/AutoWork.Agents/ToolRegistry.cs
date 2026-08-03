@@ -49,6 +49,8 @@ public sealed class ToolRegistry
             new ShellTools(context),
             new InputTools(context),
             new WebTools(context),
+            new MeetingTools(context),
+            new BrowserTools(context),
             new VisionTools(context, _factory, visionModel),
             new KnowledgeTools(context, _knowledge),
         };

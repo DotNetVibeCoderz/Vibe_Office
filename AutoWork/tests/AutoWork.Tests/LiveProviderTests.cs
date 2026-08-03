@@ -30,6 +30,16 @@ namespace AutoWork.Tests;
 /// </summary>
 public sealed class LiveProviderTests : IDisposable
 {
+    /// <summary>
+    /// A stable copy of the events seen so far. `Progress&lt;T&gt;` delivers on another thread, so a
+    /// callback can still arrive while the assertions enumerate — which is exactly how one live
+    /// run failed with "Collection was modified".
+    /// </summary>
+    private static RunEvent[] Snapshot(List<RunEvent> events)
+    {
+        lock (events) return [.. events];
+    }
+
     private readonly string _sandbox;
 
     // AutoWork's own folders are redirected for the whole assembly by TestEnvironment, so a
@@ -165,14 +175,14 @@ public sealed class LiveProviderTests : IDisposable
              It must contain exactly three lines, one item per line: rice, eggs, coffee.
              Do not create any other file.
              """,
-            new Progress<RunEvent>(events.Add),
+            new Progress<RunEvent>(e => { lock (events) events.Add(e); }),
             TestContext.Current.CancellationToken);
 
         var expected = Path.Combine(_sandbox, "shopping.txt");
 
         Assert.True(File.Exists(expected),
             $"The run reported \"{result.Summary}\" but {expected} does not exist. " +
-            $"Tool calls made: {string.Join(", ", events.OfType<ToolCallEvent>().Select(e => e.Tool).Distinct())}");
+            $"Tool calls made: {string.Join(", ", Snapshot(events).OfType<ToolCallEvent>().Select(e => e.Tool).Distinct())}");
 
         var lines = File.ReadAllLines(expected).Where(l => l.Trim().Length > 0).ToArray();
 

@@ -52,8 +52,11 @@ expressions and organise folders by type, extension or date — always with a dr
 before anything moves.
 
 **Professional documents.** Excel workbooks with live formulas, Word documents, PowerPoint
-decks and PDFs. Generated through real OOXML rather than by asking a model to emit XML, and
-opened by the real applications — not just accepted by a validator.
+decks, PDFs, and OpenDocument files for LibreOffice. Generated through real OOXML and ODF rather
+than by asking a model to emit XML, and opened by the real applications — not just accepted by a
+validator. It also converts any document it can read into Markdown, and fills `.docx` templates
+with `{{placeholders}}`, telling you which ones you left empty rather than shipping a document
+with holes in it.
 
 Below: one job — *"research retrieval-augmented generation on the web, then write a short report
 and a four-slide deck"* — run against DeepSeek, and the two files it produced, opened in Word and
@@ -70,29 +73,123 @@ in them.
 **Web research.** Search the internet and read the results. Tavily when you supply a key,
 DuckDuckGo and Wikipedia when you do not — so research is not a paid feature.
 
+**A browser you are signed in to.** Fetching a URL gets you the page a stranger sees; most of
+what people want automated is behind a login. So AutoWork can drive a real browser — the Edge or
+Chrome you already have, nothing to download — against a profile of its own that stays signed in
+between runs. It reads pages, lists what can be clicked, fills fields and clicks things by their
+visible text. It is off by default, separate from ordinary network access, and asks before every
+navigation and click, because on those sites it is acting as you.
+
+**Work that repeats itself.** Save a job and have it run every Monday morning, or whenever a
+folder changes. A scheduled run happens in the Work view exactly as if you had typed it — same
+plan, same consent cards, same history — so a job you leave running behaves like one you watched.
+Missed time never piles up: an app closed over the weekend wakes owing nothing.
+
+**Meetings.** Point AutoWork at a recording and it turns it into text, then pulls out the
+decisions and who owes what. The speech model runs **on your computer** — AutoWork ships none and
+uses whichever one you already have — so recordings of other people do not leave your machine
+unless you explicitly choose a service instead.
+
+**Replies as they are written.** Long reasoning appears on the Work Tape as it forms, rather than
+arriving in a block once the step is over. A provider that cannot stream falls back to waiting.
+
 **Sub-agent coordination.** Genuinely independent steps run in parallel, each with its own
 context, so their token use does not compound.
 
 **Auto-compaction.** When a long run approaches the model's context window, older turns are
 summarised away automatically — carefully, never splitting a tool call from its result.
 
+**Pause and steer.** Spotted it going the wrong way? Pause, type what you actually meant, and let
+it carry on — instead of cancelling and re-typing the whole job.
+
+![A run held at a step boundary, with a correction typed and ready to resume](docs/images/work-pause-steer.png)
+
+The pause lands at the next step boundary rather than mid-action, so nothing is left half-written,
+and your correction goes to the model *before* the step it is meant to change. You can also send a
+correction without pausing at all; it is applied at the next boundary either way.
+
+**Run history.** Every run is kept: what you asked for, the plan, every tool call and what it
+returned.
+
+![Past runs, each with its outcome and a way to run it again](docs/images/history.png)
+
+Reopen one and it replays onto the Work Tape exactly as it looked while it was happening — the
+screenshot below is a fresh launch of the app reading a finished run back off disk — or set the
+same job going again with one click.
+
+![A finished run reopened, with its plan and Work Tape rebuilt from the saved transcript](docs/images/history-reopened.png)
+
+How long runs are kept is yours to set, and the whole thing can be switched off.
+
+**See a change before it happens.** When AutoWork is about to overwrite a file you already have,
+the consent card shows the diff — what goes, what arrives — not just a filename and a byte count.
+
+![A consent card showing the exact lines a write would remove and add](docs/images/consent-diff.png)
+
+Creating a new file doesn't show one, because "making a file" and "rewriting every line of a
+file" should not look the same.
+
+**Standing answers.** "Always allow writes under ~/Projects." "Never allow deletes." Rules
+instead of a queue of clicks.
+
+![The standing-answers editor in Settings › Permissions](docs/images/settings-rules.png)
+
+Two things are true of every rule: a *never* always beats an *always*, and a rule only changes
+what you are **asked** — never what AutoWork can reach. An allow rule pointing somewhere you
+haven't granted still gets refused by the sandbox.
+
+**Deleted files come back.** Anything AutoWork deletes is moved aside, with a record of where it
+was, and the Recycle page puts it back.
+
+![The Recycle page, showing a deleted file and where it came from](docs/images/recycle.png)
+
+If something is already at that path it tells you and waits rather than replacing your work.
+
+**A meter that doesn't guess.** Every run reports the tokens the provider says it used. Put your
+provider's prices in and it reports what the run cost, too.
+
+![A past run showing its token count and cost](docs/images/history-meter.png)
+
+AutoWork ships no price table on purpose: prices move faster than model names, and a stale
+built-in figure that under-reports your spend would be worse than showing tokens alone. If a
+provider doesn't report usage, the total is shown as "at least" rather than dressed up as exact.
+
 **Knowledge bases.** Topic-scoped memory that survives between sessions, searched by embedding
-when an embedding model is configured, and by keyword when one is not. Add notes by hand, or
+when an embedding model is configured, and by keyword when one is not. There is also a local
+index that needs no model, no key and no network at all — worse at meaning than a hosted model,
+better at never leaving your machine. Add notes by hand, or
 import Word, PowerPoint, Excel, PDF, CSV, HTML and Markdown files — the file's name becomes the
 title and its content becomes the note.
 
 ![The Knowledge view, with notes added by hand or imported from a file](docs/images/knowledge.png)
 
 **Skills.** Instructions the agent follows for particular kinds of work, installed from GitHub
-repositories you choose. Only each skill's name and one-line description sit in the prompt; the
-agent opens the full text when the job calls for it, so an unused skill costs almost nothing.
+repositories you choose. A skill installs as a whole folder — reference documents, templates and
+scripts, not just the manifest — because its instructions routinely say "see REFERENCE.md" or
+"run scripts/fill.py". Only each skill's name and one-line description sit in the prompt; the
+agent opens the rest when the job calls for it, so an unused skill costs almost nothing.
+
+Running a bundled script is code from someone else's repository, so it has its own switch, off by
+default, and asks before every run. Libraries the script needs are installed into an environment
+belonging to that skill alone — the package list is shown before anything is fetched.
 
 ![The Skills gallery, browsing anthropics/skills and obra/superpowers](docs/images/skills-gallery.png)
 
 **MCP servers.** Borrow tools from any Model Context Protocol server — a real browser, a docs
-index, a vendor's API. A catalogue of verified servers is built in, and you can add your own.
+index, a vendor's API. The built-in catalogue covers Figma, Canva, Blender, GitHub, Atlassian,
+Linear, Asana, Chrome DevTools, Microsoft Learn, Azure DevOps, MarkItDown, AWS documentation and
+more. Every entry was read off the vendor's own page rather than a directory listing, and any
+entry that is not published by the vendor is labelled as such — "Figma's own server" and
+"someone's Figma server" are different things to hand your account to.
 
 ![The MCP gallery, testing a server before enabling it](docs/images/mcp-gallery.png)
+
+Most MCP servers are in no catalogue, so you can add one by hand: a command and arguments, or a
+URL, plus any environment variables the vendor's page asks for. Tokens go to the secret store,
+never into `config.json`. Links to the Microsoft, Google, AWS and official collections sit beside
+the form for when you want something this list does not carry.
+
+![Adding an MCP server by hand, with links to the vendor collections](docs/images/mcp-manual.png)
 
 **Any model you like.** OpenAI, Azure OpenAI, Anthropic, Google Gemini, Ollama, DeepSeek, Qwen,
 Moonshot, OpenRouter, LM Studio — or any OpenAI-compatible endpoint. Configure in the app, in a
@@ -115,8 +212,9 @@ AutoWork's central claim is: **it can only reach the folders you grant it.**
   is refused. This is tested.
 - **Credentials are blocked even inside granted folders** — `.ssh`, `.aws`, `.env`, `*.pem`,
   keychains and friends, by default.
-- **Dangerous capabilities are opt-in.** Deleting, shell commands, mouse/keyboard control and
-  MCP servers are all off until you turn them on, and approval-gated by default when you do.
+- **Dangerous capabilities are opt-in.** Deleting, shell commands, mouse/keyboard control, MCP
+  servers and skill scripts are all off until you turn them on, and approval-gated by default
+  when you do.
 - **Consent is inline and specific.** Requests appear in the flow of the work with the actual
   command or file list shown — not as a modal you learn to dismiss.
 
@@ -128,9 +226,10 @@ AutoWork's central claim is: **it can only reach the folders you grant it.**
 **Honest limits.** Input control (synthetic mouse and keyboard) cannot be sandboxed by this
 process — once input is synthesised it goes to whatever window has focus. Shell commands run
 with your full user privileges. An MCP server is a program AutoWork starts with those same
-rights, and `PathGuard` cannot see inside it — which is why it takes its own switch, and why
-each server stays disabled until you enable it. Both are off by default, and the controls around them are
-consent and visibility rather than containment. On Windows the secret store is encrypted with
+rights, and `PathGuard` cannot see inside it — which is why it takes its own switch, and why each
+server stays disabled until you enable it. A skill's bundled script is the same story: someone
+else's code, its own switch, approval before every run. All of these are off by default, and the
+controls around them are consent and visibility rather than containment. On Windows the secret store is encrypted with
 DPAPI; on Linux and macOS it falls back to owner-only file permissions. See
 [docs/en/security.md](docs/en/security.md) for the full picture.
 

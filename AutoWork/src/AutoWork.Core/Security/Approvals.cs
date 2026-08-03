@@ -35,6 +35,13 @@ public sealed record ApprovalRequest
 
     public IReadOnlyList<string> AffectedPaths { get; init; } = [];
 
+    /// <summary>
+    /// What the change would look like, when the action is a write over something that already
+    /// exists. Null for everything else — "0 lines changed" and "this is a new file" are
+    /// different statements and the card should not conflate them.
+    /// </summary>
+    public Diff.TextDiffResult? Preview { get; init; }
+
     public DateTimeOffset RequestedAt { get; init; } = DateTimeOffset.Now;
 }
 
@@ -65,14 +72,36 @@ public sealed class DenyAllBroker : IApprovalBroker
 public sealed class ApprovalCoordinator : IApprovalBroker
 {
     private readonly IApprovalBroker _inner;
+    private readonly ApprovalRuleEngine? _rules;
+    private readonly Action<ApprovalRule, ApprovalRequest, ApprovalDecision>? _onRuleApplied;
     private readonly Dictionary<(string RunId, ApprovalKind Kind), bool> _standing = [];
     private readonly Lock _gate = new();
 
-    public ApprovalCoordinator(IApprovalBroker inner) => _inner = inner;
+    public ApprovalCoordinator(
+        IApprovalBroker inner,
+        ApprovalRuleEngine? rules = null,
+        Action<ApprovalRule, ApprovalRequest, ApprovalDecision>? onRuleApplied = null)
+    {
+        _inner = inner;
+
+        // Optional: without rules this behaves exactly as it did, which is what keeps every
+        // existing test and the headless paths honest.
+        _rules = rules;
+        _onRuleApplied = onRuleApplied;
+    }
 
     public async Task<ApprovalDecision> RequestAsync(ApprovalRequest request, CancellationToken cancellationToken = default)
     {
         var key = (request.RunId, request.Kind);
+
+        // Rules are consulted before the per-run memory, so a standing "never" cannot be
+        // overridden by an "allow for this run" the user clicked earlier in the same run.
+        if (_rules?.Evaluate(request) is { Decision: { } ruled, Rule: { } rule })
+        {
+            // An automatic decision that leaves no trace is the bad version of this feature.
+            _onRuleApplied?.Invoke(rule, request, ruled);
+            return ruled;
+        }
 
         lock (_gate)
         {

@@ -90,6 +90,65 @@ Artinya `config.json` aman disalin antar komputer atau di-commit ke repo privat.
 Untuk memakai pengelola rahasia eksternal, ketik `env:VAR_SAYA` di kotak kunci API lalu suntikkan
 `VAR_SAYA` dengan cara apa pun yang Anda pakai.
 
+## Skill
+
+Skill adalah file `SKILL.md` — front matter YAML berisi nama dan deskripsi kapan skill itu
+berlaku, diikuti instruksi dalam Markdown. AutoWork membacanya dari repositori GitHub yang Anda
+daftarkan di **Skill › Repositori**, dengan bawaan `anthropics/skills` dan `obra/superpowers`.
+
+Tambahkan repositori publik mana pun sebagai `owner/nama` atau URL GitHub; repositori skill
+internal perusahaan bekerja sama saja. Daftarnya tersimpan di `config.json` pada
+`skillRepositories`, dan skill yang terpasang berada di `skills/` dalam folder data.
+
+Skill terpasang sebagai satu folder utuh, bukan hanya manifesnya: dokumen rujukan, template,
+skema, dan skrip ikut serta, hingga 250 berkas dan 40 MB. Apa pun yang dilewati karena ukuran
+dilaporkan, bukan dibuang diam-diam.
+
+Hanya nama dan deskripsi skill yang ikut di setiap permintaan ke model. Isinya diambil
+`skill_open` saat model menilainya relevan, berkas bundelnya oleh `skill_file`, jadi memasang
+selusin skill tidak membuat setiap permintaan jadi dua belas kali lebih mahal.
+
+Bila skrip membutuhkan library, AutoWork memasangnya ke virtual environment di dalam folder skill
+itu sendiri: apa pun yang dideklarasikan `requirements.txt`, ditambah import yang bisa
+diterjemahkan lewat tabel nama tetap. Import yang tidak dikenali dilaporkan, bukan ditebak. Daftar
+paketnya muncul di kartu persetujuan sebelum apa pun diunduh, dan pemasangan terjadi sekali per
+skill.
+
+Skrip dijalankan `skill_run`, yang hanya ada bila
+**Pengaturan › Izin › Izinkan menjalankan skrip bawaan skill** menyala. Bawaannya mati dan ia
+meminta persetujuan sebelum tiap eksekusi — lihat
+[keamanan.md](keamanan.md#skill-instruksi-dan-kadang-kode).
+
+## Server MCP
+
+**Pengaturan › Izin › Izinkan server MCP** harus menyala; bawaannya mati karena server stdio
+adalah program yang dijalankan dengan hak akses penuh Anda. Lihat
+[keamanan.md](keamanan.md#server-mcp-berada-di-luar-sandbox).
+
+Server tersimpan di `config.json` pada `mcpServers`, masing-masing dengan transport, baris
+perintah atau URL, dan peta environment yang isinya referensi rahasia, bukan rahasianya:
+
+```jsonc
+{
+  "id": "a1b2c3d4",
+  "name": "Tavily Search",
+  "catalogId": "tavily",
+  "transport": "Stdio",
+  "command": "npx",
+  "arguments": ["-y", "tavily-mcp"],
+  "environment": { "TAVILY_API_KEY": "mcp.a1b2c3d4.TAVILY_API_KEY" },
+  "enabled": false
+}
+```
+
+Katalog bawaan mencakup filesystem, memory, sequential thinking, Playwright, Context7, Tavily,
+Firecrawl, Notion, server rujukan protokolnya, dan `mcp-remote` untuk server terkelola. Selain itu
+bisa ditambahkan manual. Sebagian besar butuh Node.js di PATH, dan galeri menyebutkannya per entri.
+
+Server disambungkan sekali di awal sesi, bukan saat aplikasi dijalankan — menjalankan `npx`
+memakan beberapa detik dan jendela tidak boleh menunggunya. Server yang tak terjangkau dicatat
+lalu dilewati; sesi berlanjut tanpa tool-nya.
+
 ## Environment variable
 
 ### Kunci penyedia
@@ -194,7 +253,13 @@ Cuplikan beranotasi:
       "maxOutputTokens": 8192,
       "temperature": 0.2,
       "capabilities": "Tools, Vision, Reasoning",
-      "enabled": true
+      "enabled": true,
+
+      // Opsional, kosong secara bawaan. Isi keduanya dari halaman harga penyedia Anda, maka
+      // setiap run melaporkan biayanya; dikosongkan berarti hanya token yang dilaporkan.
+      "inputPricePerMillion": 3.00,
+      "outputPricePerMillion": 15.00,
+      "currency": "USD"
     }
   ],
   "agent": {
@@ -221,9 +286,18 @@ Cuplikan beranotasi:
     "allowScreenCapture": true,
     "allowInputControl": false,
     "maxReadBytes": 33554432,
-    "maxBatchSize": 500
+    "maxBatchSize": 500,
+
+    // Jawaban tetap untuk permintaan persetujuan. Kosong secara bawaan.
+    "approvalRules": [
+      { "effect": "Allow", "kind": "WriteFiles", "path": "/home/fadhil/Projects" },
+      { "effect": "Deny",  "kind": "DeleteFiles" }
+    ]
   },
-  "appearance": { "theme": "System", "language": "System", "reduceMotion": false }
+  "appearance": { "theme": "System", "language": "System", "reduceMotion": false },
+
+  "keepRunHistory": true,          // catat setiap run agar bisa dibuka lagi nanti
+  "runHistoryRetentionDays": 30    // run yang lebih lama dihapus setiap kali sebuah run selesai
 }
 ```
 
@@ -242,3 +316,159 @@ bukan menolak menyala.
 | `autoCompactThreshold` | Ambang pemicu peringkasan konteks | Turunkan untuk model yang memburuk saat konteks hampir penuh |
 | `compactKeepRecentTurns` | Giliran terakhir yang dipertahankan utuh | Naikkan bila agen kehilangan arah setelah peringkasan |
 | `toolTimeoutSeconds` | Batas waktu per pemanggilan tool | Naikkan untuk perintah shell yang lambat |
+
+## Riwayat run
+
+Setiap run ditulis ke `runs/` di dalam folder data AutoWork sebagai dua berkas: ringkasan kecil
+yang dibaca daftar Riwayat, dan transkrip lengkap yang baru dimuat saat Anda membuka run
+tersebut. Membuka run lama akan memutar ulang isinya di Pita Kerja, persis seperti tampilannya
+saat run itu berjalan.
+
+| Pengaturan | Fungsinya | Kapan diubah |
+|---|---|---|
+| `keepRunHistory` | Mencatat setiap run | Matikan bila Anda tidak ingin ada yang dicatat |
+| `runHistoryRetentionDays` | Berapa lama run disimpan | Perpendek di komputer bersama; perpanjang bila sering dirujuk |
+
+Transkrip berisi apa pun yang dilihat run itu — isi berkas yang dibaca tool, hasil pencarian,
+jawaban model. Semuanya disimpan sebagai JSON biasa bersama data AutoWork lainnya, dilindungi
+oleh izin berkas dan tidak lebih dari itu. Setiap hasil tool dipotong di sekitar 4.000 karakter
+agar satu run yang membaca folder besar tidak meninggalkan berkas berukuran megabita.
+
+Pembersihan berjalan saat sebuah run selesai, jadi memperpendek masa simpan baru berlaku pada
+run berikutnya, bukan seketika. Menghapus run dari halaman Riwayat membuang kedua berkasnya
+sekaligus.
+
+## Aturan persetujuan
+
+Aturan menjawab satu golongan permintaan persetujuan sekali saja, bukan setiap kali. Tiap aturan
+punya `effect` (`Allow` atau `Deny`), `kind` yang opsional, dan `path`.
+
+```jsonc
+"approvalRules": [
+  // Berhenti bertanya soal penulisan di dalam satu pohon proyek.
+  { "effect": "Allow", "kind": "WriteFiles", "path": "/home/fadhil/Projects" },
+
+  // Tolak semua penghapusan, di mana pun, tanpa bertanya.
+  { "effect": "Deny", "kind": "DeleteFiles" },
+
+  // Tolak apa pun di dalam satu folder.
+  { "effect": "Deny", "path": "/home/fadhil/Arsip" }
+]
+```
+
+Empat batasan berlaku, dan semuanya ditegakkan, bukan sekadar imbauan:
+
+- **Penolakan menang** atas pengizinan, dalam urutan apa pun, dan atas "izinkan selama sesi ini"
+  yang diklik lebih dulu.
+- **Aturan tidak pernah memperluas apa yang diizinkan.** Tindakan yang diizinkan tetap melewati
+  sandbox, jadi aturan izin di luar folder yang Anda berikan tidak mengubah apa pun.
+- **Aturan izin wajib punya `path` sekaligus `kind`.** Tanpa keduanya, aturan itu diabaikan.
+- **Hanya `WriteFiles` dan `DeleteFiles` yang bisa diizinkan.** `RunCommand`, `ControlInput`,
+  `CaptureScreen`, dan `NetworkAccess` tidak punya folder untuk dibatasi, jadi tetap ditanyakan
+  per tindakan — sakelar kemampuannya di halaman Izin adalah tempat keputusan itu berada.
+  Penolakan boleh memakai jenis apa pun.
+
+Path dicocokkan pada batas folder, jadi aturan untuk `/home/fadhil/Proj` tidak mencakup
+`/home/fadhil/Proj-private`.
+
+## Harga model
+
+`inputPricePerMillion` dan `outputPricePerMillion` kosong sampai Anda mengisinya, dan AutoWork
+tidak membawa tabel harga apa pun. Ini disengaja: harga berubah lebih cepat daripada id model,
+dan angka bawaan yang basi lalu diam-diam melaporkan biaya lebih rendah dari kenyataan lebih
+buruk daripada tidak melaporkan biaya sama sekali.
+
+Bila keduanya diisi, setiap run melaporkan biaya dalam `currency` di samping jumlah tokennya.
+Bila salah satu kosong, yang dilaporkan hanya token. Kalau penyedia menjawab sebagian panggilan
+tanpa menyebut pemakaiannya, totalnya ditulis "minimal *n*", bukan sebagai angka pasti.
+
+## Tugas tersimpan
+
+Tugas disimpan di `jobs.json` di samping `config.json`. Masing-masing punya tujuan, pemicu, dan
+sakelar aktif yang bermula mati.
+
+```jsonc
+[
+  {
+    "name": "Faktur Senin",
+    "goal": "Ringkas faktur minggu lalu jadi dokumen Word",
+    "trigger": "Schedule",
+    "enabled": true,
+    "period": "Weekly",
+    "dayOfWeek": "Monday",
+    "timeOfDay": "08:30:00"
+  },
+  {
+    "name": "Rapikan hasil pindai",
+    "goal": "Urutkan apa pun yang baru di folder Pindai berdasarkan tanggal",
+    "trigger": "FolderChange",
+    "enabled": true,
+    "watchFolder": "/home/fadhil/Pindai",
+    "watchFilter": "*.pdf",
+    "quietSeconds": 20
+  }
+]
+```
+
+Tugas berjalan di halaman Kerja persis seperti Anda mengetiknya, jadi izin yang diminta pun sama.
+Tiga hal yang perlu diketahui:
+
+- **Pemicu folder hanya bisa memantau folder yang Anda izinkan.** Yang menunjuk ke tempat lain
+  dilaporkan dan diabaikan, bukan dipantau.
+- **Tugas tidak diantrikan.** Yang jatuh tempo saat run lain berjalan dilewati, dan itu disebutkan.
+- **Waktu yang terlewat tidak menumpuk.** Waktu jatuh tempo dihitung dari jam, jadi aplikasi yang
+  ditutup sepanjang akhir pekan berjalan sekali saat dibuka lagi, bukan tiga kali.
+
+## Rapat dan rekaman
+
+Mati sampai dikonfigurasi, dan lokal kecuali Anda menentukan lain. AutoWork tidak membawa model
+suara; arahkan ke model yang Anda punya.
+
+```jsonc
+"transcription": {
+  "mode": "Local",                 // Off | Local | Remote
+  "command": "whisper-cli",
+  "arguments": "-m {model} -f {audio} --output-txt --no-prints",
+  "modelPath": "C:/models/ggml-base.en.bin",
+  "language": ""
+}
+```
+
+`{audio}`, `{model}`, dan `{language}` akan diisi. Templatnya dipecah menjadi argumen *sebelum*
+substitusi, sehingga rekaman yang path-nya mengandung spasi tetap menjadi satu argumen.
+whisper.cpp, faster-whisper, dan openai-whisper sama-sama bisa; masing-masing punya argumennya
+sendiri. Hasilnya dibaca dari keluaran perintah itu sendiri atau dari berkas `.txt`/`.srt` yang
+ditulis di samping rekaman.
+
+`"mode": "Remote"` mengunggah rekaman ke endpoint yang kompatibel dengan Whisper. Itu tidak pernah
+menjadi bawaan, punya kartu persetujuannya sendiri, dan perlu diingat bahwa rekaman rapat berisi
+orang-orang yang tidak pernah menyetujui apa pun.
+
+## Peramban tempat Anda sudah masuk
+
+```jsonc
+"browser": {
+  "enabled": false,
+  "executablePath": "",     // kosong berarti mencari Edge atau Chrome
+  "headless": false
+}
+```
+
+Mati secara bawaan dan **terpisah dari `permissions.allowNetwork`** — mengambil halaman publik dan
+bertindak sebagai pengguna yang sudah masuk bukan izin yang sama. Keduanya harus aktif agar tool
+peramban muncul sama sekali.
+
+Profilnya berada di `browser-profile/` di dalam folder data AutoWork, bukan profil peramban Anda
+yang asli: menempel ke peramban yang sedang Anda buka akan berebut kunci profil. Profil ini
+bertahan, jadi Anda cukup masuk sekali. Navigasi dan klik mengikuti `permissions.networkAllowList`
+yang sama dengan tool web, dan masing-masing bertanya lebih dulu.
+
+## Berkas terhapus
+
+Dengan `permissions.softDelete` menyala (bawaan), penghapusan dipindahkan ke `recycle/` di dalam
+folder data AutoWork beserta indeks yang mencatat asal masing-masing. Halaman Pemulihan
+menampilkannya dan mengembalikannya. Tidak ada yang bisa dipulihkan ke dalam folder AutoWork
+sendiri, dan memulihkan di atas berkas yang sudah ada memerlukan konfirmasi kedua yang eksplisit.
+
+Item yang direcycle oleh build sebelum indeks ini ada ditampilkan sebagai tidak bisa dipulihkan,
+bukan disembunyikan — item itu tetap memakan ruang, dan Anda mungkin masih ingin membersihkannya.

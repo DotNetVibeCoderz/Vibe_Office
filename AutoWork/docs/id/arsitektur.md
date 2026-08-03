@@ -62,6 +62,8 @@ bergantung pada semuanya, dan tidak ada yang bergantung padanya.
    │                                independen secara eksplisit boleh berjalan bersamaan
    │
    ├─ 5. Untuk tiap gelombang
+   │      ├─ gerbang jeda           tahan di sini bila pengguna meminta jeda; sampaikan
+   │      │                         koreksinya ke model sebelum langkah dijalankan
    │      ├─ ringkas bila perlu     ringkas giliran lama sebelum langkah, bukan sesudah,
    │      │                         agar langkah itu punya ruang untuk bekerja
    │      ├─ jalankan langkah       model eksekutor + tool yang dipanggil otomatis
@@ -69,11 +71,173 @@ bergantung pada semuanya, dan tidak ada yang bergantung padanya.
    │
    ├─ 6. Verifikasi                 cocokkan transkrip dengan kriteria keberhasilan
    │
-   └─ 7. Laporkan                   ringkasan, durasi, langkah, statistik peringkasan
+   ├─ 7. Laporkan                   ringkasan, durasi, langkah, statistik peringkasan
+   │
+   └─ 8. Simpan transkrip           ditulis apa pun hasilnya, termasuk saat dihentikan
 ```
 
 Progres dipancarkan sebagai record `RunEvent` yang imutabel. Core mendefinisikannya dan tidak
 memuat tipe UI apa pun; lapisan desktop yang mengubahnya menjadi baris di Pita Kerja.
+
+## Jeda dan koreksi
+
+Pengguna yang melihat agen salah arah seharusnya bisa langsung mengatakannya, bukan membatalkan
+lalu mengetik ulang seluruh pekerjaan. `RunController` adalah pegangan UI atas run yang sedang
+berjalan: `Pause`, `Resume`, `Steer`, dan `Abandon`.
+
+Jeda berlaku **di batas langkah berikutnya**, tidak pernah di tengah langkah. Menyela di tengah
+berarti menelantarkan pemanggilan tool yang sudah dikirim ke penyedia, atau meninggalkan tulisan
+berkas yang setengah jadi — dan keduanya menyisakan percakapan yang tidak bisa dilanjutkan oleh
+apa pun. Menunggu batas langkah hanya makan beberapa detik. Alasannya sama dengan mengapa
+peringkasan pun hanya terjadi di titik itu.
+
+Koreksi disisipkan sebagai giliran pengguna **sebelum** langkah yang hendak diubahnya, dengan
+kalimat yang membuat model memperlakukannya sebagai pengguna berubah pikiran — bukan sebagai satu
+syarat tambahan di atas permintaan awal. Mengoreksi tanpa menjeda dulu juga boleh: koreksinya
+diantrikan dan tetap diterapkan di batas berikutnya.
+
+Menghentikan run juga harus melepaskan run yang sedang dijeda, kalau tidak thread agen akan
+menunggu selamanya untuk perintah lanjut yang tak akan pernah datang — sama persis dengan kartu
+persetujuan yang tidak pernah dijawab.
+
+## Riwayat run
+
+Setiap run disimpan di `runs/` sebagai dua berkas:
+
+- `<id>.json` — ringkasannya: tujuan, model, status, waktu, jumlah langkah dan pemanggilan tool.
+- `<id>.events.json` — aliran `RunEvent` selengkapnya.
+
+Dipisah karena daftar Riwayat kalau tidak harus membayar setiap transkrip yang tidak sedang
+ditampilkannya, sementara satu transkrip memuat seluruh hasil tool yang pernah dilihat run itu.
+Setiap hasil tool dipotong di sekitar 4.000 karakter sebelum disimpan.
+
+Event ditulis secara polimorfik dengan penanda tipe pendek yang tetap. Transkrip yang tersimpan
+berumur lebih panjang daripada build yang menulisnya, jadi kelas yang diganti nama tidak boleh
+membuat riwayat kemarin tak terbaca — dan ada tes yang gagal bila ada subtipe `RunEvent` baru
+tanpa penanda.
+
+Membuka run lama memutar ulang event-nya lewat **handler yang sama dengan run langsung**, bukan
+lewat perender khusus baca-saja yang kedua. Satu perender berarti run lama tampak persis seperti
+saat berjalan, dan tidak ada tempat kedua yang bisa melenceng.
+
+Riwayat adalah kemudahan, bukan syarat: transkrip yang gagal ditulis dicatat di log, dan hasil
+run-nya tetap berlaku.
+
+## Meter token
+
+`UsageTrackingChatClient` membungkus setiap klien selama satu run dan melaporkan pemakaian tiap
+permintaan ke `RunMeter`. Ia sengaja diletakkan **di luar** loop pemanggilan fungsi: satu langkah
+agen bisa menghasilkan beberapa perjalanan bolak-balik ke penyedia saat tool dipanggil dan
+hasilnya dikembalikan, dan semuanya ditagih. Menghitung hanya panggilan terluar akan melaporkan
+sebagian kecil dari run yang banyak memakai tool.
+
+Biaya dijumlahkan per model, bukan dari total run — run yang merencanakan dengan satu model dan
+mengeksekusi dengan model lain punya dua harga, dan satu tarif campuran akan salah untuk keduanya.
+
+Tiga hal yang tidak akan dilakukannya:
+
+- **Mengarang harga.** Tidak ada tabel harga bawaan. Kedua harga harus diisi pada model, kalau
+  tidak, tidak ada biaya yang dilaporkan. Setengah harga tidak cukup.
+- **Membulatkan kekosongan.** Penyedia yang menjawab tanpa melaporkan pemakaian menambah
+  penghitung terpisah, dan totalnya lalu ditampilkan sebagai "minimal *n*".
+- **Mengestimasi.** `TokenEstimator` ada untuk peringkasan, di mana kelebihan estimasi adalah
+  kesalahan yang aman. Meter melaporkan apa yang dikatakan penyedia, atau menyatakan tidak tahu.
+
+## Aturan persetujuan
+
+`ApprovalRuleEngine` dikonsultasikan oleh `ApprovalCoordinator` sebelum apa pun sampai ke
+pengguna atau ke memori per-run. Batasannya dijelaskan di
+[keamanan.md](keamanan.md#aturan-tetap); yang penting secara arsitektural adalah evaluasi aturan
+terjadi di lapisan *persetujuan*, sementara `PathGuard` berjalan di dalam badan tool sesudahnya.
+
+Urutan itulah seluruh argumen keamanannya. Sebuah aturan hanya bisa meredam pertanyaan tentang
+sesuatu yang memang akan diizinkan sandbox — ia tidak berada di jalur yang menentukan apa yang
+terjangkau, dan tidak bisa dibuat berada di sana.
+
+## Streaming
+
+Loop langkah melakukan streaming secara bawaan lalu menggabungkan kembali pembaruannya menjadi
+satu respons, karena loop tetap membutuhkan satu jawaban utuh dan sekumpulan pesan untuk
+ditambahkan. Potongan dikirim sebagai `AssistantDeltaEvent`, masing-masing membawa **total
+berjalan untuk langkah itu**, bukan sekadar potongan barunya — sehingga tampilan yang melewatkan
+satu pembaruan, atau baru mulai menonton, tetap menampilkan yang benar.
+
+Pemanggilan tool yang terpotong bukan urusan lapisan ini. Klien function-invocation berada di
+bawahnya dan merangkai kembali panggilan yang datang berkeping-keping, lalu melanjutkan stream
+dengan hasilnya. Yang ditambahkan orkestrator hanyalah penggabungan dan event-nya.
+
+Bila streaming gagal **sebelum ada konten yang tiba**, permintaan yang sama diulang tanpa
+streaming — sebagian gateway mengiklankan streaming lalu menolaknya, dan run yang mati karena itu
+lebih buruk daripada run yang diam-diam kembali menunggu. Kegagalan *setelah* konten tiba adalah
+kegagalan sungguhan dan diserahkan ke penanganan galat langkah: mengulang saat itu berisiko
+menjalankan ulang tool yang sudah berjalan.
+
+## Tugas tersimpan
+
+`JobScheduler` mengawasi jam dan folder, lalu meminta sebuah tugas dijalankan. Ia tidak tahu apa
+arti menjalankan tugas — itu sebuah delegate — sehingga bisa diuji dengan jam palsu dan folder
+sungguhan tanpa agen, penyedia, atau jaringan sama sekali.
+
+Tiga aturan membentuknya:
+
+- **Satu per satu.** Sebuah run memegang halaman Kerja dan broker persetujuan. Tugas yang jatuh
+  tempo saat run lain berjalan dilewati, bukan diantrikan: "ringkas kemarin" berjalan dua kali
+  beruntun lebih buruk daripada berjalan sekali.
+- **Waktu yang terlewat tidak menumpuk.** Waktu jatuh tempo dihitung dari jam, jadi aplikasi yang
+  ditutup sepanjang akhir pekan bangun tanpa utang.
+- **Pemicu folder hanya boleh memantau yang diizinkan sandbox.** Kalau tidak, menyimpan sebuah
+  tugas menjadi cara membuat AutoWork membaca folder yang tidak pernah diberikan kepadanya.
+
+Pemicu folder menunggu masa tenang sebelum dijalankan. Menyalin lima puluh berkas memunculkan
+lima puluh event; tanpa itu tugas dimulai pada berkas pertama dan membaca folder setengah jadi.
+
+## Rapat
+
+Transkripsi mati sampai dikonfigurasi, dan bersifat lokal kecuali pengguna memilih sebaliknya.
+AutoWork tidak membawa model suara — beberapa ratus megabita bobot bukan sesuatu yang dipasang
+diam-diam — jadi `LocalTranscriber` menjalankan model yang sudah terpasang, sebagai perintah, dan
+membaca kembali stdout-nya atau berkas `.txt`/`.srt` yang ditulis di samping audio.
+
+Hanya transkripsi yang berupa tool. Menarik keputusan dan penanggung jawab adalah penalaran, yang
+sudah dilakukan agen lebih baik daripada prompt tetap yang dikubur di dalam sebuah tool, dan
+menuliskan hasilnya adalah `doc_create_word` atau `knowledge_save` yang sudah ada.
+
+## Sesi peramban
+
+`BrowserSession` menjalankan peramban yang **sudah terpasang**, lewat protokol DevTools, dengan
+profil tersendiri yang bertahan. Kombinasi itulah intinya: `web_fetch` melihat halaman yang
+dilihat orang asing, sedangkan pekerjaan yang layak diotomatiskan ada di balik login.
+
+Tiga keputusan:
+
+- **Tidak membundel peramban.** Edge atau Chrome sudah ada; mengunduh satu lagi hanya untuk
+  diotomatiskan bukan permintaan yang wajar.
+- **Profil sendiri, bukan milik pengguna.** Menempel ke peramban yang sedang mereka buka akan
+  berebut kunci profil. Direktori terpisah tetap mengingat login antar-run, dan itulah yang
+  diinginkan.
+- **Terlihat kecuali diminta sebaliknya.** Sesuatu yang bertindak sebagai Anda seharusnya bisa
+  Anda tonton.
+
+Koneksinya ke target **halaman** dari `/json/list`, bukan target peramban dari `/json/version`.
+Yang terakhir itu yang paling mudah dijangkau dan justru salah: ia bicara `Target` dan `Browser`
+tetapi tidak `Page` atau `Runtime`, sehingga navigasi dan evaluasi berhasil tanpa melakukan
+apa pun.
+
+## Berkas terhapus
+
+Hapus lunak memindahkan berkas ke `recycle/` di bawah `AppPaths.Root`, yang ditolak `PathGuard`
+tanpa syarat, sehingga agen tidak bisa membaca kembali apa yang dihapusnya. Di sampingnya,
+`RecycleBin` menyimpan indeks JSONL append-only berisi asal tiap item — bagian yang membuat
+"bisa dipulihkan" menjadi benar, bukan sekadar nama.
+
+Penambahan baris menutup baris terakhir yang robek lebih dulu. Tanpa itu, proses yang mati di
+tengah penulisan tidak hanya kehilangan catatannya sendiri tetapi juga catatan *berikutnya*, yang
+menyambung ke potongan tadi.
+
+Pemulihan adalah tindakan pengguna atas datanya sendiri, jadi ia tidak terikat pada izin folder
+milik agen — berkas yang dihapus dari folder yang kini izinnya dicabut harus tetap bisa
+dipulihkan. Satu aturan kerasnya: tidak ada yang boleh ditulis ke dalam direktori AutoWork
+sendiri, sehingga baris indeks yang dipalsukan tidak bisa dipakai menimpa `config.json`.
 
 ## Mengapa berbentuk langkah, bukan satu percakapan panjang
 
@@ -174,6 +338,39 @@ berikutnya. Daftar host keluar diperiksa per backend, jadi fallback tidak akan p
 host yang belum diizinkan pengguna.
 
 ![Tampilan Aktivitas, mengalirkan log tindakan saat sesi berjalan](../images/activity.png)
+
+### Skill
+
+Skill adalah sebuah folder: manifes, plus rujukan, template, dan skrip yang menyertainya. Skill
+yang terpasang menyumbang satu baris di prompt sistem (nama plus kapan dipakai), dan tiga tool —
+`skill_open` untuk instruksinya, `skill_file` untuk berkas bundel, dan `skill_run` untuk skrip
+bila izinnya mengizinkan.
+
+Kedua tool yang menerima path menyelesaikan path itu lalu memastikan hasilnya berada di dalam
+folder skill — pemeriksaan yang sama saat bundel ditulis, karena path dari repositori dan path
+dari model sama-sama layak dicurigai.
+
+Pemisahan itulah inti desainnya. Menempelkan selusin skill ke setiap permintaan berbiaya puluhan
+ribu token demi membuat satu di antaranya relevan; menyebut namanya berbiaya beberapa ratus dan
+membiarkan model memilih. Pertukaran yang sama dengan mencari di basis pengetahuan alih-alih
+melampirkannya.
+
+![Galeri Skill](../images/skills-gallery.png)
+
+### MCP
+
+Tool MCP datang dari SDK C# sudah berupa `AIFunction`, jadi integrasinya tipis: sambung, daftar,
+bungkus tiap tool dalam `ToolDescriptor` agar Pita Kerja bisa mengatribusikannya seperti tool lain.
+
+Bagian yang canggung adalah waktunya. `ToolRegistry.Build` bersifat sinkron, sementara menjalankan
+server stdio makan beberapa detik. Karena itu orkestrator menyediakan kait `PrepareToolsAsync`
+yang berjalan sekali sebelum perangkat tool disusun, dan klien dipertahankan selama aplikasi hidup
+alih-alih per sesi.
+
+Tool-nya ditandai `ToolRisk.Write`, tidak pernah `Safe`. AutoWork tidak bisa melihat apa yang
+dilakukan tool eksternal, dan label risiko adalah klaim tentang perilaku.
+
+![Galeri MCP](../images/mcp-gallery.png)
 
 ## Basis pengetahuan
 

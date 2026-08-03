@@ -1,0 +1,113 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:AutoWork.Desktop.ViewModels"
+             x:Class="AutoWork.Desktop.Views.RecycleView"
+             x:DataType="vm:RecycleViewModel">
+
+  <Grid RowDefinitions="Auto,*" Margin="26,22,26,0">
+
+    <StackPanel Grid.Row="0" Spacing="12" Margin="0,0,0,16">
+      <Grid ColumnDefinitions="*,Auto,Auto,Auto">
+        <StackPanel Grid.Column="0" Spacing="3">
+          <TextBlock Text="{Binding L[recycle.title]}" Classes="title" />
+          <TextBlock Text="{Binding L[recycle.subtitle]}" Classes="dim" />
+        </StackPanel>
+
+        <Button Grid.Column="1" Classes="ghost" VerticalAlignment="Center" Margin="8,0,0,0"
+                AutomationProperties.AutomationId="RecycleRefresh"
+                Content="{Binding L[recycle.refresh]}"
+                Command="{Binding ReloadCommand}" />
+
+        <Button Grid.Column="2" Classes="ghost" VerticalAlignment="Center" Margin="8,0,0,0"
+                AutomationProperties.AutomationId="RecycleOpenFolder"
+                Content="{Binding L[recycle.open]}"
+                Command="{Binding OpenFolderCommand}" />
+
+        <Button Grid.Column="3" Classes="danger" VerticalAlignment="Center" Margin="8,0,0,0"
+                AutomationProperties.AutomationId="RecycleEmpty"
+                Content="{Binding L[recycle.empty]}"
+                Command="{Binding EmptyBinCommand}"
+                IsEnabled="{Binding !IsEmpty}" />
+      </Grid>
+
+      <Border Classes="inset" IsVisible="{Binding SoftDeleteOff}">
+        <TextBlock Text="{Binding L[recycle.softdelete.off]}" Foreground="{DynamicResource Warning}" />
+      </Border>
+
+      <Border Classes="inset" IsVisible="{Binding HasStatus}">
+        <TextBlock Text="{Binding Status}" />
+      </Border>
+    </StackPanel>
+
+    <Border Grid.Row="1" Classes="card" Padding="0" Margin="0,0,0,26">
+      <Panel>
+        <StackPanel Margin="18" Spacing="4" IsVisible="{Binding IsEmpty}">
+          <TextBlock Text="{Binding L[recycle.empty.none]}" Classes="dim" />
+          <TextBlock Text="{Binding L[recycle.empty.hint]}" Classes="faint" />
+        </StackPanel>
+
+        <ScrollViewer IsVisible="{Binding !IsEmpty}">
+          <ItemsControl ItemsSource="{Binding Items}" AutomationProperties.AutomationId="RecycleList">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:RecycledItemViewModel">
+                <Border BorderBrush="{DynamicResource Line}" BorderThickness="0,0,0,1" Padding="16,13">
+                  <Grid ColumnDefinitions="96,*,Auto">
+
+                    <StackPanel Grid.Column="0" Spacing="2">
+                      <TextBlock Text="{Binding When}" Classes="mono faint" />
+                      <TextBlock Text="{Binding Size}" Classes="mono faint" />
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="1" Margin="14,0,14,0" Spacing="3">
+                      <TextBlock Text="{Binding Name}" FontWeight="Medium"
+                                 TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" />
+
+                      <TextBlock Text="{Binding Origin}"
+                                 Classes="mono faint"
+                                 TextTrimming="CharacterEllipsis"
+                                 TextWrapping="NoWrap"
+                                 IsVisible="{Binding CanRestore}" />
+
+                      <TextBlock Text="{Binding $parent[ItemsControl].((vm:RecycleViewModel)DataContext).L[recycle.origin.unknown]}"
+                                 Classes="faint"
+                                 IsVisible="{Binding !CanRestore}" />
+
+                      <TextBlock Text="{Binding Note}"
+                                 Foreground="{DynamicResource Warning}"
+                                 TextWrapping="Wrap"
+                                 IsVisible="{Binding HasNote}" />
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                      <Button Classes="ghost"
+                              AutomationProperties.AutomationId="RecycleRestore"
+                              Content="{Binding $parent[ItemsControl].((vm:RecycleViewModel)DataContext).L[recycle.restore]}"
+                              Command="{Binding $parent[ItemsControl].((vm:RecycleViewModel)DataContext).RestoreCommand}"
+                              CommandParameter="{Binding}"
+                              IsVisible="{Binding CanRestore}"
+                              IsEnabled="{Binding !NeedsOverwrite}" />
+
+                      <!-- Only appears once the first attempt has reported what is in the way. -->
+                      <Button Classes="danger"
+                              AutomationProperties.AutomationId="RecycleRestoreOver"
+                              Content="{Binding $parent[ItemsControl].((vm:RecycleViewModel)DataContext).L[recycle.restore.over]}"
+                              Command="{Binding $parent[ItemsControl].((vm:RecycleViewModel)DataContext).RestoreOverCommand}"
+                              CommandParameter="{Binding}"
+                              IsVisible="{Binding NeedsOverwrite}" />
+
+                      <Button Classes="ghost"
+                              AutomationProperties.AutomationId="RecyclePurge"
+                              Content="{Binding $parent[ItemsControl].((vm:RecycleViewModel)DataContext).L[recycle.purge]}"
+                              Command="{Binding $parent[ItemsControl].((vm:RecycleViewModel)DataContext).PurgeCommand}"
+                              CommandParameter="{Binding}" />
+                    </StackPanel>
+                  </Grid>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
+      </Panel>
+    </Border>
+  </Grid>
+</UserControl>
