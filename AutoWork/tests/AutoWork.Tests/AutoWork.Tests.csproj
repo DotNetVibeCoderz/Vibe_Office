@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\AutoWork.Core\AutoWork.Core.csproj" />
+    <ProjectReference Include="..\..\src\AutoWork.Providers\AutoWork.Providers.csproj" />
+    <ProjectReference Include="..\..\src\AutoWork.Tools\AutoWork.Tools.csproj" />
+    <ProjectReference Include="..\..\src\AutoWork.Agents\AutoWork.Agents.csproj" />
+    <ProjectReference Include="..\..\src\AutoWork.Integrations\AutoWork.Integrations.csproj" />
+  </ItemGroup>
+
+</Project>

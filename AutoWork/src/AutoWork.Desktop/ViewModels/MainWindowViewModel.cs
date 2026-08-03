@@ -1,0 +1,95 @@
+using AutoWork.Core.Agents;
+using AutoWork.Desktop.Localization;
+using AutoWork.Desktop.Services;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+
+namespace AutoWork.Desktop.ViewModels;
+
+public enum Section
+{
+    Work,
+    Activity,
+    Knowledge,
+    Integrations,
+    Settings,
+}
+
+/// <summary>
+/// The shell. Owns the section views and the organ rail in the header.
+///
+/// The organ rail is the piece of chrome that earns its place: three segments that light in
+/// their own hue as the Brain, Eyes or Hands take over. It tells you at a glance whether
+/// AutoWork is reasoning, looking at your screen, or touching your files — which is the single
+/// thing a person most wants to know about an agent running on their own machine.
+/// </summary>
+public sealed partial class MainWindowViewModel : ObservableObject
+{
+    public MainWindowViewModel(AppServices services)
+    {
+        Services = services;
+
+        Work = new WorkViewModel(services);
+        Activity = new ActivityViewModel(services);
+        Knowledge = new KnowledgeViewModel(services);
+        Integrations = new IntegrationsViewModel(services);
+        SettingsPage = new SettingsViewModel(services);
+
+        SettingsPage.Applied += () =>
+        {
+            Work.RefreshModelAvailability();
+            OnPropertyChanged(nameof(L));
+        };
+
+        Work.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(WorkViewModel.ActiveOrgan)) RaiseOrganFlags();
+        };
+
+        // Land on Settings when there is nothing to run with — the first thing a new install
+        // needs is a model, and hiding that behind a nav click helps nobody.
+        _section = services.Config.Current.ResolveExecutorModel() is null ? Section.Settings : Section.Work;
+    }
+
+    public AppServices Services { get; }
+    public Strings L => Services.Strings;
+
+    public WorkViewModel Work { get; }
+    public ActivityViewModel Activity { get; }
+    public KnowledgeViewModel Knowledge { get; }
+    public IntegrationsViewModel Integrations { get; }
+    public SettingsViewModel SettingsPage { get; }
+
+    [ObservableProperty] private Section _section;
+
+    public bool IsWork => Section == Section.Work;
+    public bool IsActivity => Section == Section.Activity;
+    public bool IsKnowledge => Section == Section.Knowledge;
+    public bool IsIntegrations => Section == Section.Integrations;
+    public bool IsSettings => Section == Section.Settings;
+
+    public bool ThinkActive => Work.ActiveOrgan == AgentOrgan.Brain;
+    public bool SeeActive => Work.ActiveOrgan == AgentOrgan.Eyes;
+    public bool ActActive => Work.ActiveOrgan == AgentOrgan.Hands;
+
+    [RelayCommand]
+    private void Navigate(Section section) => Section = section;
+
+    partial void OnSectionChanged(Section value)
+    {
+        OnPropertyChanged(nameof(IsWork));
+        OnPropertyChanged(nameof(IsActivity));
+        OnPropertyChanged(nameof(IsKnowledge));
+        OnPropertyChanged(nameof(IsIntegrations));
+        OnPropertyChanged(nameof(IsSettings));
+
+        if (value == Section.Knowledge) Knowledge.ReloadCommand.Execute(null);
+    }
+
+    private void RaiseOrganFlags()
+    {
+        OnPropertyChanged(nameof(ThinkActive));
+        OnPropertyChanged(nameof(SeeActive));
+        OnPropertyChanged(nameof(ActActive));
+    }
+}

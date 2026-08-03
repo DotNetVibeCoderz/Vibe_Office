@@ -1,0 +1,73 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:AutoWork.Desktop.ViewModels"
+             x:Class="AutoWork.Desktop.Views.IntegrationsView"
+             x:DataType="vm:IntegrationsViewModel">
+
+  <ScrollViewer Padding="26,22,26,32">
+    <StackPanel Spacing="16" MaxWidth="760" HorizontalAlignment="Left">
+
+      <StackPanel Spacing="3">
+        <TextBlock Text="{Binding L[integrations.title]}" Classes="title" />
+        <TextBlock Text="{Binding L[integrations.subtitle]}" Classes="dim" />
+      </StackPanel>
+
+      <ItemsControl ItemsSource="{Binding Items}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:IntegrationViewModel">
+            <Border Classes="card" Margin="0,0,0,12">
+              <StackPanel Spacing="12">
+
+                <Grid ColumnDefinitions="*,Auto">
+                  <StackPanel Grid.Column="0" Spacing="3">
+                    <TextBlock Text="{Binding DisplayName}" Classes="heading" />
+                    <TextBlock Text="{Binding Description}" Classes="dim" />
+                  </StackPanel>
+                  <ToggleSwitch Grid.Column="1" IsChecked="{Binding Enabled}" VerticalAlignment="Center" />
+                </Grid>
+
+                <StackPanel Spacing="10" IsVisible="{Binding Enabled}">
+                  <Border Classes="divider" />
+
+                  <ItemsControl ItemsSource="{Binding Fields}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="vm:IntegrationFieldViewModel">
+                        <StackPanel Spacing="4" Margin="0,0,0,10">
+                          <TextBlock Text="{Binding Label}" Classes="eyebrow" />
+                          <TextBox Text="{Binding Value}"
+                                   PasswordChar="{Binding PasswordChar}"
+                                   Watermark="{Binding Placeholder}" />
+                          <TextBlock Text="{Binding Help}" Classes="faint" />
+                        </StackPanel>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+
+                  <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button Classes="primary"
+                            Content="{Binding $parent[ItemsControl].((vm:IntegrationsViewModel)DataContext).L[integrations.save]}"
+                            Command="{Binding SaveCommand}" />
+                    <Button Content="{Binding $parent[ItemsControl].((vm:IntegrationsViewModel)DataContext).L[integrations.test]}"
+                            Command="{Binding TestCommand}"
+                            IsEnabled="{Binding !Busy}" />
+                    <Button Classes="ghost"
+                            Content="{Binding $parent[ItemsControl].((vm:IntegrationsViewModel)DataContext).L[integrations.docs]}"
+                            Command="{Binding OpenDocsCommand}" />
+                  </StackPanel>
+
+                  <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding HasStatus}">
+                    <Border Width="6" Height="6" CornerRadius="3" VerticalAlignment="Center"
+                            Background="{DynamicResource Success}" IsVisible="{Binding Connected}" />
+                    <Border Width="6" Height="6" CornerRadius="3" VerticalAlignment="Center"
+                            Background="{DynamicResource TextFaint}" IsVisible="{Binding !Connected}" />
+                    <TextBlock Text="{Binding Status}" Classes="dim" />
+                  </StackPanel>
+                </StackPanel>
+              </StackPanel>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

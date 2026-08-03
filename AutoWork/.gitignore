@@ -1,0 +1,44 @@
+## Build output
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+artifacts/
+publish/
+*.user
+*.suo
+
+## IDE
+.vs/
+.vscode/
+.idea/
+*.DotSettings.user
+
+## Test and coverage
+TestResults/
+coverage*.json
+coverage*.xml
+*.trx
+
+## OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+## AutoWork runtime state — never commit these.
+## Config is safe by design (it holds only secret *references*), but the secret store,
+## knowledge bases, action logs and screenshots are personal data.
+secrets.json
+secrets.json.key
+config.json.broken-*
+logs/
+knowledge/
+screenshots/
+recycle/
+workspace/
+
+## Live-test credentials kept in the working tree. These are real keys; the live suite reads
+## them via AUTOWORK_LIVE_* rather than the repo, so nothing here needs to be committed.
+testkey*.txt
+tavilykey.txt
+*.key.txt

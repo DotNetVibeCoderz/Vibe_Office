@@ -1,0 +1,100 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:AutoWork.Desktop.ViewModels"
+             xmlns:kb="clr-namespace:AutoWork.Core.Knowledge;assembly=AutoWork.Core"
+             x:Class="AutoWork.Desktop.Views.KnowledgeView"
+             x:DataType="vm:KnowledgeViewModel">
+
+  <Grid RowDefinitions="Auto,*" Margin="26,22,26,0">
+
+    <StackPanel Grid.Row="0" Spacing="3" Margin="0,0,0,16">
+      <TextBlock Text="{Binding L[knowledge.title]}" Classes="title" />
+      <TextBlock Text="{Binding L[knowledge.subtitle]}" Classes="dim" />
+    </StackPanel>
+
+    <Grid Grid.Row="1" ColumnDefinitions="280,*" Margin="0,0,0,26">
+
+      <!-- ── Bases ───────────────────────────────────────────────────────────────────── -->
+      <Border Grid.Column="0" Classes="card" Margin="0,0,16,0">
+        <Grid RowDefinitions="Auto,*,Auto">
+
+          <TextBlock Grid.Row="0" Text="{Binding L[knowledge.name]}" Classes="eyebrow" Margin="0,0,0,10" />
+
+          <ScrollViewer Grid.Row="1">
+            <StackPanel Spacing="4">
+              <TextBlock Text="{Binding L[knowledge.empty]}" Classes="dim" IsVisible="{Binding IsEmpty}" />
+              <TextBlock Text="{Binding L[knowledge.empty.hint]}" Classes="faint" IsVisible="{Binding IsEmpty}" />
+
+              <ListBox ItemsSource="{Binding Bases}" SelectedItem="{Binding Selected}">
+                <ListBox.ItemTemplate>
+                  <DataTemplate x:DataType="kb:KnowledgeBase">
+                    <Border Padding="10,8">
+                      <StackPanel Spacing="2">
+                        <TextBlock Text="{Binding Name}" FontWeight="Medium" />
+                        <TextBlock Classes="faint">
+                          <Run Text="{Binding Entries.Count}" />
+                          <Run Text="notes" />
+                        </TextBlock>
+                      </StackPanel>
+                    </Border>
+                  </DataTemplate>
+                </ListBox.ItemTemplate>
+              </ListBox>
+            </StackPanel>
+          </ScrollViewer>
+
+          <Grid Grid.Row="2" ColumnDefinitions="*,Auto" Margin="0,12,0,0">
+            <TextBox Grid.Column="0" Text="{Binding NewBaseName}" Watermark="{Binding L[knowledge.new]}" />
+            <Button Grid.Column="1" Margin="6,0,0,0" Content="+" Command="{Binding CreateBaseCommand}" />
+          </Grid>
+        </Grid>
+      </Border>
+
+      <!-- ── Entries ─────────────────────────────────────────────────────────────────── -->
+      <Border Grid.Column="1" Classes="card" IsVisible="{Binding HasSelection}">
+        <Grid RowDefinitions="Auto,*,Auto">
+
+          <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,12">
+            <TextBlock Grid.Column="0" Text="{Binding Selected.Name}" Classes="heading" VerticalAlignment="Center" />
+            <Button Grid.Column="1" Classes="ghost danger"
+                    Content="{Binding L[knowledge.delete]}"
+                    Command="{Binding DeleteBaseCommand}"
+                    CommandParameter="{Binding Selected}" />
+          </Grid>
+
+          <ScrollViewer Grid.Row="1">
+            <ItemsControl ItemsSource="{Binding Entries}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="kb:KnowledgeEntry">
+                  <Border Classes="inset" Margin="0,0,0,8">
+                    <Grid ColumnDefinitions="*,Auto">
+                      <StackPanel Grid.Column="0" Spacing="3">
+                        <TextBlock Text="{Binding Title}" FontWeight="Medium" />
+                        <TextBlock Text="{Binding Text}" Classes="dim" MaxLines="4" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Text="{Binding Source}" Classes="mono faint" />
+                      </StackPanel>
+                      <Button Grid.Column="1" Classes="ghost" Content="×"
+                              Command="{Binding $parent[ItemsControl].((vm:KnowledgeViewModel)DataContext).RemoveEntryCommand}"
+                              CommandParameter="{Binding}" />
+                    </Grid>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </ScrollViewer>
+
+          <StackPanel Grid.Row="2" Spacing="8" Margin="0,12,0,0">
+            <Border Classes="divider" />
+            <TextBox Text="{Binding EntryTitle}" Watermark="{Binding L[knowledge.entry.title]}" />
+            <TextBox Text="{Binding EntryText}" Watermark="{Binding L[knowledge.entry.text]}"
+                     AcceptsReturn="True" TextWrapping="Wrap" MinHeight="70" />
+            <StackPanel Orientation="Horizontal" Spacing="10">
+              <Button Classes="primary" Content="{Binding L[knowledge.add]}" Command="{Binding AddEntryCommand}" />
+              <TextBlock Text="{Binding Status}" Classes="faint" VerticalAlignment="Center" />
+            </StackPanel>
+          </StackPanel>
+        </Grid>
+      </Border>
+    </Grid>
+  </Grid>
+</UserControl>

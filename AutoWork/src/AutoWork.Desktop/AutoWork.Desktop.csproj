@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <AssemblyName>AutoWork</AssemblyName>
+    <RootNamespace>AutoWork.Desktop</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" />
+    <PackageReference Include="Avalonia.Desktop" />
+    <PackageReference Include="Avalonia.Themes.Fluent" />
+    <PackageReference Include="Avalonia.Fonts.Inter" />
+    <PackageReference Include="Avalonia.Diagnostics" Condition="'$(Configuration)' == 'Debug'" />
+    <PackageReference Include="CommunityToolkit.Mvvm" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\AutoWork.Core\AutoWork.Core.csproj" />
+    <ProjectReference Include="..\AutoWork.Providers\AutoWork.Providers.csproj" />
+    <ProjectReference Include="..\AutoWork.Tools\AutoWork.Tools.csproj" />
+    <ProjectReference Include="..\AutoWork.Agents\AutoWork.Agents.csproj" />
+    <ProjectReference Include="..\AutoWork.Integrations\AutoWork.Integrations.csproj" />
+  </ItemGroup>
+
+</Project>

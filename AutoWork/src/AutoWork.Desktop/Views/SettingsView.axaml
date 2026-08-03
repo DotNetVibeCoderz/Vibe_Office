@@ -1,0 +1,339 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:AutoWork.Desktop.ViewModels"
+             xmlns:cfg="clr-namespace:AutoWork.Core.Configuration;assembly=AutoWork.Core"
+             x:Class="AutoWork.Desktop.Views.SettingsView"
+             x:DataType="vm:SettingsViewModel">
+
+  <Grid RowDefinitions="Auto,*,Auto" Margin="26,22,26,0">
+
+    <StackPanel Grid.Row="0" Spacing="3" Margin="0,0,0,16">
+      <TextBlock Text="{Binding L[settings.title]}" Classes="title" />
+    </StackPanel>
+
+    <TabControl Grid.Row="1">
+
+      <!-- ── Models ──────────────────────────────────────────────────────────────────── -->
+      <TabItem Header="{Binding L[settings.models]}" AutomationProperties.AutomationId="TabModels">
+        <ScrollViewer Padding="0,14,0,0">
+          <StackPanel Spacing="14" MaxWidth="760" HorizontalAlignment="Left">
+
+            <TextBlock Text="{Binding L[models.subtitle]}" Classes="dim" />
+
+            <StackPanel Orientation="Horizontal" Spacing="10">
+              <Button Classes="primary" Content="{Binding L[models.add]}" Command="{Binding AddModelCommand}" />
+              <TextBlock Text="{Binding L[models.empty]}" Classes="faint" VerticalAlignment="Center"
+                         IsVisible="{Binding NoModels}" />
+            </StackPanel>
+
+            <ItemsControl ItemsSource="{Binding Models}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:ModelViewModel">
+                  <Border Classes="card" Margin="0,0,0,12">
+                    <StackPanel Spacing="10">
+
+                      <Grid ColumnDefinitions="*,Auto,Auto">
+                        <TextBox Grid.Column="0" Text="{Binding DisplayName}" FontWeight="SemiBold" />
+                        <ToggleSwitch Grid.Column="1" IsChecked="{Binding Enabled}" Margin="10,0" VerticalAlignment="Center" />
+                        <Button Grid.Column="2" Classes="ghost danger" Content="×"
+                                Command="{Binding $parent[ItemsControl].((vm:SettingsViewModel)DataContext).RemoveModelCommand}"
+                                CommandParameter="{Binding}" />
+                      </Grid>
+
+                      <Grid ColumnDefinitions="*,10,*">
+                        <StackPanel Grid.Column="0" Spacing="4">
+                          <TextBlock Text="{Binding $parent[ItemsControl].((vm:SettingsViewModel)DataContext).L[models.provider]}" Classes="eyebrow" />
+                          <ComboBox ItemsSource="{Binding Presets}"
+                                    SelectedValue="{Binding PresetId}"
+                                    SelectedValueBinding="{Binding Id}"
+                                    HorizontalAlignment="Stretch">
+                            <ComboBox.ItemTemplate>
+                              <DataTemplate x:DataType="cfg:ProviderPreset">
+                                <TextBlock Text="{Binding DisplayName}" />
+                              </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                          </ComboBox>
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="2" Spacing="4">
+                          <TextBlock Text="{Binding $parent[ItemsControl].((vm:SettingsViewModel)DataContext).L[models.modelid]}" Classes="eyebrow" />
+                          <TextBox Text="{Binding ModelId}" />
+                        </StackPanel>
+                      </Grid>
+
+                      <StackPanel Spacing="4">
+                        <TextBlock Text="{Binding $parent[ItemsControl].((vm:SettingsViewModel)DataContext).L[models.endpoint]}" Classes="eyebrow" />
+                        <TextBox Text="{Binding Endpoint}" />
+                      </StackPanel>
+
+                      <StackPanel Spacing="4">
+                        <TextBlock Text="{Binding $parent[ItemsControl].((vm:SettingsViewModel)DataContext).L[models.apikey]}" Classes="eyebrow" />
+                        <TextBox Text="{Binding ApiKey}" PasswordChar="•" />
+                        <TextBlock Text="{Binding $parent[ItemsControl].((vm:SettingsViewModel)DataContext).L[models.apikey.hint]}" Classes="faint" />
+                      </StackPanel>
+
+                      <Grid ColumnDefinitions="180,*">
+                        <StackPanel Grid.Column="0" Spacing="4">
+                          <TextBlock Text="{Binding $parent[ItemsControl].((vm:SettingsViewModel)DataContext).L[models.context]}" Classes="eyebrow" />
+                          <NumericUpDown Value="{Binding ContextWindow}" Minimum="4000" Maximum="2000000" Increment="1000"
+                                         FormatString="0" ShowButtonSpinner="False" />
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="1" Spacing="4" Margin="14,0,0,0">
+                          <TextBlock Text="{Binding $parent[ItemsControl].((vm:SettingsViewModel)DataContext).L[models.capabilities]}" Classes="eyebrow" />
+                          <StackPanel Orientation="Horizontal" Spacing="14">
+                            <CheckBox IsChecked="{Binding SupportsTools}"
+                                      Content="{Binding $parent[ItemsControl].((vm:SettingsViewModel)DataContext).L[models.cap.tools]}" />
+                            <CheckBox IsChecked="{Binding SupportsVision}"
+                                      Content="{Binding $parent[ItemsControl].((vm:SettingsViewModel)DataContext).L[models.cap.vision]}" />
+                            <CheckBox IsChecked="{Binding SupportsEmbeddings}"
+                                      Content="{Binding $parent[ItemsControl].((vm:SettingsViewModel)DataContext).L[models.cap.embeddings]}" />
+                          </StackPanel>
+                        </StackPanel>
+                      </Grid>
+
+                      <StackPanel Orientation="Horizontal" Spacing="10">
+                        <Button Content="{Binding $parent[ItemsControl].((vm:SettingsViewModel)DataContext).L[models.test]}"
+                                Command="{Binding TestCommand}" IsEnabled="{Binding !Busy}" />
+                        <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center" IsVisible="{Binding HasStatus}">
+                          <Border Width="6" Height="6" CornerRadius="3" VerticalAlignment="Center"
+                                  Background="{DynamicResource Success}" IsVisible="{Binding TestPassed}" />
+                          <Border Width="6" Height="6" CornerRadius="3" VerticalAlignment="Center"
+                                  Background="{DynamicResource Danger}" IsVisible="{Binding !TestPassed}" />
+                          <TextBlock Text="{Binding Status}" Classes="dim" />
+                        </StackPanel>
+                      </StackPanel>
+                    </StackPanel>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <!-- Which model does which job. -->
+            <Border Classes="card" IsVisible="{Binding !NoModels}">
+              <StackPanel Spacing="10">
+                <TextBlock Text="{Binding L[models.roles]}" Classes="eyebrow" />
+
+                <Grid ColumnDefinitions="*,12,*" RowDefinitions="Auto,10,Auto">
+                  <StackPanel Grid.Row="0" Grid.Column="0" Spacing="4">
+                    <TextBlock Text="{Binding L[models.role.planner]}" Classes="faint" />
+                    <ComboBox ItemsSource="{Binding RoleChoices}" SelectedValue="{Binding PlannerModelId}"
+                              SelectedValueBinding="{Binding Id}" HorizontalAlignment="Stretch">
+                      <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:ModelViewModel">
+                          <TextBlock Text="{Binding DisplayName}" />
+                        </DataTemplate>
+                      </ComboBox.ItemTemplate>
+                    </ComboBox>
+                  </StackPanel>
+
+                  <StackPanel Grid.Row="0" Grid.Column="2" Spacing="4">
+                    <TextBlock Text="{Binding L[models.role.executor]}" Classes="faint" />
+                    <ComboBox ItemsSource="{Binding RoleChoices}" SelectedValue="{Binding ExecutorModelId}"
+                              SelectedValueBinding="{Binding Id}" HorizontalAlignment="Stretch">
+                      <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:ModelViewModel">
+                          <TextBlock Text="{Binding DisplayName}" />
+                        </DataTemplate>
+                      </ComboBox.ItemTemplate>
+                    </ComboBox>
+                  </StackPanel>
+
+                  <StackPanel Grid.Row="2" Grid.Column="0" Spacing="4">
+                    <TextBlock Text="{Binding L[models.role.vision]}" Classes="faint" />
+                    <ComboBox ItemsSource="{Binding RoleChoices}" SelectedValue="{Binding VisionModelId}"
+                              SelectedValueBinding="{Binding Id}" HorizontalAlignment="Stretch">
+                      <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:ModelViewModel">
+                          <TextBlock Text="{Binding DisplayName}" />
+                        </DataTemplate>
+                      </ComboBox.ItemTemplate>
+                    </ComboBox>
+                  </StackPanel>
+
+                  <StackPanel Grid.Row="2" Grid.Column="2" Spacing="4">
+                    <TextBlock Text="{Binding L[models.role.embedding]}" Classes="faint" />
+                    <ComboBox ItemsSource="{Binding RoleChoices}" SelectedValue="{Binding EmbeddingModelId}"
+                              SelectedValueBinding="{Binding Id}" HorizontalAlignment="Stretch">
+                      <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:ModelViewModel">
+                          <TextBlock Text="{Binding DisplayName}" />
+                        </DataTemplate>
+                      </ComboBox.ItemTemplate>
+                    </ComboBox>
+                  </StackPanel>
+                </Grid>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
+      <!-- ── Permissions ─────────────────────────────────────────────────────────────── -->
+      <TabItem Header="{Binding L[settings.permissions]}" AutomationProperties.AutomationId="TabPermissions">
+        <ScrollViewer Padding="0,14,0,0">
+          <StackPanel Spacing="14" MaxWidth="700" HorizontalAlignment="Left">
+
+            <TextBlock Text="{Binding L[perm.subtitle]}" Classes="dim" />
+
+            <Border Classes="card">
+              <StackPanel Spacing="10">
+                <TextBlock Text="{Binding L[perm.folders]}" Classes="eyebrow" />
+
+                <TextBlock Text="{Binding L[perm.none]}"
+                           Foreground="{DynamicResource Warning}"
+                           IsVisible="{Binding NoFolders}" />
+
+                <ItemsControl ItemsSource="{Binding Folders}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:FolderViewModel">
+                      <Border Classes="inset" Margin="0,0,0,6">
+                        <Grid ColumnDefinitions="*,Auto,Auto">
+                          <TextBlock Grid.Column="0" Text="{Binding Display}" Classes="mono" VerticalAlignment="Center" />
+                          <CheckBox Grid.Column="1" IsChecked="{Binding Writable}" Margin="10,0"
+                                    Content="{Binding $parent[ItemsControl].((vm:SettingsViewModel)DataContext).L[perm.readwrite]}" />
+                          <Button Grid.Column="2" Classes="ghost danger" Content="×"
+                                  Command="{Binding $parent[ItemsControl].((vm:SettingsViewModel)DataContext).RemoveFolderCommand}"
+                                  CommandParameter="{Binding}" />
+                        </Grid>
+                      </Border>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <Button Content="{Binding L[perm.add]}" Command="{Binding AddFolderCommand}" HorizontalAlignment="Left" />
+              </StackPanel>
+            </Border>
+
+            <Border Classes="card">
+              <StackPanel Spacing="10">
+                <TextBlock Text="{Binding L[perm.capabilities]}" Classes="eyebrow" />
+
+                <CheckBox IsChecked="{Binding AllowDelete}" Content="{Binding L[perm.delete]}" />
+                <CheckBox IsChecked="{Binding SoftDelete}" Content="{Binding L[perm.softdelete]}"
+                          Margin="22,0,0,0" IsEnabled="{Binding AllowDelete}" />
+
+                <CheckBox IsChecked="{Binding AllowShell}" Content="{Binding L[perm.shell]}" />
+                <CheckBox IsChecked="{Binding ShellApproval}" Content="{Binding L[perm.shellapproval]}"
+                          Margin="22,0,0,0" IsEnabled="{Binding AllowShell}" />
+
+                <CheckBox IsChecked="{Binding AllowScreen}" Content="{Binding L[perm.screen]}" />
+
+                <CheckBox IsChecked="{Binding AllowInput}" Content="{Binding L[perm.input]}" />
+                <CheckBox IsChecked="{Binding InputApproval}" Content="{Binding L[perm.inputapproval]}"
+                          Margin="22,0,0,0" IsEnabled="{Binding AllowInput}" />
+
+                <CheckBox IsChecked="{Binding AllowNetwork}" Content="{Binding L[perm.network]}" />
+
+                <StackPanel Spacing="4" Margin="22,2,0,4" IsEnabled="{Binding AllowNetwork}">
+                  <TextBlock Text="{Binding L[perm.searchkey]}" Classes="eyebrow" />
+                  <TextBox Text="{Binding SearchApiKey}" Watermark="tvly-… or env:TAVILY_API_KEY" />
+                  <TextBlock Text="{Binding L[perm.searchkeyhint]}" Classes="dim" TextWrapping="Wrap" />
+                </StackPanel>
+
+                <CheckBox IsChecked="{Binding ConfirmDestructive}" Content="{Binding L[perm.confirm]}" />
+              </StackPanel>
+            </Border>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
+      <!-- ── Agent ───────────────────────────────────────────────────────────────────── -->
+      <TabItem Header="{Binding L[settings.agent]}" AutomationProperties.AutomationId="TabAgent">
+        <ScrollViewer Padding="0,14,0,0">
+          <StackPanel Spacing="14" MaxWidth="620" HorizontalAlignment="Left">
+            <Border Classes="card">
+              <StackPanel Spacing="12">
+                <Grid ColumnDefinitions="*,120">
+                  <TextBlock Grid.Column="0" Text="{Binding L[agent.maxsteps]}" VerticalAlignment="Center" />
+                  <NumericUpDown Grid.Column="1" Value="{Binding MaxSteps}" Minimum="1" Maximum="200" FormatString="0" />
+                </Grid>
+
+                <CheckBox IsChecked="{Binding EnableSubAgents}" Content="{Binding L[agent.subagents]}" />
+
+                <Grid ColumnDefinitions="*,120" IsEnabled="{Binding EnableSubAgents}">
+                  <TextBlock Grid.Column="0" Text="{Binding L[agent.parallel]}" VerticalAlignment="Center" Margin="22,0,0,0" />
+                  <NumericUpDown Grid.Column="1" Value="{Binding MaxParallel}" Minimum="1" Maximum="8" FormatString="0" />
+                </Grid>
+
+                <CheckBox IsChecked="{Binding EnableVerification}" Content="{Binding L[agent.verify]}" />
+                <CheckBox IsChecked="{Binding EnableAutoCompact}" Content="{Binding L[agent.compact]}" />
+
+                <Grid ColumnDefinitions="*,120" IsEnabled="{Binding EnableAutoCompact}">
+                  <TextBlock Grid.Column="0" Text="{Binding L[agent.threshold]}" VerticalAlignment="Center" Margin="22,0,0,0" />
+                  <NumericUpDown Grid.Column="1" Value="{Binding CompactThreshold}" Minimum="0.3" Maximum="0.95"
+                                 Increment="0.05" FormatString="0.00" />
+                </Grid>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
+      <!-- ── Appearance ──────────────────────────────────────────────────────────────── -->
+      <TabItem Header="{Binding L[settings.appearance]}" AutomationProperties.AutomationId="TabAppearance">
+        <ScrollViewer Padding="0,14,0,0">
+          <StackPanel Spacing="14" MaxWidth="520" HorizontalAlignment="Left">
+            <Border Classes="card">
+              <StackPanel Spacing="14">
+                <StackPanel Spacing="5">
+                  <TextBlock Text="{Binding L[appearance.theme]}" Classes="eyebrow" />
+                  <ComboBox ItemsSource="{Binding Themes}" SelectedItem="{Binding Theme}" HorizontalAlignment="Stretch" />
+                </StackPanel>
+
+                <StackPanel Spacing="5">
+                  <TextBlock Text="{Binding L[appearance.language]}" Classes="eyebrow" />
+                  <ComboBox ItemsSource="{Binding Languages}" SelectedItem="{Binding Language}" HorizontalAlignment="Stretch" />
+                </StackPanel>
+
+                <CheckBox IsChecked="{Binding ReduceMotion}" Content="{Binding L[appearance.motion]}" />
+              </StackPanel>
+            </Border>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
+      <!-- ── About ───────────────────────────────────────────────────────────────────── -->
+      <TabItem Header="{Binding L[settings.about]}" AutomationProperties.AutomationId="TabAbout">
+        <ScrollViewer Padding="0,14,0,0">
+          <StackPanel Spacing="14" MaxWidth="560" HorizontalAlignment="Left">
+            <Border Classes="card">
+              <StackPanel Spacing="12">
+                <TextBlock Text="AutoWork" Classes="display" />
+                <TextBlock Text="{Binding L[app.tagline]}" Classes="dim" />
+
+                <Border Classes="divider" />
+
+                <Grid ColumnDefinitions="140,*" RowDefinitions="Auto,8,Auto">
+                  <TextBlock Grid.Row="0" Grid.Column="0" Text="{Binding L[about.version]}" Classes="faint" />
+                  <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Version}" Classes="mono" />
+
+                  <TextBlock Grid.Row="2" Grid.Column="0" Text="{Binding L[about.datafolder]}" Classes="faint" />
+                  <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" Spacing="10">
+                    <TextBlock Text="{Binding DataFolder}" Classes="mono" TextTrimming="CharacterEllipsis" />
+                    <Button Classes="ghost" Content="{Binding L[about.open]}" Command="{Binding OpenDataFolderCommand}" />
+                  </StackPanel>
+                </Grid>
+
+                <Border Classes="divider" />
+
+                <StackPanel Spacing="3">
+                  <TextBlock Text="Gravicode Studios" FontWeight="SemiBold" />
+                  <TextBlock Text="Dipimpin oleh Kang Fadhil — led by Kang Fadhil" Classes="dim" />
+                </StackPanel>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+    </TabControl>
+
+    <!-- Saving is explicit: nothing on this screen takes effect until it is pressed. -->
+    <Border Grid.Row="2" Padding="0,14" BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0">
+      <StackPanel Orientation="Horizontal" Spacing="12">
+        <Button Classes="primary" Content="{Binding L[common.save]}" Command="{Binding SaveCommand}" />
+        <TextBlock Text="{Binding Status}" Classes="dim" VerticalAlignment="Center" />
+      </StackPanel>
+    </Border>
+  </Grid>
+</UserControl>

@@ -1,0 +1,289 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:AutoWork.Desktop.ViewModels"
+             x:Class="AutoWork.Desktop.Views.WorkView"
+             x:DataType="vm:WorkViewModel">
+
+  <ScrollViewer Padding="26,22,26,32">
+    <StackPanel Spacing="18" MaxWidth="880" HorizontalAlignment="Left">
+
+      <!-- ── Composer ────────────────────────────────────────────────────────────────── -->
+      <Border Classes="card">
+        <StackPanel Spacing="12">
+          <TextBlock Text="{Binding L[work.prompt]}" Classes="title" />
+
+          <!-- Automation ids name the controls that carry the whole interaction, so a screen
+               reader announces something meaningful and an automated run can drive the app. -->
+          <TextBox Text="{Binding Goal}"
+                   AutomationProperties.AutomationId="GoalInput"
+                   AutomationProperties.Name="{Binding L[work.prompt]}"
+                   Watermark="{Binding L[work.placeholder]}"
+                   AcceptsReturn="True"
+                   TextWrapping="Wrap"
+                   MinHeight="88"
+                   MaxHeight="220"
+                   IsEnabled="{Binding !IsRunning}" />
+
+          <Grid ColumnDefinitions="Auto,Auto,*,Auto">
+            <Button Grid.Column="0"
+                    AutomationProperties.AutomationId="StartRun"
+                    Classes="primary"
+                    Content="{Binding L[work.start]}"
+                    Command="{Binding StartCommand}" />
+
+            <Button Grid.Column="1"
+                    Classes="ghost"
+                    Margin="8,0,0,0"
+                    Content="{Binding L[work.clear]}"
+                    Command="{Binding ClearCommand}"
+                    IsEnabled="{Binding !IsRunning}" />
+
+            <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="14" VerticalAlignment="Center">
+              <TextBlock Text="{Binding ModelName}" Classes="mono faint" IsVisible="{Binding ModelName, Converter={x:Static ObjectConverters.IsNotNull}}" />
+            </StackPanel>
+          </Grid>
+
+          <!-- Empty-state guidance is an invitation to act, not an apology. -->
+          <Border Classes="inset" IsVisible="{Binding !HasModel}">
+            <TextBlock Text="{Binding L[work.nomodel]}" Foreground="{DynamicResource Warning}" />
+          </Border>
+        </StackPanel>
+      </Border>
+
+      <!-- ── Starter prompts ─────────────────────────────────────────────────────────── -->
+      <StackPanel Spacing="8" IsVisible="{Binding !HasTape}">
+        <TextBlock Text="{Binding L[work.examples]}" Classes="eyebrow" />
+        <ItemsControl ItemsSource="{Binding Examples}">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <WrapPanel Orientation="Horizontal" />
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="x:String">
+              <Button Classes="ghost"
+                      Margin="0,0,8,8"
+                      Content="{Binding}"
+                      Command="{Binding $parent[ItemsControl].((vm:WorkViewModel)DataContext).UseExampleCommand}"
+                      CommandParameter="{Binding}">
+                <Button.Styles>
+                  <Style Selector="Button">
+                    <Setter Property="BorderThickness" Value="1" />
+                    <Setter Property="BorderBrush" Value="{DynamicResource Line}" />
+                    <Setter Property="Padding" Value="12,7" />
+                  </Style>
+                </Button.Styles>
+              </Button>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+
+      <!-- ── Plan ────────────────────────────────────────────────────────────────────── -->
+      <Border Classes="card" IsVisible="{Binding HasPlan}">
+        <StackPanel Spacing="10">
+          <TextBlock Text="{Binding L[work.plan]}" Classes="eyebrow" />
+          <TextBlock Text="{Binding PlanNotes}" Classes="dim"
+                     IsVisible="{Binding PlanNotes, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+          <ItemsControl ItemsSource="{Binding PlanSteps}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="x:String">
+                <TextBlock Text="{Binding}" Classes="mono dim" Margin="0,2" />
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+      </Border>
+
+      <!-- ── Consent requests ────────────────────────────────────────────────────────── -->
+      <ItemsControl ItemsSource="{Binding Approvals}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:ApprovalViewModel">
+            <Border Classes="card"
+                    Margin="0,0,0,10"
+                    BorderBrush="{DynamicResource Warning}"
+                    BorderThickness="1.5">
+              <StackPanel Spacing="12">
+                <StackPanel Spacing="4">
+                  <TextBlock Text="{Binding $parent[ItemsControl].((vm:WorkViewModel)DataContext).L[approval.title]}"
+                             Classes="eyebrow" Foreground="{DynamicResource Warning}" />
+                  <TextBlock Text="{Binding Title}" Classes="heading" />
+                </StackPanel>
+
+                <Border Classes="inset" IsVisible="{Binding HasDetail}">
+                  <TextBlock Text="{Binding Detail}" Classes="mono dim" />
+                </Border>
+
+                <StackPanel Spacing="3" IsVisible="{Binding HasPaths}">
+                  <TextBlock Text="{Binding $parent[ItemsControl].((vm:WorkViewModel)DataContext).L[approval.affected]}"
+                             Classes="eyebrow" />
+                  <TextBlock Text="{Binding Paths}" Classes="mono dim" />
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <Button Classes="primary"
+                          AutomationProperties.AutomationId="ApprovalAllow"
+                          Content="{Binding $parent[ItemsControl].((vm:WorkViewModel)DataContext).L[approval.allow]}"
+                          Command="{Binding AllowCommand}" />
+                  <Button AutomationProperties.AutomationId="ApprovalAllowForRun"
+                          Content="{Binding $parent[ItemsControl].((vm:WorkViewModel)DataContext).L[approval.allowrun]}"
+                          Command="{Binding AllowForRunCommand}"
+                          IsVisible="{Binding CanAllowForRun}" />
+                  <Button Classes="danger"
+                          AutomationProperties.AutomationId="ApprovalDeny"
+                          Content="{Binding $parent[ItemsControl].((vm:WorkViewModel)DataContext).L[approval.deny]}"
+                          Command="{Binding DenyCommand}" />
+                </StackPanel>
+              </StackPanel>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+
+      <!-- ── The Work Tape ───────────────────────────────────────────────────────────── -->
+      <StackPanel Spacing="10" IsVisible="{Binding HasTape}">
+        <TextBlock Text="{Binding L[work.tape]}" Classes="eyebrow" />
+
+        <ItemsControl ItemsSource="{Binding Tape}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:TapeEntryViewModel">
+              <Grid ColumnDefinitions="46,*">
+
+                <!--
+                  The spine. A continuous hairline runs the height of every row, with the step
+                  stamp sitting on it — so the tape reads as one unbroken record of the run
+                  rather than a stack of separate cards.
+                -->
+                <Grid Grid.Column="0">
+                  <Border Width="1"
+                          HorizontalAlignment="Center"
+                          Background="{DynamicResource Line}" />
+
+                  <Border Width="28" Height="20"
+                          VerticalAlignment="Top"
+                          HorizontalAlignment="Center"
+                          CornerRadius="4"
+                          Background="{DynamicResource Surface}"
+                          BorderThickness="1"
+                          Classes="stamp"
+                          Classes.running="{Binding IsRunning}"
+                          Classes.done="{Binding IsDone}"
+                          Classes.failed="{Binding IsFailed}">
+                    <TextBlock Text="{Binding Stamp}"
+                               Classes="mono stampText"
+                               Classes.running="{Binding IsRunning}"
+                               Classes.done="{Binding IsDone}"
+                               Classes.failed="{Binding IsFailed}"
+                               FontSize="10"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center" />
+                  </Border>
+                </Grid>
+
+                <StackPanel Grid.Column="1" Spacing="6" Margin="0,0,0,18">
+
+                  <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Grid.Column="0"
+                               Text="{Binding Title}"
+                               FontWeight="Medium"
+                               Classes.organ-think="{Binding IsThink}"
+                               Classes.organ-see="{Binding IsSee}"
+                               Classes.organ-act="{Binding IsAct}" />
+                    <TextBlock Grid.Column="1"
+                               Text="{Binding Duration}"
+                               Classes="mono faint"
+                               VerticalAlignment="Center" />
+                  </Grid>
+
+                  <!-- Tool calls, nested under the step that made them. -->
+                  <ItemsControl ItemsSource="{Binding Tools}" IsVisible="{Binding HasTools}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="vm:TapeToolViewModel">
+                        <Border Classes="inset" Margin="0,3,0,0" Padding="10,7">
+                          <StackPanel Spacing="3">
+                            <Grid ColumnDefinitions="Auto,*,Auto">
+                              <TextBlock Grid.Column="0"
+                                         Text="{Binding Tool}"
+                                         Classes="mono"
+                                         Classes.organ-think="{Binding IsThink}"
+                                         Classes.organ-see="{Binding IsSee}"
+                                         Classes.organ-act="{Binding IsAct}"
+                                         FontWeight="SemiBold" />
+                              <TextBlock Grid.Column="1"
+                                         Text="{Binding Arguments}"
+                                         Classes="mono faint"
+                                         Margin="10,0,0,0"
+                                         TextTrimming="CharacterEllipsis"
+                                         TextWrapping="NoWrap" />
+                              <TextBlock Grid.Column="2"
+                                         Text="{Binding Duration}"
+                                         Classes="mono faint" />
+                            </Grid>
+                            <TextBlock Text="{Binding Result}"
+                                       Classes="mono"
+                                       MaxLines="3"
+                                       TextTrimming="CharacterEllipsis"
+                                       IsVisible="{Binding Result, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                       Foreground="{DynamicResource TextDim}" />
+                          </StackPanel>
+                        </Border>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+
+                  <TextBlock Text="{Binding Detail}"
+                             Classes="dim"
+                             IsVisible="{Binding HasDetail}"
+                             Margin="0,2,0,0" />
+                </StackPanel>
+              </Grid>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+
+      <!-- ── Result ──────────────────────────────────────────────────────────────────── -->
+      <Border Classes="card" IsVisible="{Binding HasSummary}">
+        <StackPanel Spacing="10">
+          <Grid ColumnDefinitions="*,Auto">
+            <TextBlock Grid.Column="0" Text="{Binding L[work.summary]}" Classes="eyebrow" />
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" IsVisible="{Binding HasVerification}">
+              <Border Width="6" Height="6" CornerRadius="3" VerticalAlignment="Center"
+                      Background="{DynamicResource Success}" IsVisible="{Binding VerificationPassed}" />
+              <Border Width="6" Height="6" CornerRadius="3" VerticalAlignment="Center"
+                      Background="{DynamicResource Danger}" IsVisible="{Binding !VerificationPassed}" />
+              <TextBlock Classes="faint" Text="{Binding L[work.verified]}" IsVisible="{Binding VerificationPassed}" />
+              <TextBlock Classes="faint" Text="{Binding L[work.unverified]}" IsVisible="{Binding !VerificationPassed}" />
+            </StackPanel>
+          </Grid>
+
+          <TextBlock Text="{Binding Summary}" />
+
+          <Border Classes="divider" />
+
+          <StackPanel Orientation="Horizontal" Spacing="24">
+            <StackPanel Spacing="2">
+              <TextBlock Text="{Binding L[work.steps]}" Classes="eyebrow" />
+              <TextBlock Text="{Binding CompletedSteps}" Classes="mono" />
+            </StackPanel>
+            <StackPanel Spacing="2">
+              <TextBlock Text="{Binding L[work.elapsed]}" Classes="eyebrow" />
+              <TextBlock Text="{Binding Elapsed}" Classes="mono" />
+            </StackPanel>
+            <StackPanel Spacing="2" IsVisible="{Binding CompactionNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+              <TextBlock Text="{Binding L[work.compacted]}" Classes="eyebrow" />
+              <TextBlock Text="{Binding CompactionNote}" Classes="mono" />
+            </StackPanel>
+          </StackPanel>
+        </StackPanel>
+      </Border>
+
+      <!-- ── Idle ────────────────────────────────────────────────────────────────────── -->
+      <StackPanel Spacing="4" IsVisible="{Binding !HasTape}" Margin="0,6,0,0">
+        <TextBlock Text="{Binding L[work.idle]}" Classes="dim" />
+        <TextBlock Text="{Binding L[work.idle.hint]}" Classes="faint" />
+      </StackPanel>
+
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

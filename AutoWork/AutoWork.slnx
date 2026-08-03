@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/AutoWork.Agents/AutoWork.Agents.csproj" />
+    <Project Path="src/AutoWork.Core/AutoWork.Core.csproj" />
+    <Project Path="src/AutoWork.Desktop/AutoWork.Desktop.csproj" />
+    <Project Path="src/AutoWork.Integrations/AutoWork.Integrations.csproj" />
+    <Project Path="src/AutoWork.Providers/AutoWork.Providers.csproj" />
+    <Project Path="src/AutoWork.Tools/AutoWork.Tools.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/AutoWork.Tests/AutoWork.Tests.csproj" />
+  </Folder>
+</Solution>

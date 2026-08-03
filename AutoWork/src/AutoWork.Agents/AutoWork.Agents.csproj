@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.AI" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Context-boundary and plan-parsing logic is internal because nothing outside this
+      assembly should call it, but it is exactly the logic most worth testing directly.
+    -->
+    <InternalsVisibleTo Include="AutoWork.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\AutoWork.Core\AutoWork.Core.csproj" />
+    <ProjectReference Include="..\AutoWork.Providers\AutoWork.Providers.csproj" />
+    <ProjectReference Include="..\AutoWork.Tools\AutoWork.Tools.csproj" />
+  </ItemGroup>
+
+</Project>

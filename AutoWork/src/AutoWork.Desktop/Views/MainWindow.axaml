@@ -1,0 +1,108 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:AutoWork.Desktop.ViewModels"
+        xmlns:views="clr-namespace:AutoWork.Desktop.Views"
+        x:Class="AutoWork.Desktop.Views.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Title="AutoWork"
+        Width="1240" Height="760"
+        MinWidth="880" MinHeight="560"
+        WindowStartupLocation="CenterScreen"
+        Background="{DynamicResource Canvas}">
+
+  <Grid ColumnDefinitions="228,*">
+
+    <!-- ── Navigation rail ─────────────────────────────────────────────────────────────── -->
+    <Border Grid.Column="0"
+            Background="{DynamicResource Surface}"
+            BorderBrush="{DynamicResource Line}"
+            BorderThickness="0,0,1,0">
+
+      <Grid RowDefinitions="Auto,*,Auto" Margin="14,18,14,14">
+
+        <StackPanel Grid.Row="0" Margin="8,0,0,22" Spacing="2">
+          <TextBlock Text="AutoWork" Classes="title" />
+          <TextBlock Text="{Binding L[app.tagline]}" Classes="faint" />
+        </StackPanel>
+
+        <!-- Named for screen readers, and so the sections can be reached by automation. -->
+        <StackPanel Grid.Row="1" Spacing="0">
+          <RadioButton Classes="nav" GroupName="section"
+                       AutomationProperties.AutomationId="NavWork"
+                       Content="{Binding L[nav.work]}"
+                       IsChecked="{Binding IsWork, Mode=OneWay}"
+                       Command="{Binding NavigateCommand}"
+                       CommandParameter="{x:Static vm:Section.Work}" />
+
+          <RadioButton Classes="nav" GroupName="section"
+                       AutomationProperties.AutomationId="NavActivity"
+                       Content="{Binding L[nav.activity]}"
+                       IsChecked="{Binding IsActivity, Mode=OneWay}"
+                       Command="{Binding NavigateCommand}"
+                       CommandParameter="{x:Static vm:Section.Activity}" />
+
+          <RadioButton Classes="nav" GroupName="section"
+                       AutomationProperties.AutomationId="NavKnowledge"
+                       Content="{Binding L[nav.knowledge]}"
+                       IsChecked="{Binding IsKnowledge, Mode=OneWay}"
+                       Command="{Binding NavigateCommand}"
+                       CommandParameter="{x:Static vm:Section.Knowledge}" />
+
+          <RadioButton Classes="nav" GroupName="section"
+                       AutomationProperties.AutomationId="NavIntegrations"
+                       Content="{Binding L[nav.integrations]}"
+                       IsChecked="{Binding IsIntegrations, Mode=OneWay}"
+                       Command="{Binding NavigateCommand}"
+                       CommandParameter="{x:Static vm:Section.Integrations}" />
+
+          <RadioButton Classes="nav" GroupName="section"
+                       AutomationProperties.AutomationId="NavSettings"
+                       Content="{Binding L[nav.settings]}"
+                       IsChecked="{Binding IsSettings, Mode=OneWay}"
+                       Command="{Binding NavigateCommand}"
+                       CommandParameter="{x:Static vm:Section.Settings}" />
+        </StackPanel>
+
+        <TextBlock Grid.Row="2" Margin="8,0,0,0"
+                   Text="{Binding L[app.credit]}"
+                   Classes="faint" />
+      </Grid>
+    </Border>
+
+    <!-- ── Content ─────────────────────────────────────────────────────────────────────── -->
+    <Grid Grid.Column="1" RowDefinitions="Auto,*">
+
+      <!--
+        The organ rail. Three segments, one per subsystem, each lighting in its own hue while
+        that faculty is working. It is the honest answer to "what is it doing right now".
+      -->
+      <Border Grid.Row="0"
+              BorderBrush="{DynamicResource Line}"
+              BorderThickness="0,0,0,1"
+              Padding="26,14">
+        <Grid ColumnDefinitions="*,Auto">
+
+          <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="20" VerticalAlignment="Center">
+            <views:OrganLamp Label="{Binding L[organ.think]}" Hue="Think" IsLit="{Binding ThinkActive}" />
+            <views:OrganLamp Label="{Binding L[organ.see]}" Hue="See" IsLit="{Binding SeeActive}" />
+            <views:OrganLamp Label="{Binding L[organ.act]}" Hue="Act" IsLit="{Binding ActActive}" />
+          </StackPanel>
+
+          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="16" VerticalAlignment="Center"
+                      IsVisible="{Binding Work.IsRunning}">
+            <TextBlock Text="{Binding Work.Elapsed}" Classes="mono dim" VerticalAlignment="Center" />
+            <Button Classes="ghost" Content="{Binding L[work.stop]}" Command="{Binding Work.StopCommand}" />
+          </StackPanel>
+        </Grid>
+      </Border>
+
+      <Panel Grid.Row="1">
+        <views:WorkView DataContext="{Binding Work}" IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).IsWork}" />
+        <views:ActivityView DataContext="{Binding Activity}" IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).IsActivity}" />
+        <views:KnowledgeView DataContext="{Binding Knowledge}" IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).IsKnowledge}" />
+        <views:IntegrationsView DataContext="{Binding Integrations}" IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).IsIntegrations}" />
+        <views:SettingsView DataContext="{Binding SettingsPage}" IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).IsSettings}" />
+      </Panel>
+    </Grid>
+  </Grid>
+</Window>
