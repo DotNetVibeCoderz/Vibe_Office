@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>VibeDesk</title>
+
+    <!-- Same stylesheets the web host loads, from the same Razor class library. -->
+    <link rel="stylesheet" href="_content/VibeDesk.Ui/css/tokens.css" />
+    <link rel="stylesheet" href="_content/VibeDesk.Ui/css/base.css" />
+    <link rel="stylesheet" href="_content/VibeDesk.Ui/css/shell.css" />
+    <link rel="stylesheet" href="_content/VibeDesk.Ui/css/chat.css" />
+    <link rel="stylesheet" href="_content/VibeDesk.Ui/css/apps.css" />
+    <link rel="stylesheet" href="_content/VibeDesk.Ui/css/sheets.css" />
+    <link rel="stylesheet" href="_content/VibeDesk.Ui/css/docs.css" />
+    <link rel="stylesheet" href="_content/VibeDesk.Ui/css/slides.css" />
+    <link rel="stylesheet" href="_content/VibeDesk.Ui/css/calendar.css" />
+    <link rel="stylesheet" href="_content/VibeDesk.Ui/css/scripts.css" />
+
+    <script>
+        // Apply the stored theme before first paint, exactly as the web host does — otherwise the
+        // window flashes light before switching.
+        (function () {
+            try {
+                var t = localStorage.getItem('vd-theme');
+                if (t === 'dark' || t === 'light') document.documentElement.setAttribute('data-theme', t);
+            } catch (e) { /* storage unavailable: fall back to the system preference */ }
+        })();
+    </script>
+</head>
+<body>
+    <div id="app">
+        <div class="vd-boot"><span class="vd-spinner"></span></div>
+    </div>
+
+    <script src="_content/VibeDesk.Ui/js/vibedesk.js"></script>
+    <script src="_framework/blazor.webview.js"></script>
+</body>
+</html>

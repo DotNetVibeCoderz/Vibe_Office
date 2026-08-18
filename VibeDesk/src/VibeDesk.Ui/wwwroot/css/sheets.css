@@ -1,0 +1,614 @@
+/*
+ * Sheets.
+ *
+ * The grid is CSS grid over divs rather than a <table>: virtualisation needs spacer elements, and
+ * spacers inside a tbody are invalid markup that browsers reflow unpredictably. Row height is a fixed
+ * token so the virtualiser can compute offsets without measuring.
+ */
+
+.vd-sheet {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--vd-surface);
+}
+
+/* ── formula bar ────────────────────────────────────────────────────────── */
+.vd-fbar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  height: 32px;
+  border-block-end: 1px solid var(--vd-line);
+  background: var(--vd-surface);
+}
+
+.vd-fbar__ref {
+  display: grid;
+  place-items: center;
+  flex: 0 0 88px;
+  border-inline-end: 1px solid var(--vd-line);
+  font-family: var(--vd-font-mono);
+  font-size: var(--vd-text-sm);
+  font-weight: 600;
+  color: var(--vd-ink-2);
+}
+
+.vd-fbar__fx {
+  display: grid;
+  place-items: center;
+  flex: 0 0 30px;
+  color: var(--vd-ink-faint);
+  border-inline-end: 1px solid var(--vd-line);
+}
+
+.vd-fbar__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  padding-inline: var(--vd-2);
+  border: 0;
+  background: transparent;
+  font-family: var(--vd-font-mono);
+  font-size: var(--vd-text-sm);
+  color: var(--vd-ink);
+}
+
+.vd-fbar__input:focus {
+  outline: none;
+  background: var(--vd-primary-soft-2);
+}
+
+/* ── grid ───────────────────────────────────────────────────────────────── */
+.vd-grid {
+  --vd-row-h: 26px;
+  --vd-gutter-w: 46px;
+
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  position: relative;
+  /* The grid owns its own scrolling so the sticky headers have something to stick to. */
+  background: var(--vd-surface);
+}
+
+.vd-grid__head,
+.vd-grid__row {
+  display: grid;
+  /* Column template is set inline from the model's widths. */
+  min-width: max-content;
+}
+
+.vd-grid__head {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+}
+
+.vd-grid__corner,
+.vd-grid__colhead,
+.vd-grid__rowhead {
+  display: grid;
+  place-items: center;
+  height: var(--vd-row-h);
+  background: var(--vd-surface-3);
+  border-inline-end: 1px solid var(--vd-line);
+  border-block-end: 1px solid var(--vd-line);
+  font-family: var(--vd-font-mono);
+  font-size: var(--vd-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--vd-ink-3);
+  user-select: none;
+}
+
+.vd-grid__corner {
+  position: sticky;
+  inset-inline-start: 0;
+  z-index: 4;
+}
+
+.vd-grid__rowhead {
+  position: sticky;
+  inset-inline-start: 0;
+  z-index: 2;
+}
+
+/* A header lights up gold when its row or column intersects the selection — the canting mark again. */
+.vd-grid__colhead[data-active="true"],
+.vd-grid__rowhead[data-active="true"] {
+  background: var(--vd-gold-soft);
+  color: var(--vd-gold);
+}
+
+.vd-grid__cell {
+  position: relative;
+  height: var(--vd-row-h);
+  padding-inline: 5px;
+  border-inline-end: 1px solid var(--vd-line);
+  border-block-end: 1px solid var(--vd-line);
+  font-size: var(--vd-text-sm);
+  line-height: calc(var(--vd-row-h) - 1px);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: cell;
+  background: var(--vd-surface);
+}
+
+/* Numbers right-align and use tabular figures, so a column of them forms a readable stack. */
+.vd-grid__cell[data-num="true"] {
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+
+.vd-grid__cell[data-error="true"] {
+  color: var(--vd-danger);
+  font-family: var(--vd-font-mono);
+  font-size: var(--vd-text-xs);
+}
+
+/* Inside the selected range, but not the anchor. */
+.vd-grid__cell[data-in-range="true"] {
+  background: var(--vd-primary-soft-2);
+}
+
+/* The anchor cell gets the full ring; a 2px inset outline avoids shifting layout by a pixel. */
+.vd-grid__cell[data-active="true"] {
+  outline: 2px solid var(--vd-primary);
+  outline-offset: -2px;
+  z-index: 1;
+  background: var(--vd-surface);
+}
+
+/* A cell carrying a note gets a corner tick rather than an icon, which would eat the value's width. */
+.vd-grid__cell[data-note="true"]::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  inset-inline-end: 0;
+  border-block-start: 6px solid var(--vd-gold);
+  border-inline-start: 6px solid transparent;
+}
+
+.vd-grid__editor {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  width: 100%;
+  padding-inline: 4px;
+  border: 2px solid var(--vd-primary);
+  background: var(--vd-surface);
+  font-family: var(--vd-font-mono);
+  font-size: var(--vd-text-sm);
+  color: var(--vd-ink);
+}
+
+.vd-grid__editor:focus { outline: none; }
+
+/* Frozen panes: a heavier rule marks the boundary so it reads as a split, not a border. */
+.vd-grid__cell[data-freeze-row="true"],
+.vd-grid__rowhead[data-freeze-row="true"] { border-block-end: 2px solid var(--vd-line-strong); }
+
+.vd-grid__cell[data-freeze-col="true"],
+.vd-grid__colhead[data-freeze-col="true"] { border-inline-end: 2px solid var(--vd-line-strong); }
+
+/* ── sheet tabs ─────────────────────────────────────────────────────────── */
+.vd-tabs {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--vd-1);
+  height: 34px;
+  padding-inline: var(--vd-2);
+  border-block-start: 1px solid var(--vd-line);
+  background: var(--vd-surface-2);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.vd-tabs::-webkit-scrollbar { display: none; }
+
+.vd-tab {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--vd-1);
+  height: 24px;
+  padding-inline: var(--vd-3);
+  border: 1px solid transparent;
+  border-radius: var(--vd-radius-sm);
+  background: transparent;
+  color: var(--vd-ink-2);
+  font-size: var(--vd-text-sm);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.vd-tab:hover { background: var(--vd-surface-3); }
+
+.vd-tab.active {
+  background: var(--vd-surface);
+  border-color: var(--vd-line);
+  color: var(--vd-ink);
+  font-weight: 600;
+}
+
+.vd-tab.active::after {
+  content: "";
+  position: absolute;
+  inset-inline: 6px;
+  inset-block-end: -1px;
+  height: 2px;
+  background: var(--vd-gold);
+  border-radius: 2px 2px 0 0;
+}
+
+.vd-tab__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+
+/* ── floating cards (charts, pivots) ────────────────────────────────────── */
+.vd-sheetcards {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  /* Above the grid, below the editor. */
+  z-index: 2;
+}
+
+.vd-sheetcard {
+  position: absolute;
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--vd-line-strong);
+  border-radius: var(--vd-radius);
+  background: var(--vd-surface);
+  box-shadow: var(--vd-shadow);
+  overflow: hidden;
+}
+
+.vd-sheetcard__head {
+  display: flex;
+  align-items: center;
+  gap: var(--vd-2);
+  padding: var(--vd-1) var(--vd-2);
+  border-block-end: 1px solid var(--vd-line);
+  background: var(--vd-surface-2);
+  font-size: var(--vd-text-sm);
+  font-weight: 600;
+  cursor: move;
+}
+
+.vd-sheetcard__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: var(--vd-2);
+  overflow: auto;
+}
+
+/* ── chart ──────────────────────────────────────────────────────────────────
+   Charts are inline SVG driven by FormulaEngine.BuildChartData, so a formula change is reflected
+   without a round trip through a charting library. */
+.vd-chart {
+  display: block;
+  width: 100%;
+  height: auto;
+  /* The viewBox has a fixed 640x300 ratio, so a wide card would otherwise make the chart tall enough
+     to push the grid off screen. Capping the height letterboxes it instead of clipping. */
+  max-height: 196px;
+}
+
+.vd-chart__grid line { stroke: var(--vd-line); stroke-width: 1; }
+.vd-chart__axis line { stroke: var(--vd-line-strong); stroke-width: 1; }
+
+.vd-chart__label {
+  font-family: var(--vd-font-ui);
+  font-size: 10px;
+  fill: var(--vd-ink-3);
+}
+
+.vd-chart__value {
+  font-family: var(--vd-font-mono);
+  font-size: 9px;
+  fill: var(--vd-ink-3);
+}
+
+.vd-chart__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--vd-1) var(--vd-3);
+  padding-block-start: var(--vd-1);
+  font-size: var(--vd-text-xs);
+  color: var(--vd-ink-2);
+}
+
+.vd-chart__key {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.vd-chart__swatch {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  flex: 0 0 auto;
+}
+
+.vd-chart__mark { transition: opacity var(--vd-fast) var(--vd-ease); }
+.vd-chart__mark:hover { opacity: 0.78; }
+
+/* ── pivot ──────────────────────────────────────────────────────────────── */
+.vd-pivot {
+  border-collapse: collapse;
+  font-size: var(--vd-text-sm);
+  width: 100%;
+}
+
+.vd-pivot th,
+.vd-pivot td {
+  padding: 3px var(--vd-2);
+  border: 1px solid var(--vd-line);
+  white-space: nowrap;
+}
+
+.vd-pivot thead th {
+  background: var(--vd-surface-3);
+  font-family: var(--vd-font-mono);
+  font-size: var(--vd-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--vd-ink-3);
+}
+
+.vd-pivot tbody th {
+  background: var(--vd-surface-2);
+  text-align: start;
+  font-weight: 570;
+}
+
+.vd-pivot td {
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+
+.vd-pivot tfoot th,
+.vd-pivot tfoot td {
+  background: var(--vd-surface-2);
+  font-weight: 650;
+}
+
+/* ── status strip ───────────────────────────────────────────────────────── */
+.vd-sheet__status {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--vd-3);
+  height: 24px;
+  padding-inline: var(--vd-3);
+  border-block-start: 1px solid var(--vd-line);
+  background: var(--vd-surface-2);
+  font-size: var(--vd-text-xs);
+  color: var(--vd-ink-3);
+}
+
+.vd-sheet__stat {
+  font-family: var(--vd-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── conditional-format & chart dialogs ─────────────────────────────────── */
+.vd-cf__rule {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr auto;
+  gap: var(--vd-2);
+  align-items: end;
+  padding: var(--vd-2);
+  border: 1px solid var(--vd-line);
+  border-radius: var(--vd-radius);
+  margin-block-end: var(--vd-2);
+}
+
+.vd-cf__swatches {
+  display: flex;
+  gap: var(--vd-1);
+  flex-wrap: wrap;
+}
+
+.vd-cf__swatch {
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--vd-line-strong);
+  border-radius: var(--vd-radius-sm);
+  cursor: pointer;
+  padding: 0;
+}
+
+.vd-cf__swatch[aria-pressed="true"] {
+  outline: 2px solid var(--vd-primary);
+  outline-offset: 1px;
+}
+
+@media (max-width: 700px) {
+  .vd-fbar__ref { flex-basis: 64px; }
+  .vd-cf__rule { grid-template-columns: 1fr 1fr; }
+}
+
+/* ── categorical series colours ─────────────────────────────────────────────
+   Validated with the palette validator in both modes (lightness band, chroma floor, CVD separation,
+   normal-vision floor). The dark steps are chosen values, not an automatic flip of the light ones.
+   Three light slots sit under 3:1 against the surface, which is why every chart card ships a legend
+   and a table view rather than relying on colour alone. */
+:root {
+  --vd-series-1: #2a78d6;
+  --vd-series-2: #eb6834;
+  --vd-series-3: #1baf7a;
+  --vd-series-4: #eda100;
+  --vd-series-5: #e87ba4;
+  --vd-series-6: #008300;
+  --vd-series-7: #4a3aa7;
+  --vd-series-8: #e34948;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --vd-series-1: #3987e5;
+    --vd-series-2: #d95926;
+    --vd-series-3: #199e70;
+    --vd-series-4: #c98500;
+    --vd-series-5: #d55181;
+    --vd-series-6: #008300;
+    --vd-series-7: #9085e9;
+    --vd-series-8: #e66767;
+  }
+}
+
+:root[data-theme="dark"] {
+  --vd-series-1: #3987e5;
+  --vd-series-2: #d95926;
+  --vd-series-3: #199e70;
+  --vd-series-4: #c98500;
+  --vd-series-5: #d55181;
+  --vd-series-6: #008300;
+  --vd-series-7: #9085e9;
+  --vd-series-8: #e66767;
+}
+
+/* ── chart wrapper ──────────────────────────────────────────────────────── */
+.vd-chartwrap { display: flex; flex-direction: column; gap: var(--vd-1); min-width: 0; }
+
+.vd-chartwrap__bar {
+  display: flex;
+  align-items: center;
+  gap: var(--vd-2);
+  min-width: 0;
+}
+
+/* ── document title in the topbar ───────────────────────────────────────── */
+.vd-doctitle { display: flex; align-items: center; gap: var(--vd-2); min-width: 0; }
+
+.vd-doctitle__input {
+  min-width: 8ch;
+  max-width: 42ch;
+  width: 28ch;
+  height: 28px;
+  padding-inline: var(--vd-2);
+  border: 1px solid transparent;
+  border-radius: var(--vd-radius-sm);
+  background: transparent;
+  font-family: var(--vd-font-display);
+  font-size: var(--vd-text-md);
+  font-weight: 620;
+  color: var(--vd-ink);
+}
+
+.vd-doctitle__input:hover:not(:disabled) { border-color: var(--vd-line); }
+
+.vd-doctitle__input:focus {
+  outline: none;
+  border-color: var(--vd-primary);
+  background: var(--vd-surface);
+}
+
+.vd-doctitle__state {
+  font-size: var(--vd-text-xs);
+  color: var(--vd-ink-faint);
+  white-space: nowrap;
+}
+
+/* ── selection statistics in the formula bar ────────────────────────────── */
+.vd-fbar__stats {
+  display: flex;
+  align-items: center;
+  gap: var(--vd-3);
+  padding-inline: var(--vd-3);
+  border-inline-start: 1px solid var(--vd-line);
+  white-space: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.vd-fbar__stats::-webkit-scrollbar { display: none; }
+
+.vd-fbar__stat {
+  font-family: var(--vd-font-mono);
+  font-size: var(--vd-text-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--vd-ink-2);
+}
+
+.vd-fbar__stat .vd-label { margin-inline-end: 3px; }
+
+/* ── charts & pivots panel ──────────────────────────────────────────────── */
+.vd-sheet__panel {
+  flex: 0 0 auto;
+  /* A fixed cap rather than a percentage: the grid is the primary surface and must keep a
+     predictable number of visible rows regardless of window height. */
+  max-height: 330px;
+  display: flex;
+  flex-direction: column;
+  border-block-start: 1px solid var(--vd-line);
+  background: var(--vd-surface-2);
+}
+
+.vd-sheet__panel-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--vd-2);
+  padding: var(--vd-1) var(--vd-3);
+}
+
+.vd-sheet__panel-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: grid;
+  /* Capped at 560px so a single chart sits at a readable size instead of stretching across the
+     whole window and leaving the plot marooned in the middle. */
+  grid-template-columns: repeat(auto-fit, minmax(340px, 560px));
+  justify-content: start;
+  gap: var(--vd-3);
+  padding: 0 var(--vd-3) var(--vd-3);
+}
+
+.vd-sheet__viz {
+  position: relative;
+  padding: var(--vd-3);
+  border: 1px solid var(--vd-line);
+  border-radius: var(--vd-radius-lg);
+  background: var(--vd-surface);
+  min-width: 0;
+}
+
+.vd-sheet__viz-x {
+  position: absolute;
+  top: var(--vd-1);
+  inset-inline-end: var(--vd-1);
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: var(--vd-radius-sm);
+  background: transparent;
+  color: var(--vd-ink-faint);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--vd-fast) var(--vd-ease);
+}
+
+.vd-sheet__viz:hover .vd-sheet__viz-x,
+.vd-sheet__viz:focus-within .vd-sheet__viz-x { opacity: 1; }
+
+.vd-sheet__viz-x:hover { background: var(--vd-danger-soft); color: var(--vd-danger); }
+
+.vd-pivot__sub { color: var(--vd-ink-faint); font-weight: 400; }

@@ -1,0 +1,355 @@
+/*
+ * Scripts: the list, the gallery, the editor.
+ *
+ * The editor is the only genuinely unusual piece. A textarea cannot render coloured text, so the
+ * highlighted copy sits in a pre element underneath and the textarea on top has transparent glyphs
+ * and a visible caret. Both must use identical font metrics, padding and wrapping or the caret
+ * drifts away from the characters, which is why several rules below are duplicated verbatim.
+ */
+
+.vd-scripts {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--vd-surface);
+}
+
+.vd-scripts__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--vd-4);
+}
+
+.vd-scripts__tabs { display: flex; gap: var(--vd-1); align-items: center; }
+
+.vd-scripts__tab {
+  height: 30px;
+  padding-inline: var(--vd-3);
+  border: 1px solid transparent;
+  border-radius: var(--vd-radius-full);
+  background: transparent;
+  color: var(--vd-ink-2);
+  font-size: var(--vd-text-sm);
+  cursor: pointer;
+}
+
+.vd-scripts__tab:hover { background: var(--vd-surface-3); }
+
+.vd-scripts__tab[aria-selected="true"] {
+  background: var(--vd-primary-soft);
+  border-color: var(--vd-primary-soft-2);
+  color: var(--vd-primary);
+  font-weight: 600;
+}
+
+.vd-scripts__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: var(--vd-3);
+}
+
+.vd-script-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vd-2);
+  padding: var(--vd-3);
+  border: 1px solid var(--vd-line);
+  border-radius: var(--vd-radius);
+  background: var(--vd-surface-2);
+  text-align: start;
+  cursor: pointer;
+  transition: border-color var(--vd-fast), transform var(--vd-fast);
+}
+
+.vd-script-card:hover { border-color: var(--vd-app-scripts); transform: translateY(-1px); }
+
+.vd-script-card__head { display: flex; align-items: flex-start; gap: var(--vd-2); }
+
+.vd-script-card__name {
+  flex: 1 1 auto;
+  font-weight: 620;
+  color: var(--vd-ink);
+  line-height: 1.3;
+}
+
+.vd-script-card__summary {
+  font-size: var(--vd-text-sm);
+  color: var(--vd-ink-3);
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.vd-script-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--vd-1) var(--vd-2);
+  font-family: var(--vd-font-mono);
+  font-size: 10px;
+  color: var(--vd-ink-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* Language is the first thing you look for in a multi-language list, so it carries the colour. */
+.vd-lang {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding-inline: 7px;
+  border-radius: var(--vd-radius-full);
+  font-family: var(--vd-font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #fff;
+}
+
+.vd-lang[data-lang="JavaScript"] { background: #a8760c; }
+.vd-lang[data-lang="Python"]     { background: #2f6fae; }
+.vd-lang[data-lang="CSharp"]     { background: #6a3b9e; }
+
+.vd-runstate {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--vd-font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.vd-runstate::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.vd-runstate[data-state="Succeeded"] { color: var(--vd-jade); }
+.vd-runstate[data-state="Failed"]    { color: var(--vd-danger); }
+.vd-runstate[data-state="TimedOut"]  { color: var(--vd-warn); }
+.vd-runstate[data-state="Refused"]   { color: var(--vd-warn); }
+.vd-runstate[data-state="Running"]   { color: var(--vd-ink-3); }
+
+.vd-editor {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 330px;
+  /* An auto row grows to fit its tallest child, which leaves the side column unbounded and its
+     overflow-y with nothing to scroll against - the trigger and delete panels fell off the page. */
+  grid-template-rows: minmax(0, 1fr);
+  gap: var(--vd-3);
+  height: 100%;
+  min-height: 0;
+  padding: var(--vd-3);
+}
+
+.vd-editor__main { display: flex; flex-direction: column; min-height: 0; gap: var(--vd-2); }
+
+.vd-editor__side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vd-3);
+  min-height: 0;
+  overflow-y: auto;
+  /* The Clippy dock (42px, 20px from the edge) floats over the bottom-right corner. Without this
+     clearance the last control in the column sits underneath it. */
+  padding: 0 2px 72px 0;
+}
+
+/*
+ * The stacked pair. Every metric here is repeated on both children because one pixel of difference
+ * puts the caret beside the wrong character.
+ */
+.vd-code {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 240px;
+  border: 1px solid var(--vd-line);
+  border-radius: var(--vd-radius);
+  background: var(--vd-surface-2);
+  overflow: hidden;
+}
+
+.vd-code__layer,
+.vd-code__input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: var(--vd-3);
+  border: 0;
+  font-family: var(--vd-font-mono);
+  font-size: 13px;
+  line-height: 1.55;
+  tab-size: 4;
+  /* Cascadia Code ligates === into one glyph. In an editor the operator should read as the three
+     characters the author typed, and the two stacked layers stay simpler without them. */
+  font-variant-ligatures: none;
+  white-space: pre;
+  overflow: auto;
+}
+
+.vd-code__layer { pointer-events: none; color: var(--vd-ink); background: transparent; }
+
+.vd-code__input {
+  resize: none;
+  background: transparent;
+  /* Transparent glyphs, visible caret: the colour comes from the layer beneath. */
+  color: transparent;
+  caret-color: var(--vd-ink);
+  outline: none;
+}
+
+.vd-code__input::selection { background: var(--vd-primary-soft-2); }
+
+.vd-tok-kw  { color: var(--vd-code-kw); font-weight: 600; }
+.vd-tok-str { color: var(--vd-code-str); }
+.vd-tok-com { color: var(--vd-ink-faint); font-style: italic; }
+.vd-tok-num { color: var(--vd-code-num); }
+.vd-tok-api { color: var(--vd-app-scripts); font-weight: 600; }
+
+.vd-console {
+  flex: 0 0 auto;
+  max-height: 34%;
+  min-height: 96px;
+  overflow: auto;
+  padding: var(--vd-2) var(--vd-3);
+  border: 1px solid var(--vd-line);
+  border-radius: var(--vd-radius);
+  background: var(--vd-surface-3);
+  font-family: var(--vd-font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.vd-console__error { color: var(--vd-danger); }
+.vd-console__empty { color: var(--vd-ink-faint); font-style: italic; }
+
+.vd-panel {
+  /* A flex child shrinks by default. In the bounded side column that squeezed each panel below its
+     content height, and `overflow: hidden` then quietly cut off the timeout field and the delete
+     button. The panels keep their natural height; the column scrolls. */
+  flex: 0 0 auto;
+  border: 1px solid var(--vd-line);
+  border-radius: var(--vd-radius);
+  background: var(--vd-surface-2);
+  overflow: hidden;
+}
+
+.vd-panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--vd-2);
+  padding: var(--vd-2) var(--vd-3);
+  border-block-end: 1px solid var(--vd-line);
+  background: var(--vd-surface-3);
+}
+
+.vd-panel__title {
+  font-family: var(--vd-font-mono);
+  font-size: var(--vd-text-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--vd-ink-3);
+}
+
+.vd-panel__body { display: flex; flex-direction: column; gap: var(--vd-2); padding: var(--vd-3); }
+
+/* Read and write sit side by side, so the pair reads as one decision. */
+.vd-scopes { display: grid; grid-template-columns: 1fr 1fr; gap: 2px var(--vd-2); }
+
+.vd-scope {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 0;
+  font-size: var(--vd-text-sm);
+  cursor: pointer;
+}
+
+.vd-scope__group {
+  grid-column: 1 / -1;
+  margin-block-start: var(--vd-1);
+  font-family: var(--vd-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--vd-ink-faint);
+}
+
+.vd-trigger {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--vd-2);
+  padding: var(--vd-2);
+  border: 1px solid var(--vd-line);
+  border-radius: var(--vd-radius-sm);
+  font-size: var(--vd-text-sm);
+}
+
+.vd-trigger__detail { flex: 1 1 auto; min-width: 0; }
+
+.vd-trigger__when {
+  font-family: var(--vd-font-mono);
+  font-size: 11px;
+  color: var(--vd-ink-3);
+  word-break: break-all;
+}
+
+.vd-run {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: var(--vd-2);
+  width: 100%;
+  padding: var(--vd-2);
+  border: 0;
+  border-block-end: 1px solid var(--vd-line);
+  background: transparent;
+  text-align: start;
+  cursor: pointer;
+  font-size: var(--vd-text-sm);
+  color: inherit;
+}
+
+.vd-run:hover { background: var(--vd-surface-3); }
+
+.vd-run__when {
+  font-family: var(--vd-font-mono);
+  font-size: 11px;
+  color: var(--vd-ink-faint);
+  white-space: nowrap;
+}
+
+.vd-run__calls { display: flex; flex-wrap: wrap; gap: 4px; margin-block-start: var(--vd-1); }
+
+.vd-call {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px;
+  border-radius: var(--vd-radius-full);
+  background: var(--vd-surface-3);
+  font-family: var(--vd-font-mono);
+  font-size: 10px;
+  color: var(--vd-ink-2);
+}
+
+.vd-call[data-ok="false"] { color: var(--vd-danger); }
+
+@media (max-width: 1100px) {
+  .vd-editor { grid-template-columns: minmax(0, 1fr); }
+  .vd-editor__side { max-height: 340px; }
+}

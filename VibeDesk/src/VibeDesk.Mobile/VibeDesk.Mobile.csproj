@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk.Razor">
+
+  <PropertyGroup>
+    <!--
+      Android only, deliberately. iOS and MacCatalyst are one entry away — the workloads are
+      installed — but producing a bundle for either needs a Mac, so they are left out rather than
+      shipped as a target that fails on CI. Windows is left out too: VibeDesk.Desktop already covers
+      Windows (and macOS and Linux), so a MAUI Windows head would be a second desktop app to keep in
+      step for no gain.
+    -->
+    <TargetFrameworks>net10.0-android</TargetFrameworks>
+
+    <UseMaui>true</UseMaui>
+    <SingleProject>true</SingleProject>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>VibeDesk.Mobile</RootNamespace>
+
+    <ApplicationTitle>VibeDesk</ApplicationTitle>
+    <ApplicationId>com.gravicode.vibedesk</ApplicationId>
+    <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
+    <ApplicationVersion>1</ApplicationVersion>
+
+    <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">24.0</SupportedOSPlatformVersion>
+  </PropertyGroup>
+
+  <!-- Ui and Client only — same rule as the desktop host: no Infrastructure in a client. -->
+  <ItemGroup>
+    <ProjectReference Include="..\VibeDesk.Ui\VibeDesk.Ui.csproj" />
+    <ProjectReference Include="..\VibeDesk.Client\VibeDesk.Client.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Maui.Controls" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebView.Maui" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Debug" Condition="'$(Configuration)' == 'Debug'" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <MauiImage Include="Resources\AppIcon\*" />
+    <MauiSplashScreen Include="Resources\Splash\*" />
+  </ItemGroup>
+
+</Project>

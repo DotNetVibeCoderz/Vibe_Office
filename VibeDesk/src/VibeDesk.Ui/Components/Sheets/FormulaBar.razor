@@ -1,0 +1,75 @@
+@*
+    Formula bar. Shows the raw content of the anchor cell — the formula when there is one, the literal
+    otherwise — which is the only way to see and edit a formula whose result is displayed in the grid.
+*@
+<div class="vd-fbar">
+    <div class="vd-fbar__ref" title="Selection">@Selection.Label</div>
+    <div class="vd-fbar__fx" aria-hidden="true"><Icon Name="function" Size="15" /></div>
+
+    <input class="vd-fbar__input"
+           aria-label="Formula or value for @Selection.Label"
+           spellcheck="false"
+           value="@_draft"
+           disabled="@ReadOnly"
+           @oninput="e => _draft = e.Value?.ToString() ?? string.Empty"
+           @onkeydown="OnKeyDown" />
+
+    @if (Stats is not null)
+    {
+        <div class="vd-fbar__stats">
+            @foreach (var (label, value) in Stats)
+            {
+                <span class="vd-fbar__stat"><span class="vd-label">@label</span> @value</span>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public SheetSelection Selection { get; set; }
+
+    /// <summary>Raw content of the anchor cell, pushed in by the page.</summary>
+    [Parameter] public string Raw { get; set; } = string.Empty;
+
+    [Parameter] public bool ReadOnly { get; set; }
+
+    /// <summary>Aggregates over the selection, shown inline when more than one cell is selected.</summary>
+    [Parameter] public IReadOnlyList<(string Label, string Value)>? Stats { get; set; }
+
+    [Parameter] public EventCallback<string> OnCommit { get; set; }
+
+    private string _draft = string.Empty;
+
+    /// <summary>
+    /// Tracks what the page last pushed. Comparing against this rather than against the live draft
+    /// means the field is only reset when the *cell* changed, so typing is never clobbered by a
+    /// re-render triggered elsewhere.
+    /// </summary>
+    private string _pushed = string.Empty;
+    private SheetSelection _pushedFor;
+
+    protected override void OnParametersSet()
+    {
+        if (_pushed != Raw || !_pushedFor.Equals(Selection))
+        {
+            _pushed = Raw;
+            _pushedFor = Selection;
+            _draft = Raw;
+        }
+    }
+
+    private async Task OnKeyDown(KeyboardEventArgs e)
+    {
+        switch (e.Key)
+        {
+            case "Enter":
+                await OnCommit.InvokeAsync(_draft);
+                break;
+
+            case "Escape":
+                // Revert to the stored content rather than clearing, which would look like a delete.
+                _draft = Raw;
+                break;
+        }
+    }
+}

@@ -1,0 +1,119 @@
+@*
+    The application shell. Every page renders inside this: brand, topbar, sidebar, canvas, Clippy dock.
+
+    Pages contribute to the chrome through named sections rather than parameters, so a page deep in
+    the render tree can set the title or add a toolbar without the shell knowing anything about it.
+*@
+@implements IDisposable
+@inject UiState Ui
+@inject NavigationManager Nav
+
+<div class="vd-shell"
+     data-sidebar="@(Ui.SidebarCollapsed ? "collapsed" : "expanded")"
+     data-clippy="@(Ui.ClippyOpen ? "open" : "closed")"
+     data-drawer="@(Ui.DrawerOpen ? "open" : "closed")">
+
+    <div class="vd-brand">
+        <span class="vd-brand__mark" aria-hidden="true">VD</span>
+        <span class="vd-brand__name">VibeDesk</span>
+        <div class="vd-spacer"></div>
+        <button type="button"
+                class="vd-btn vd-btn--icon vd-btn--sm vd-brand__toggle"
+                @onclick="Ui.ToggleSidebar"
+                title="Collapse sidebar"
+                aria-label="Collapse sidebar">
+            <Icon Name="sidebar" Size="16" />
+        </button>
+    </div>
+
+    <header class="vd-topbar">
+        <button type="button"
+                class="vd-btn vd-btn--icon vd-btn--sm vd-topbar__drawer"
+                @onclick="Ui.ToggleDrawer"
+                aria-label="Open navigation">
+            <Icon Name="menu" Size="18" />
+        </button>
+
+        @if (Ui.SidebarCollapsed)
+        {
+            <button type="button"
+                    class="vd-btn vd-btn--icon vd-btn--sm"
+                    @onclick="Ui.ToggleSidebar"
+                    title="Expand sidebar"
+                    aria-label="Expand sidebar">
+                <Icon Name="sidebar" Size="16" />
+            </button>
+        }
+
+        <div class="vd-topbar__title">
+            <SectionOutlet SectionName="@TitleSection" />
+        </div>
+
+        <div class="vd-spacer"></div>
+
+        <GlobalSearch />
+
+        <div class="vd-row" style="gap:var(--vd-1)">
+            <SectionOutlet SectionName="@ActionsSection" />
+            <ThemeToggle />
+            <NotificationBell />
+            <UserMenu />
+        </div>
+    </header>
+
+    <aside class="vd-side">
+        <SideNav />
+    </aside>
+
+    <main class="vd-canvas">
+        <div class="vd-toolbar">
+            <SectionOutlet SectionName="@ToolbarSection" />
+        </div>
+        <div class="vd-canvas__body">
+            @Body
+        </div>
+    </main>
+
+    <aside class="vd-clippy">
+        <ClippyPanel />
+    </aside>
+</div>
+
+@if (!Ui.ClippyOpen)
+{
+    <button type="button" class="vd-clippy-fab" @onclick="Ui.ToggleClippy">
+        <Icon Name="clippy" Size="19" />
+        <span>Ask Mr Clippy</span>
+    </button>
+}
+
+<Toaster />
+
+@code {
+    /// <summary>Section names, exposed as constants so pages never hard-code a string.</summary>
+    public const string TitleSection = "vd-title";
+    public const string ToolbarSection = "vd-toolbar";
+    public const string ActionsSection = "vd-actions";
+
+    [Parameter] public RenderFragment? Body { get; set; }
+
+    protected override void OnInitialized()
+    {
+        Ui.Changed += OnUiChanged;
+        Nav.LocationChanged += OnLocationChanged;
+    }
+
+    private void OnUiChanged() => InvokeAsync(StateHasChanged);
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        // Navigating from the mobile drawer must close it, or the new page opens behind the overlay.
+        if (Ui.DrawerOpen) Ui.DrawerOpen = false;
+    }
+
+    public void Dispose()
+    {
+        Ui.Changed -= OnUiChanged;
+        Nav.LocationChanged -= OnLocationChanged;
+    }
+}

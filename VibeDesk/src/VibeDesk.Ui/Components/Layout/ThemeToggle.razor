@@ -1,0 +1,45 @@
+@*
+    Theme switch cycling light → dark → system.
+
+    "System" is a real third state, not a default: the token sheet leaves `data-theme` off entirely so
+    `prefers-color-scheme` decides, which is why this writes and removes the attribute rather than
+    always setting one.
+*@
+@inject UiState Ui
+@inject IJSRuntime Js
+
+<button type="button"
+        class="vd-btn vd-btn--icon vd-btn--sm"
+        @onclick="Cycle"
+        title="@Label"
+        aria-label="@Label">
+    <Icon Name="@IconName" Size="17" />
+</button>
+
+@code {
+    private string IconName => Ui.Theme switch
+    {
+        "light" => "sun",
+        "dark" => "moon",
+        _ => "monitor",
+    };
+
+    private string Label => Ui.Theme switch
+    {
+        "light" => "Theme: light. Switch to dark.",
+        "dark" => "Theme: dark. Match my system.",
+        _ => "Theme: system. Switch to light.",
+    };
+
+    private async Task Cycle()
+    {
+        Ui.Theme = Ui.Theme switch
+        {
+            "light" => "dark",
+            "dark" => "system",
+            _ => "light",
+        };
+
+        await Js.InvokeVoidAsync("vibedesk.setTheme", Ui.Theme);
+    }
+}

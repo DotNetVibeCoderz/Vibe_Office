@@ -1,0 +1,30 @@
+@inherits LayoutComponentBase
+
+@*
+    Sign-in and registration layout.
+
+    The one place the design gets to be expressive: a full-height split with the batik canting motif
+    drawn large. Everywhere else in the app that motif is a 2px active-state mark, so seeing it at
+    scale here makes the small version legible later as the same idea.
+*@
+<div class="vd-auth">
+    <section class="vd-auth__art" aria-hidden="true">
+        <div class="vd-auth__wax"></div>
+        <div class="vd-auth__art-body">
+            <span class="vd-brand__mark" style="width:36px;height:36px;font-size:var(--vd-text-base)">VD</span>
+            <h1 class="vd-auth__lede">
+                Documents, data, decks<br />and time.<br />
+                <em>One workspace.</em>
+            </h1>
+            <p class="vd-auth__note">
+                Built by Gravicode Studios, led by Kang Fadhil.
+            </p>
+        </div>
+    </section>
+
+    <section class="vd-auth__panel">
+        <div class="vd-auth__card">
+            @Body
+        </div>
+    </section>
+</div>

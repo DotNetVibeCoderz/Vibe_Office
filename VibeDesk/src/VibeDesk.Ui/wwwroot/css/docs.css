@@ -1,0 +1,353 @@
+/*
+ * Docs.
+ *
+ * The canvas is deliberately plain. Everywhere else the app has an opinion; here the document is the
+ * user's, so the page is a white sheet with a measured column and the chrome stays out of the way.
+ */
+
+.vd-docs {
+  display: flex;
+  min-height: 0;
+  height: 100%;
+  background: var(--vd-canvas);
+}
+
+/* The editor column: a scrolling page area above a status strip that is always pinned. */
+.vd-docs__main {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.vd-docs__scroll {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--vd-6) var(--vd-4) var(--vd-8);
+}
+
+/* The page. Width comes from the model's page setup, so A4 and Letter differ as they should. */
+.vd-page {
+  margin-inline: auto;
+  background: var(--vd-surface);
+  border: 1px solid var(--vd-line);
+  border-radius: 2px;
+  box-shadow: var(--vd-shadow);
+  transition: max-width var(--vd-mid) var(--vd-ease);
+}
+
+.vd-page__body {
+  /* The measure is capped in characters as well as millimetres: a line longer than about 90
+     characters is measurably harder to track back from, whatever the paper size says. */
+  max-width: 92ch;
+  margin-inline: auto;
+  color: var(--vd-ink);
+  outline: none;
+  overflow-wrap: break-word;
+}
+
+.vd-page__body:focus-visible {
+  outline: none;
+}
+
+/* ── document typography ────────────────────────────────────────────────────
+   Scoped to the page so a document's own formatting can never leak into the app chrome. */
+.vd-page__body h1,
+.vd-page__body h2,
+.vd-page__body h3,
+.vd-page__body h4 {
+  font-family: var(--vd-font-display);
+  line-height: 1.25;
+  margin-block: 1.4em 0.5em;
+}
+
+.vd-page__body > :first-child { margin-block-start: 0; }
+
+.vd-page__body h1 { font-size: 1.9em; font-weight: 680; letter-spacing: -0.02em; }
+.vd-page__body h2 { font-size: 1.45em; font-weight: 650; letter-spacing: -0.015em; }
+.vd-page__body h3 { font-size: 1.18em; font-weight: 620; }
+.vd-page__body h4 { font-size: 1em; font-weight: 620; color: var(--vd-ink-2); }
+
+.vd-page__body p { margin-block: 0 0.85em; }
+
+.vd-page__body ul,
+.vd-page__body ol { margin-block: 0 0.85em; padding-inline-start: 1.6em; }
+
+.vd-page__body li { margin-block-end: 0.3em; }
+.vd-page__body li::marker { color: var(--vd-ink-faint); }
+
+.vd-page__body blockquote {
+  margin: 0 0 1em;
+  padding: 0.15em 1.1em;
+  /* The canting mark again, this time as a pull-quote rule. */
+  border-inline-start: 2px solid var(--vd-gold);
+  color: var(--vd-ink-2);
+  font-style: italic;
+}
+
+.vd-page__body code {
+  padding: 1px 5px;
+  border-radius: var(--vd-radius-sm);
+  background: var(--vd-surface-3);
+  font-family: var(--vd-font-mono);
+  font-size: 0.88em;
+}
+
+.vd-page__body pre {
+  margin: 0 0 1em;
+  padding: 1em;
+  border: 1px solid var(--vd-line);
+  border-radius: var(--vd-radius);
+  background: var(--vd-surface-2);
+  overflow-x: auto;
+}
+
+.vd-page__body pre code { padding: 0; background: none; }
+
+.vd-page__body table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-block: 0 1em;
+  font-size: 0.94em;
+}
+
+.vd-page__body th,
+.vd-page__body td {
+  padding: 0.4em 0.65em;
+  border: 1px solid var(--vd-line);
+  text-align: start;
+}
+
+.vd-page__body th { background: var(--vd-surface-3); font-weight: 620; }
+
+.vd-page__body img { max-width: 100%; height: auto; border-radius: var(--vd-radius-sm); }
+
+.vd-page__body hr {
+  margin-block: 1.6em;
+  border: 0;
+  border-top: 1px solid var(--vd-line);
+}
+
+.vd-page__body a { color: var(--vd-primary); }
+
+/* Empty document: a placeholder that disappears on the first keystroke. */
+.vd-page__body[data-empty="true"]::before {
+  content: attr(data-placeholder);
+  color: var(--vd-ink-faint);
+  pointer-events: none;
+}
+
+/* ── suggestion marks ───────────────────────────────────────────────────────
+   Inserted around text a suggestion targets, so a reviewer's proposal is visible in place rather
+   than only in the sidebar. */
+.vd-sugg {
+  background: var(--vd-gold-soft);
+  border-block-end: 2px solid var(--vd-gold);
+  cursor: pointer;
+}
+
+.vd-sugg[data-selected="true"] {
+  background: color-mix(in srgb, var(--vd-gold) 28%, transparent);
+}
+
+/* Text a comment is anchored to. */
+.vd-anchor {
+  background: color-mix(in srgb, var(--vd-info) 14%, transparent);
+  border-block-end: 1px dashed var(--vd-info);
+  cursor: pointer;
+}
+
+/* ── comment sidebar ────────────────────────────────────────────────────── */
+.vd-side-panel {
+  flex: 0 0 320px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--vd-surface);
+  border-inline-start: 1px solid var(--vd-line);
+}
+
+.vd-side-panel__head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--vd-2);
+  padding: var(--vd-2) var(--vd-3);
+  border-block-end: 1px solid var(--vd-line);
+}
+
+.vd-side-panel__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--vd-3);
+}
+
+.vd-thread {
+  border: 1px solid var(--vd-line);
+  border-radius: var(--vd-radius);
+  background: var(--vd-surface);
+  margin-block-end: var(--vd-2);
+  overflow: hidden;
+}
+
+.vd-thread[data-kind="suggestion"] { border-inline-start: 2px solid var(--vd-gold); }
+.vd-thread[data-resolved="true"] { opacity: 0.6; }
+
+.vd-thread__item { padding: var(--vd-2) var(--vd-3); }
+.vd-thread__item + .vd-thread__item { border-block-start: 1px solid var(--vd-line); }
+
+.vd-thread__head {
+  display: flex;
+  align-items: center;
+  gap: var(--vd-2);
+  margin-block-end: var(--vd-1);
+}
+
+.vd-thread__author { font-size: var(--vd-text-sm); font-weight: 570; }
+
+.vd-thread__when {
+  font-family: var(--vd-font-mono);
+  font-size: 10px;
+  color: var(--vd-ink-faint);
+}
+
+.vd-thread__body {
+  font-size: var(--vd-text-sm);
+  line-height: var(--vd-leading);
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+.vd-thread__anchor {
+  display: block;
+  margin-block-end: var(--vd-1);
+  padding-inline-start: var(--vd-2);
+  border-inline-start: 2px solid var(--vd-line-strong);
+  font-size: var(--vd-text-xs);
+  color: var(--vd-ink-3);
+  font-style: italic;
+}
+
+/* The proposed replacement, shown as a strike/insert pair so the change itself is legible. */
+.vd-thread__diff {
+  margin-block: var(--vd-1);
+  font-size: var(--vd-text-sm);
+  line-height: var(--vd-leading);
+}
+
+.vd-thread__del {
+  background: var(--vd-danger-soft);
+  color: var(--vd-danger);
+  text-decoration: line-through;
+  padding: 0 3px;
+  border-radius: 2px;
+}
+
+.vd-thread__ins {
+  background: var(--vd-jade-soft);
+  color: var(--vd-jade);
+  padding: 0 3px;
+  border-radius: 2px;
+}
+
+.vd-thread__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--vd-1);
+  padding: var(--vd-1) var(--vd-2);
+  border-block-start: 1px solid var(--vd-line);
+  background: var(--vd-surface-2);
+}
+
+.vd-thread__reply {
+  display: flex;
+  gap: var(--vd-1);
+  padding: var(--vd-2);
+  border-block-start: 1px solid var(--vd-line);
+}
+
+/* ── version history panel ──────────────────────────────────────────────── */
+.vd-version {
+  display: flex;
+  gap: var(--vd-2);
+  width: 100%;
+  padding: var(--vd-2);
+  border: 0;
+  border-radius: var(--vd-radius);
+  background: transparent;
+  color: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.vd-version:hover { background: var(--vd-surface-3); }
+
+.vd-version[aria-current="true"] {
+  background: var(--vd-primary-soft);
+}
+
+.vd-version__num {
+  flex: 0 0 auto;
+  font-family: var(--vd-font-mono);
+  font-size: var(--vd-text-xs);
+  font-weight: 600;
+  color: var(--vd-ink-3);
+  padding-block-start: 2px;
+}
+
+.vd-version__label { font-size: var(--vd-text-sm); font-weight: 550; }
+
+.vd-version__meta {
+  font-size: var(--vd-text-xs);
+  color: var(--vd-ink-3);
+}
+
+/* ── word count strip ───────────────────────────────────────────────────── */
+.vd-docs__status {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--vd-3);
+  height: 24px;
+  padding-inline: var(--vd-3);
+  border-block-start: 1px solid var(--vd-line);
+  background: var(--vd-surface-2);
+  font-size: var(--vd-text-xs);
+  color: var(--vd-ink-3);
+}
+
+@media (max-width: 1000px) {
+  /* The comment panel becomes an overlay rather than squeezing the measure below readability. */
+  .vd-side-panel {
+    position: fixed;
+    inset-block: calc(var(--vd-topbar-h) + var(--vd-toolbar-h)) 0;
+    inset-inline-end: 0;
+    width: min(340px, 92vw);
+    z-index: var(--vd-z-dropdown);
+    box-shadow: var(--vd-shadow-lg);
+  }
+}
+
+@media (max-width: 700px) {
+  .vd-docs__scroll { padding: var(--vd-2) var(--vd-2) var(--vd-12); }
+  .vd-page { border-radius: 0; }
+}
+
+/* Printing a document should print the document, not the app. */
+@media print {
+  .vd-topbar, .vd-side, .vd-brand, .vd-toolbar, .vd-clippy,
+  .vd-clippy-fab, .vd-side-panel, .vd-docs__status { display: none !important; }
+
+  .vd-page {
+    border: 0;
+    box-shadow: none;
+    max-width: none !important;
+    padding: 0 !important;
+  }
+
+  .vd-docs, .vd-docs__scroll { overflow: visible; padding: 0; background: #fff; }
+}

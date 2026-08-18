@@ -1,0 +1,243 @@
+/*
+ * VibeDesk design tokens — "Batik Grid".
+ *
+ * Palette derives from the two historical Javanese batik dyes rather than a generic SaaS ramp:
+ * wedelan (indigo/teal vat) carries primary actions, soga (brown-gold) marks active state.
+ * Neutrals are cooled slightly so the app reads as cloth-grey rather than warm paper — a workspace
+ * people stare at all day should recede, not glow.
+ *
+ * Every colour is defined on bare :root first. Dark values are only *overrides*, so a token can
+ * never be undefined in one theme.
+ */
+
+:root {
+  color-scheme: light;
+
+  /* ── ink & surface ─────────────────────────────────────────────────────── */
+  --vd-ink: #16191c;
+  --vd-ink-2: #454d55;
+  --vd-ink-3: #6b757e;
+  --vd-ink-faint: #9aa3ab;
+
+  --vd-surface: #ffffff;
+  --vd-surface-2: #fafbfb;
+  --vd-surface-3: #f0f3f4;
+  --vd-canvas: #f4f6f7;
+
+  --vd-line: #e2e7e9;
+  --vd-line-strong: #ccd4d7;
+
+  /* ── wedelan: the indigo/teal dye vat. Primary actions. ───────────────── */
+  --vd-primary: #0f5c57;
+  --vd-primary-hover: #0c4a46;
+  --vd-primary-active: #093b38;
+  --vd-primary-soft: #dceceA;
+  --vd-primary-soft-2: #eef6f5;
+  --vd-on-primary: #ffffff;
+
+  /* ── soga: the brown-gold dye. Active state and the canting line. ─────── */
+  --vd-gold: #b47b26;
+  --vd-gold-bright: #d9a047;
+  --vd-gold-soft: #f7ecd8;
+
+  /* ── status ───────────────────────────────────────────────────────────── */
+  --vd-danger: #b23a2f;
+  --vd-danger-soft: #fbe9e7;
+  --vd-warn: #9a6b12;
+  --vd-warn-soft: #fdf2dc;
+  --vd-jade: #2f8f73;
+  --vd-jade-soft: #e2f2ed;
+  --vd-info: #2b6cb0;
+  --vd-info-soft: #e6f0f9;
+
+  /* ── per-app hues. Used only as small identity marks, never as fills. ─── */
+  --vd-app-drive: #2f8f73;
+  --vd-app-docs: #2b6cb0;
+  --vd-app-sheets: #197a5a;
+  --vd-app-slides: #b4602c;
+  --vd-app-calendar: #7a4bb8;
+  --vd-app-scripts: #a03d6b;
+
+  /* Script editor syntax colours, held to the same contrast bar as body text. */
+  --vd-code-kw: #8a3ca8;
+  --vd-code-str: #1c7a4a;
+  --vd-code-num: #b35c00;
+
+  /* ── typography ───────────────────────────────────────────────────────── */
+  /*
+   * System stacks on purpose: a tool must paint on first frame, and a webfont swap in a spreadsheet
+   * reflows thousands of cells. Personality is carried by the mono label system below instead.
+   */
+  --vd-font-ui: "Segoe UI Variable Text", "Segoe UI", -apple-system, BlinkMacSystemFont,
+    "Inter", system-ui, "Noto Sans", sans-serif;
+  --vd-font-display: "Segoe UI Variable Display", "Segoe UI", -apple-system, BlinkMacSystemFont,
+    "Inter", system-ui, sans-serif;
+  --vd-font-mono: "Cascadia Code", "Cascadia Mono", "JetBrains Mono", "SF Mono",
+    Consolas, "Liberation Mono", monospace;
+
+  --vd-text-xs: 0.6875rem;   /* 11px — mono labels, cell refs */
+  --vd-text-sm: 0.8125rem;   /* 13px — dense UI, grid cells */
+  --vd-text-base: 0.875rem;  /* 14px — default UI */
+  --vd-text-md: 1rem;
+  --vd-text-lg: 1.25rem;
+  --vd-text-xl: 1.5rem;
+  --vd-text-2xl: 2rem;
+  --vd-text-3xl: 2.75rem;
+
+  --vd-leading-tight: 1.2;
+  --vd-leading: 1.5;
+  --vd-leading-loose: 1.7;
+
+  /* ── 4px grid. Batik's discipline: everything lands on it. ────────────── */
+  --vd-1: 4px;
+  --vd-2: 8px;
+  --vd-3: 12px;
+  --vd-4: 16px;
+  --vd-5: 20px;
+  --vd-6: 24px;
+  --vd-8: 32px;
+  --vd-10: 40px;
+  --vd-12: 48px;
+  --vd-16: 64px;
+
+  --vd-radius-sm: 4px;
+  --vd-radius: 7px;
+  --vd-radius-lg: 12px;
+  --vd-radius-xl: 18px;
+  --vd-radius-full: 999px;
+
+  /* Shadows stay tight and low-contrast; a workspace with drop shadows everywhere reads as toys. */
+  --vd-shadow-sm: 0 1px 2px rgb(22 25 28 / 0.06), 0 1px 1px rgb(22 25 28 / 0.04);
+  --vd-shadow: 0 2px 8px rgb(22 25 28 / 0.08), 0 1px 2px rgb(22 25 28 / 0.06);
+  --vd-shadow-lg: 0 12px 32px rgb(22 25 28 / 0.14), 0 2px 8px rgb(22 25 28 / 0.08);
+  --vd-shadow-focus: 0 0 0 3px rgb(15 92 87 / 0.22);
+
+  /* ── layout constants shared by CSS and component code ────────────────── */
+  --vd-topbar-h: 52px;
+  --vd-sidebar-w: 244px;
+  --vd-sidebar-w-collapsed: 60px;
+  --vd-clippy-w: 384px;
+  --vd-toolbar-h: 44px;
+
+  --vd-ease: cubic-bezier(0.32, 0.72, 0, 1);
+  --vd-fast: 120ms;
+  --vd-mid: 220ms;
+  --vd-slow: 380ms;
+
+  --vd-z-sticky: 20;
+  --vd-z-dropdown: 40;
+  --vd-z-overlay: 60;
+  --vd-z-modal: 70;
+  --vd-z-toast: 90;
+}
+
+/* Dark theme: overrides only. Cool near-black rather than pure black — pure black on an LCD makes
+   text edges buzz, and this is a surface people read for hours. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+
+    --vd-ink: #e8ebed;
+    --vd-ink-2: #b3bcc3;
+    --vd-ink-3: #8b959d;
+    --vd-ink-faint: #656e76;
+
+    --vd-surface: #1b1f23;
+    --vd-surface-2: #21262b;
+    --vd-surface-3: #2a3035;
+    --vd-canvas: #14171a;
+
+    --vd-line: #2e343a;
+    --vd-line-strong: #414951;
+
+    --vd-primary: #4fb3a8;
+    --vd-primary-hover: #63c2b7;
+    --vd-primary-active: #7ed0c6;
+    --vd-primary-soft: #17322f;
+    --vd-primary-soft-2: #122624;
+    --vd-on-primary: #04211f;
+
+    --vd-gold: #d9a047;
+    --vd-gold-bright: #ecbc69;
+    --vd-gold-soft: #33280f;
+
+    --vd-danger: #f08376;
+    --vd-danger-soft: #3a1d19;
+    --vd-warn: #dca63f;
+    --vd-warn-soft: #33280f;
+    --vd-jade: #56c2a2;
+    --vd-jade-soft: #14302a;
+    --vd-info: #6aa9e0;
+    --vd-info-soft: #16283a;
+
+    --vd-app-drive: #56c2a2;
+    --vd-app-docs: #6aa9e0;
+    --vd-app-sheets: #4cbb92;
+    --vd-app-slides: #e08b58;
+    --vd-app-calendar: #ab86e0;
+    --vd-app-scripts: #e07ba6;
+
+    --vd-code-kw: #cf9be8;
+    --vd-code-str: #6fd39c;
+    --vd-code-num: #e8a35c;
+
+    --vd-shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
+    --vd-shadow: 0 2px 10px rgb(0 0 0 / 0.45);
+    --vd-shadow-lg: 0 14px 38px rgb(0 0 0 / 0.6);
+    --vd-shadow-focus: 0 0 0 3px rgb(79 179 168 / 0.34);
+  }
+}
+
+/* Explicit dark choice must win in both directions, so the same overrides repeat here. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --vd-ink: #e8ebed;
+  --vd-ink-2: #b3bcc3;
+  --vd-ink-3: #8b959d;
+  --vd-ink-faint: #656e76;
+
+  --vd-surface: #1b1f23;
+  --vd-surface-2: #21262b;
+  --vd-surface-3: #2a3035;
+  --vd-canvas: #14171a;
+
+  --vd-line: #2e343a;
+  --vd-line-strong: #414951;
+
+  --vd-primary: #4fb3a8;
+  --vd-primary-hover: #63c2b7;
+  --vd-primary-active: #7ed0c6;
+  --vd-primary-soft: #17322f;
+  --vd-primary-soft-2: #122624;
+  --vd-on-primary: #04211f;
+
+  --vd-gold: #d9a047;
+  --vd-gold-bright: #ecbc69;
+  --vd-gold-soft: #33280f;
+
+  --vd-danger: #f08376;
+  --vd-danger-soft: #3a1d19;
+  --vd-warn: #dca63f;
+  --vd-warn-soft: #33280f;
+  --vd-jade: #56c2a2;
+  --vd-jade-soft: #14302a;
+  --vd-info: #6aa9e0;
+  --vd-info-soft: #16283a;
+
+  --vd-app-drive: #56c2a2;
+  --vd-app-docs: #6aa9e0;
+  --vd-app-sheets: #4cbb92;
+  --vd-app-slides: #e08b58;
+  --vd-app-calendar: #ab86e0;
+  --vd-app-scripts: #e07ba6;
+
+  --vd-code-kw: #cf9be8;
+  --vd-code-str: #6fd39c;
+  --vd-code-num: #e8a35c;
+
+  --vd-shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
+  --vd-shadow: 0 2px 10px rgb(0 0 0 / 0.45);
+  --vd-shadow-lg: 0 14px 38px rgb(0 0 0 / 0.6);
+  --vd-shadow-focus: 0 0 0 3px rgb(79 179 168 / 0.34);
+}

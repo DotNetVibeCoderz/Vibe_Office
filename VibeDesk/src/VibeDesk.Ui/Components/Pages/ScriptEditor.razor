@@ -1,0 +1,692 @@
+@page "/scripts/{Id:guid}"
+@attribute [Authorize]
+@using VibeDesk.Application.Scripting
+@inject IScriptService ScriptsService
+@inject IScriptExecutor Executor
+@inject NavigationManager Nav
+@inject ToastService Toasts
+@inject IJSRuntime Js
+
+@*
+    Code on the left, everything that governs it on the right. Scopes and triggers sit beside the
+    editor rather than behind a settings dialog: they decide whether the code is allowed to do what
+    it says, which is not a detail to bury.
+*@
+
+<PageTitle>@(_name.Length == 0 ? "Script" : _name) · VibeDesk</PageTitle>
+
+<SectionContent SectionName="@AppShell.TitleSection">
+    <span class="vd-doctitle">
+        <span style="color:var(--vd-app-scripts)"><Icon Name="code" Size="17" /></span>
+        <input class="vd-doctitle__input"
+               value="@_name"
+               aria-label="Script name"
+               @onchange="OnNameChanged" />
+        <span class="vd-doctitle__state">@StateLabel</span>
+    </span>
+</SectionContent>
+
+<SectionContent SectionName="@AppShell.ToolbarSection">
+    <select class="vd-select vd-select--inline" aria-label="Language"
+            value="@((int)_language)" @onchange="OnLanguageChanged">
+        @foreach (var language in Executor.AvailableLanguages)
+        {
+            <option value="@((int)language)">@LanguageLabel(language)</option>
+        }
+    </select>
+
+    <span class="vd-toolbar__sep"></span>
+
+    <label class="vd-scope" title="A disabled script never runs, not even from a trigger.">
+        <input type="checkbox" checked="@_enabled" @onchange="OnEnabledChanged" />
+        <span>Enabled</span>
+    </label>
+
+    <span class="vd-spacer"></span>
+
+    <button type="button" class="vd-btn vd-btn--ghost vd-btn--sm"
+            @onclick="CheckAsync" disabled="@_busy">
+        <Icon Name="shield" Size="15" />
+        <span>Check</span>
+    </button>
+
+    <button type="button" class="vd-btn vd-btn--outline vd-btn--sm"
+            @onclick="SaveAsync" disabled="@(_busy || !_dirty)">
+        <span>Save</span>
+    </button>
+
+    <button type="button" class="vd-btn vd-btn--primary vd-btn--sm"
+            @onclick="RunAsync" disabled="@_busy">
+        @if (_running)
+        {
+            <span class="vd-spinner"></span>
+        }
+        else
+        {
+            <Icon Name="play" Size="15" />
+        }
+        <span>Run</span>
+    </button>
+</SectionContent>
+
+<SectionContent SectionName="@AppShell.ActionsSection">
+    <span class="vd-lang" data-lang="@_language">@LanguageLabel(_language)</span>
+</SectionContent>
+
+<div class="vd-editor">
+    <div class="vd-editor__main">
+        <div class="vd-code">
+            <pre class="vd-code__layer" id="@LayerId" aria-hidden="true"><code></code></pre>
+            <textarea class="vd-code__input"
+                      id="@InputId"
+                      spellcheck="false"
+                      autocomplete="off"
+                      autocapitalize="off"
+                      value="@_code"
+                      @oninput="OnCodeInput"
+                      aria-label="Script source"></textarea>
+        </div>
+
+        <div class="vd-console">
+            @if (_result is null)
+            {
+                <span class="vd-console__empty">Output appears here after a run.</span>
+            }
+            else
+            {
+                <div style="display:flex;align-items:center;gap:var(--vd-2);margin-block-end:var(--vd-2)">
+                    <span class="vd-runstate" data-state="@_result.Status">@_result.Status</span>
+                    <span class="vd-run__when">@_result.DurationMs ms</span>
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(_result.Output))
+                {
+                    <div>@_result.Output</div>
+                }
+
+                @if (!string.IsNullOrWhiteSpace(_result.Error))
+                {
+                    <div class="vd-console__error">@_result.Error</div>
+                }
+
+                @if (!string.IsNullOrWhiteSpace(_result.ResultJson))
+                {
+                    <div style="color:var(--vd-ink-3)">&rarr; @_result.ResultJson</div>
+                }
+
+                @if (_result.ApiCalls.Count > 0)
+                {
+                    <div class="vd-run__calls">
+                        @foreach (var call in _result.ApiCalls)
+                        {
+                            <span class="vd-call" data-ok="@call.Succeeded.ToString().ToLowerInvariant()">
+                                @call.Method@(string.IsNullOrEmpty(call.Target) ? "" : " · " + call.Target)
+                            </span>
+                        }
+                    </div>
+                }
+            }
+        </div>
+    </div>
+
+    <aside class="vd-editor__side">
+        <section class="vd-panel">
+            <header class="vd-panel__head"><span class="vd-panel__title">Permissions</span></header>
+            <div class="vd-panel__body">
+                <p class="vd-hint">A script reaches only what you grant here, and never more than you can reach yourself.</p>
+
+                <div class="vd-scopes">
+                    @foreach (var group in ScopeGroups)
+                    {
+                        <span class="vd-scope__group">@group.Label</span>
+
+                        @foreach (var scope in group.Scopes)
+                        {
+                            var current = scope;
+                            <label class="vd-scope">
+                                <input type="checkbox"
+                                       checked="@_scopes.HasFlag(current)"
+                                       @onchange="e => ToggleScope(current, e)" />
+                                <span>@ScopeLabel(current)</span>
+                            </label>
+                        }
+                    }
+                </div>
+
+                @if (_scopes.HasFlag(ScriptScope.Network))
+                {
+                    <div class="vd-field">
+                        <label for="vd-hosts">Allowed hosts</label>
+                        <input class="vd-input" id="vd-hosts"
+                               placeholder="api.example.com, *.example.org"
+                               value="@_allowedHosts"
+                               @onchange="OnHostsChanged" />
+                        <p class="vd-hint">Comma separated. With none listed, no outbound call is permitted.</p>
+                    </div>
+                }
+
+                <div class="vd-field">
+                    <label for="vd-timeout">Timeout (seconds)</label>
+                    <input class="vd-input" id="vd-timeout" type="number" min="1" max="300"
+                           placeholder="server default"
+                           value="@(_timeout?.ToString() ?? "")"
+                           @onchange="OnTimeoutChanged" />
+                </div>
+            </div>
+        </section>
+
+        <section class="vd-panel">
+            <header class="vd-panel__head">
+                <span class="vd-panel__title">Inputs</span>
+                <button type="button" class="vd-btn vd-btn--icon vd-btn--sm vd-btn--ghost"
+                        title="Add an input" aria-label="Add an input" @onclick="AddInput">
+                    <Icon Name="plus" Size="14" />
+                </button>
+            </header>
+            <div class="vd-panel__body">
+                <p class="vd-hint">
+                    Values the script reads from <code>input</code>. A trigger supplies its own; these
+                    are for trying the script out from here.
+                </p>
+
+                @for (var i = 0; i < _inputs.Count; i++)
+                {
+                    var index = i;
+                    <div class="vd-trigger">
+                        <input class="vd-input" style="flex:0 0 96px" placeholder="key"
+                               aria-label="Input name"
+                               value="@_inputs[index].Key"
+                               @onchange="e => SetInputKey(index, e)" />
+                        <input class="vd-input" style="min-width:0" placeholder="value"
+                               aria-label="Input value"
+                               value="@_inputs[index].Value"
+                               @onchange="e => SetInputValue(index, e)" />
+                        <button type="button" class="vd-btn vd-btn--icon vd-btn--sm vd-btn--ghost"
+                                title="Remove" aria-label="Remove input"
+                                @onclick="() => _inputs.RemoveAt(index)">
+                            <Icon Name="close" Size="14" />
+                        </button>
+                    </div>
+                }
+            </div>
+        </section>
+
+        <section class="vd-panel">
+            <header class="vd-panel__head">
+                <span class="vd-panel__title">Triggers</span>
+                <button type="button" class="vd-btn vd-btn--icon vd-btn--sm vd-btn--ghost"
+                        title="Add a trigger" aria-label="Add a trigger"
+                        @onclick="() => _addingTrigger = !_addingTrigger">
+                    <Icon Name="plus" Size="14" />
+                </button>
+            </header>
+            <div class="vd-panel__body">
+                @if (_triggers.Count == 0 && !_addingTrigger)
+                {
+                    <p class="vd-hint">No triggers: this script runs only when you press Run.</p>
+                }
+
+                @foreach (var trigger in _triggers)
+                {
+                    var id = trigger.Id;
+                    <div class="vd-trigger">
+                        <Icon Name="@(trigger.Kind == TriggerKind.Schedule ? "clock" : "sparkle")" Size="15" />
+                        <div class="vd-trigger__detail">
+                            <div>@(trigger.Kind == TriggerKind.Schedule ? "On a schedule" : "On event")</div>
+                            <div class="vd-trigger__when">
+                                @(trigger.Kind == TriggerKind.Schedule
+                                    ? trigger.CronExpression + " · " + trigger.TimeZoneId
+                                    : trigger.EventName)
+                            </div>
+                            @if (trigger.NextRunAt is { } next)
+                            {
+                                <div class="vd-trigger__when">next @next.ToLocalTime().ToString("MMM d, HH:mm")</div>
+                            }
+                        </div>
+                        <button type="button" class="vd-btn vd-btn--icon vd-btn--sm vd-btn--ghost"
+                                title="Remove trigger" aria-label="Remove trigger"
+                                @onclick="() => RemoveTriggerAsync(id)">
+                            <Icon Name="trash" Size="14" />
+                        </button>
+                    </div>
+                }
+
+                @if (_addingTrigger)
+                {
+                    <div class="vd-field" style="margin-block-start:var(--vd-2)">
+                        <select class="vd-select" aria-label="Trigger kind"
+                                value="@((int)_newKind)" @onchange="OnTriggerKindChanged">
+                            <option value="@((int)TriggerKind.Event)">On event</option>
+                            <option value="@((int)TriggerKind.Schedule)">On a schedule</option>
+                        </select>
+
+                        @if (_newKind == TriggerKind.Event)
+                        {
+                            <select class="vd-select" aria-label="Event"
+                                    value="@_newEvent"
+                                    @onchange="e => _newEvent = e.Value?.ToString() ?? _newEvent">
+                                @foreach (var evt in ScriptEvents.All)
+                                {
+                                    <option value="@evt.Name">@evt.Name — @evt.Description</option>
+                                }
+                            </select>
+                        }
+                        else
+                        {
+                            <input class="vd-input" placeholder="0 9 * * 1-5" aria-label="Cron expression"
+                                   value="@_newCron"
+                                   @onchange="e => _newCron = e.Value?.ToString() ?? _newCron" />
+                            <p class="vd-hint">minute hour day month weekday, read in @TimeZoneInfo.Local.Id.</p>
+                        }
+
+                        <button type="button" class="vd-btn vd-btn--primary vd-btn--sm" @onclick="AddTriggerAsync">
+                            <span>Add trigger</span>
+                        </button>
+                    </div>
+                }
+            </div>
+        </section>
+
+        <section class="vd-panel">
+            <header class="vd-panel__head">
+                <span class="vd-panel__title">Recent runs</span>
+                <button type="button" class="vd-btn vd-btn--icon vd-btn--sm vd-btn--ghost"
+                        title="Refresh" aria-label="Refresh runs" @onclick="LoadRunsAsync">
+                    <Icon Name="refresh" Size="14" />
+                </button>
+            </header>
+            <div class="vd-panel__body" style="padding:0">
+                @if (_runs.Count == 0)
+                {
+                    <p class="vd-hint" style="padding:var(--vd-3)">No runs recorded yet.</p>
+                }
+
+                @foreach (var run in _runs)
+                {
+                    var current = run;
+                    <button type="button" class="vd-run" @onclick="() => ShowRunAsync(current.Id)">
+                        <span class="vd-runstate" data-state="@run.Status"></span>
+                        <span>@run.TriggeredBy@(string.IsNullOrEmpty(run.TriggerDetail) ? "" : " · " + run.TriggerDetail)</span>
+                        <span class="vd-run__when">@run.StartedAt.ToLocalTime().ToString("MMM d, HH:mm")</span>
+                    </button>
+                }
+            </div>
+        </section>
+
+        <section class="vd-panel">
+            <header class="vd-panel__head"><span class="vd-panel__title">Share and remove</span></header>
+            <div class="vd-panel__body">
+                <button type="button" class="vd-btn vd-btn--outline vd-btn--sm" @onclick="PublishAsync">
+                    <Icon Name="share" Size="14" />
+                    <span>Publish to shared</span>
+                </button>
+                <p class="vd-hint">Publishing copies the source. Later edits stay yours until you publish again.</p>
+
+                <button type="button" class="vd-btn vd-btn--danger vd-btn--sm" @onclick="DeleteAsync">
+                    <Icon Name="trash" Size="14" />
+                    <span>Delete script</span>
+                </button>
+            </div>
+        </section>
+    </aside>
+</div>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private string InputId => $"vd-code-{Id:N}";
+    private string LayerId => $"vd-code-layer-{Id:N}";
+
+    private string _name = string.Empty;
+    private string? _description;
+    private ScriptLanguage _language = ScriptLanguage.JavaScript;
+    private string _code = string.Empty;
+    private ScriptScope _scopes = ScriptScope.None;
+    private string? _allowedHosts;
+    private int? _timeout;
+    private bool _enabled;
+    private int _version;
+
+    private List<ScriptTriggerDto> _triggers = [];
+    private List<ScriptRunDto> _runs = [];
+    private ScriptExecutionResult? _result;
+
+    private bool _dirty;
+    private bool _busy;
+    private bool _running;
+    private bool _loaded;
+    private bool _attached;
+
+    /// <summary>Ad-hoc values for a run from this page. A trigger supplies its own.</summary>
+    private readonly List<(string Key, string Value)> _inputs = [];
+
+    private bool _addingTrigger;
+    private TriggerKind _newKind = TriggerKind.Event;
+    private string _newEvent = ScriptEvents.All[0].Name;
+    private string _newCron = "0 9 * * 1-5";
+
+    private string StateLabel => _busy ? "Working…" : _dirty ? "Unsaved" : _version > 0 ? $"v{_version}" : "";
+
+    /// <summary>
+    /// Scopes grouped by the app they open, so the list reads as "what can this touch" rather than
+    /// as a flags enum. Read and write are separate rows on purpose: granting a script the ability to
+    /// read a spreadsheet is a smaller decision than letting it overwrite one.
+    /// </summary>
+    private static readonly (string Label, ScriptScope[] Scopes)[] ScopeGroups =
+    [
+        ("Drive", [ScriptScope.DriveRead, ScriptScope.DriveWrite]),
+        ("Docs", [ScriptScope.DocsRead, ScriptScope.DocsWrite]),
+        ("Sheets", [ScriptScope.SheetsRead, ScriptScope.SheetsWrite]),
+        ("Slides", [ScriptScope.SlidesRead, ScriptScope.SlidesWrite]),
+        ("Calendar", [ScriptScope.CalendarRead, ScriptScope.CalendarWrite]),
+        ("Beyond the workspace", [ScriptScope.Network, ScriptScope.Notify]),
+    ];
+
+    private static string ScopeLabel(ScriptScope scope) => scope switch
+    {
+        ScriptScope.Network => "Call allowed hosts",
+        ScriptScope.Notify => "Notify me",
+        _ => scope.ToString().EndsWith("Write", StringComparison.Ordinal) ? "Write" : "Read",
+    };
+
+    private static string LanguageLabel(ScriptLanguage language) => language switch
+    {
+        ScriptLanguage.Python => "Python",
+        ScriptLanguage.CSharp => "C#",
+        _ => "JavaScript",
+    };
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _loaded = false;
+        _attached = false;
+
+        var detail = await ScriptsService.GetAsync(Id);
+
+        if (detail is null)
+        {
+            Toasts.Error("That script no longer exists.");
+            Nav.NavigateTo("/scripts");
+            return;
+        }
+
+        var script = detail.Script;
+
+        _name = script.Name;
+        _description = script.Description;
+        _language = script.Language;
+        _code = detail.Code;
+        _scopes = script.Scopes;
+        _allowedHosts = script.AllowedHosts;
+        _timeout = script.TimeoutSeconds;
+        _enabled = script.IsEnabled;
+        _version = script.VersionNumber;
+        _triggers = [.. detail.Triggers];
+        _dirty = false;
+        _result = null;
+        _loaded = true;
+
+        await LoadRunsAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_loaded || _attached) return;
+
+        // Attached once the textarea exists. The highlight layer is painted by JS from then on, so
+        // typing never round-trips to the server for anything but the model.
+        _attached = true;
+        await Js.InvokeVoidAsync("vibedeskEditor.attach", InputId, LayerId, _language.ToString());
+    }
+
+    private void OnCodeInput(ChangeEventArgs e)
+    {
+        // No StateHasChanged: the textarea already holds the text and JS already repainted the layer.
+        // Re-rendering here would fight the caret on every keystroke.
+        _code = e.Value?.ToString() ?? string.Empty;
+
+        if (_dirty) return;
+
+        _dirty = true;
+        StateHasChanged();
+    }
+
+    private void OnNameChanged(ChangeEventArgs e)
+    {
+        var value = e.Value?.ToString();
+        if (string.IsNullOrWhiteSpace(value) || value == _name) return;
+
+        _name = value.Trim();
+        _dirty = true;
+    }
+
+    private async Task OnLanguageChanged(ChangeEventArgs e)
+    {
+        if (!int.TryParse(e.Value?.ToString(), out var value)) return;
+
+        _language = (ScriptLanguage)value;
+        _dirty = true;
+
+        await Js.InvokeVoidAsync("vibedeskEditor.setLanguage", InputId, LayerId, _language.ToString());
+    }
+
+    private void OnEnabledChanged(ChangeEventArgs e)
+    {
+        _enabled = e.Value is bool value && value;
+        _dirty = true;
+    }
+
+    private void OnHostsChanged(ChangeEventArgs e)
+    {
+        _allowedHosts = e.Value?.ToString();
+        _dirty = true;
+    }
+
+    private void OnTimeoutChanged(ChangeEventArgs e)
+    {
+        _timeout = int.TryParse(e.Value?.ToString(), out var value) && value > 0 ? value : null;
+        _dirty = true;
+    }
+
+    private void ToggleScope(ScriptScope scope, ChangeEventArgs e)
+    {
+        var granted = e.Value is bool value && value;
+
+        _scopes = granted ? _scopes | scope : _scopes & ~scope;
+        _dirty = true;
+    }
+
+    private void AddInput() => _inputs.Add((string.Empty, string.Empty));
+
+    private void SetInputKey(int index, ChangeEventArgs e) =>
+        _inputs[index] = (e.Value?.ToString() ?? string.Empty, _inputs[index].Value);
+
+    private void SetInputValue(int index, ChangeEventArgs e) =>
+        _inputs[index] = (_inputs[index].Key, e.Value?.ToString() ?? string.Empty);
+
+    private void OnTriggerKindChanged(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var value)) _newKind = (TriggerKind)value;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_busy) return;
+
+        _busy = true;
+
+        try
+        {
+            var saved = await ScriptsService.SaveAsync(new ScriptInput
+            {
+                Id = Id,
+                Name = _name,
+                Description = _description,
+                Language = _language,
+                Code = _code,
+                Scopes = _scopes,
+                AllowedHosts = _allowedHosts,
+                TimeoutSeconds = _timeout,
+                IsEnabled = _enabled,
+            });
+
+            _version = saved.VersionNumber;
+            _dirty = false;
+            Toasts.Success($"Saved as v{_version}.");
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex.Message);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    /// <summary>Static analysis only. Shows what would be refused without running anything.</summary>
+    private Task CheckAsync()
+    {
+        var problem = Executor.Validate(_language, _code);
+
+        if (problem is null)
+        {
+            Toasts.Success("No problems found. This is a static check, not a guarantee.");
+        }
+        else
+        {
+            Toasts.Error(problem);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private async Task RunAsync()
+    {
+        if (_busy) return;
+
+        // Save first, so what ran is what a version records — and so a run can be reproduced later.
+        if (_dirty) await SaveAsync();
+        if (_dirty) return;
+
+        _busy = _running = true;
+        _result = null;
+
+        try
+        {
+            // Blank keys are dropped rather than sent: a half-typed row should not become an input
+            // named "" that the script then cannot find.
+            var input = _inputs
+                .Where(i => !string.IsNullOrWhiteSpace(i.Key))
+                .ToDictionary(i => i.Key.Trim(), i => i.Value);
+
+            var run = await ScriptsService.RunAsync(Id, input.Count > 0 ? input : null);
+
+            _result = new ScriptExecutionResult(
+                run.Status, run.Output ?? string.Empty, run.ResultJson, run.Error,
+                run.DurationMs, run.ApiCalls);
+
+            if (run.Status != ScriptRunStatus.Succeeded) Toasts.Error($"Run {run.Status}.");
+
+            await LoadRunsAsync();
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex.Message);
+        }
+        finally
+        {
+            _busy = _running = false;
+        }
+    }
+
+    private async Task LoadRunsAsync()
+    {
+        try
+        {
+            _runs = [.. await ScriptsService.ListRunsAsync(Id, 20)];
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex.Message);
+        }
+    }
+
+    private async Task ShowRunAsync(Guid runId)
+    {
+        var run = await ScriptsService.GetRunAsync(runId);
+        if (run is null) return;
+
+        _result = new ScriptExecutionResult(
+            run.Status, run.Output ?? string.Empty, run.ResultJson, run.Error,
+            run.DurationMs, run.ApiCalls);
+    }
+
+    private async Task AddTriggerAsync()
+    {
+        try
+        {
+            var trigger = await ScriptsService.SaveTriggerAsync(Id, new ScriptTriggerInput
+            {
+                Kind = _newKind,
+                EventName = _newKind == TriggerKind.Event ? _newEvent : null,
+                CronExpression = _newKind == TriggerKind.Schedule ? _newCron.Trim() : null,
+                // The author wrote the schedule in the clock they are looking at, not in UTC.
+                TimeZoneId = TimeZoneInfo.Local.Id,
+            });
+
+            _triggers.Add(trigger);
+            _addingTrigger = false;
+
+            if (!_enabled) Toasts.Info("Trigger added. It stays idle until the script is enabled.");
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex.Message);
+        }
+    }
+
+    private async Task RemoveTriggerAsync(Guid triggerId)
+    {
+        try
+        {
+            await ScriptsService.DeleteTriggerAsync(Id, triggerId);
+            _triggers.RemoveAll(t => t.Id == triggerId);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex.Message);
+        }
+    }
+
+    private async Task PublishAsync()
+    {
+        try
+        {
+            if (_dirty) await SaveAsync();
+
+            await ScriptsService.PublishAsync(Id, _description, null);
+            Toasts.Success("Published. Others can install a copy from the Shared tab.");
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex.Message);
+        }
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (!await Js.InvokeAsync<bool>("confirm", $"Delete '{_name}' and its run history?")) return;
+
+        try
+        {
+            await ScriptsService.DeleteAsync(Id);
+            Toasts.Success("Script deleted.");
+            Nav.NavigateTo("/scripts");
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex.Message);
+        }
+    }
+}

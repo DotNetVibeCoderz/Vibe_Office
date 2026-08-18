@@ -1,0 +1,279 @@
+@*
+    Sharing: per-person grants plus link sharing, matching the three roles in the domain.
+
+    Both live in one dialog because they are one decision — "who can reach this" — and splitting them
+    is how people end up with a link-shared file they thought was private.
+*@
+@inject IPermissionService Permissions
+@inject IUserDirectory Users
+@inject ToastService Toasts
+@inject IJSRuntime Js
+@inject NavigationManager Nav
+
+<Modal Open="Open" OpenChanged="OpenChanged" Title="@($"Share “{Item?.Name}”")" Icon="share" Wide="true">
+        <ChildContent>
+        @if (Item is null)
+        {
+            <p class="vd-hint">Nothing selected.</p>
+        }
+        else
+        {
+            <div class="vd-share">
+                <div class="vd-share__invite">
+                    <div class="vd-field" style="flex:1 1 auto">
+                        <label for="share-email">Invite by email</label>
+                        <input id="share-email" class="vd-input" type="email"
+                               placeholder="teammate@company.com"
+                               @bind="_email" @bind:event="oninput"
+                               @onkeydown="OnInviteKeyDown" />
+                    </div>
+
+                    <div class="vd-field" style="flex:0 0 150px">
+                        <label for="share-role">Access</label>
+                        <select id="share-role" class="vd-select" value="@_role" @onchange="OnRoleChanged">
+                            <option value="@PermissionRole.Viewer">Viewer</option>
+                            <option value="@PermissionRole.Commenter">Commenter</option>
+                            <option value="@PermissionRole.Editor">Editor</option>
+                        </select>
+                    </div>
+
+                    <button type="button" class="vd-btn vd-btn--primary" style="margin-block-start:22px"
+                            @onclick="Invite"
+                            disabled="@(_busy || string.IsNullOrWhiteSpace(_email))">
+                        Share
+                    </button>
+                </div>
+
+                <p class="vd-hint">
+                    Viewers can read. Commenters can comment and suggest edits without changing the file.
+                    Editors can change it.
+                </p>
+
+                <hr class="vd-divider" />
+
+                <span class="vd-label">People with access</span>
+
+                @if (_loading)
+                {
+                    <div class="vd-skeleton" style="height:52px"></div>
+                }
+                else
+                {
+                    <ul class="vd-share__people">
+                        @foreach (var person in _people)
+                        {
+                            <li class="vd-share__person">
+                                <Avatar Name="@person.DisplayName" />
+                                <div class="vd-col" style="min-width:0;gap:0">
+                                    <span class="vd-truncate">@person.DisplayName</span>
+                                    <span class="vd-share__email vd-truncate">@person.Email</span>
+                                </div>
+                                <div class="vd-spacer"></div>
+
+                                @if (person.IsOwner)
+                                {
+                                    <span class="vd-badge vd-badge--primary">Owner</span>
+                                }
+                                else
+                                {
+                                    <span class="vd-badge">@person.Role</span>
+                                    <button type="button" class="vd-btn vd-btn--icon vd-btn--sm"
+                                            @onclick="() => Revoke(person)"
+                                            title="Remove access"
+                                            aria-label="Remove @person.DisplayName">
+                                        <Icon Name="close" Size="14" />
+                                    </button>
+                                }
+                            </li>
+                        }
+                    </ul>
+                }
+
+                <hr class="vd-divider" />
+
+                <span class="vd-label">Link access</span>
+
+                <div class="vd-share__link">
+                    <select class="vd-select" value="@_scope" @onchange="OnScopeChanged" aria-label="Link access">
+                        <option value="@ShareScope.Private">Restricted — only people added above</option>
+                        <option value="@ShareScope.AnyoneWithLinkInternal">Anyone signed in with the link</option>
+                        <option value="@ShareScope.AnyoneWithLink">Anyone with the link</option>
+                    </select>
+
+                    @if (_scope != ShareScope.Private)
+                    {
+                        <select class="vd-select" style="flex:0 0 150px"
+                                value="@_linkRole" @onchange="OnLinkRoleChanged" aria-label="Link role">
+                            <option value="@PermissionRole.Viewer">Viewer</option>
+                            <option value="@PermissionRole.Commenter">Commenter</option>
+                            <option value="@PermissionRole.Editor">Editor</option>
+                        </select>
+                    }
+                </div>
+
+                @if (_scope == ShareScope.AnyoneWithLink)
+                {
+                    <p class="vd-share__warn">
+                        <Icon Name="warning" Size="14" />
+                        Anyone with this link can open it without signing in.
+                    </p>
+                }
+            </div>
+        }
+
+    
+        </ChildContent>
+
+        <Footer>
+        <button type="button" class="vd-btn vd-btn--ghost" @onclick="CopyLink">
+            <Icon Name="link" Size="15" /> Copy link
+        </button>
+        <div class="vd-spacer"></div>
+        <button type="button" class="vd-btn vd-btn--primary" @onclick="() => OpenChanged.InvokeAsync(false)">
+            Done
+        </button>
+    </Footer>
+</Modal>
+
+@code {
+    [Parameter] public bool Open { get; set; }
+    [Parameter] public EventCallback<bool> OpenChanged { get; set; }
+    [Parameter] public DriveItemDto? Item { get; set; }
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    private List<PermissionDto> _people = [];
+    private bool _loading;
+    private bool _busy;
+
+    private string _email = string.Empty;
+    private PermissionRole _role = PermissionRole.Viewer;
+    private ShareScope _scope = ShareScope.Private;
+    private PermissionRole _linkRole = PermissionRole.Viewer;
+
+    /// <summary>Tracks which item the loaded list belongs to, so reopening on a new item refetches.</summary>
+    private Guid? _loadedFor;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!Open || Item is null)
+        {
+            _loadedFor = null;
+            return;
+        }
+
+        if (_loadedFor == Item.Id) return;
+
+        _loadedFor = Item.Id;
+        _scope = Item.Scope;
+        _linkRole = PermissionRole.Viewer;
+        _email = string.Empty;
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        if (Item is null) return;
+
+        _loading = true;
+        try
+        {
+            _people = [.. await Permissions.ListAsync(Item.Id)];
+        }
+        catch (Exception e)
+        {
+            Toasts.Error(e);
+            _people = [];
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void OnRoleChanged(ChangeEventArgs e) =>
+        _role = Enum.TryParse<PermissionRole>(e.Value?.ToString(), out var r) ? r : PermissionRole.Viewer;
+
+    private void OnLinkRoleChanged(ChangeEventArgs e)
+    {
+        _linkRole = Enum.TryParse<PermissionRole>(e.Value?.ToString(), out var r) ? r : PermissionRole.Viewer;
+        _ = ApplyLinkAsync();
+    }
+
+    private void OnScopeChanged(ChangeEventArgs e)
+    {
+        _scope = Enum.TryParse<ShareScope>(e.Value?.ToString(), out var s) ? s : ShareScope.Private;
+        _ = ApplyLinkAsync();
+    }
+
+    private async Task ApplyLinkAsync()
+    {
+        if (Item is null) return;
+
+        try
+        {
+            await Permissions.SetLinkSharingAsync(Item.Id, _scope, _linkRole);
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception e)
+        {
+            Toasts.Error(e);
+        }
+    }
+
+    private async Task OnInviteKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await Invite();
+    }
+
+    private async Task Invite()
+    {
+        if (Item is null || string.IsNullOrWhiteSpace(_email)) return;
+
+        _busy = true;
+        try
+        {
+            await Permissions.ShareAsync(Item.Id, _email.Trim(), _role);
+            Toasts.Success($"Shared with {_email.Trim()}.");
+            _email = string.Empty;
+            await LoadAsync();
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception e)
+        {
+            Toasts.Error(e);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task Revoke(PermissionDto person)
+    {
+        if (Item is null) return;
+
+        try
+        {
+            await Permissions.RevokeAsync(Item.Id, person.Id);
+            await LoadAsync();
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception e)
+        {
+            Toasts.Error(e);
+        }
+    }
+
+    private async Task CopyLink()
+    {
+        if (Item is null) return;
+
+        var url = new Uri(new Uri(Nav.BaseUri), Item.OpenRoute).ToString();
+
+        var copied = await Js.InvokeAsync<bool>("vibedesk.copyText", url);
+
+        if (copied) Toasts.Success("Link copied.");
+        else Toasts.Warn("Couldn't reach the clipboard. Copy the address bar instead.");
+    }
+}

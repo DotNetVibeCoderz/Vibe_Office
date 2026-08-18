@@ -1,0 +1,321 @@
+@page "/scripts"
+@attribute [Authorize]
+@using VibeDesk.Application.Scripting
+@inject IScriptService ScriptsService
+@inject IScriptTemplateGallery Gallery
+@inject IScriptExecutor Executor
+@inject NavigationManager Nav
+@inject ToastService Toasts
+@inject UiState Ui
+
+@*
+    Three views over one idea: what you have written, what you could start from, and what other
+    people have shared. Tabs rather than three routes because the whole point is that they are
+    alternatives to each other at the same moment.
+*@
+
+<SectionContent SectionName="@AppShell.TitleSection">
+    <h1 class="vd-title">Scripts</h1>
+</SectionContent>
+
+<SectionContent SectionName="@AppShell.ToolbarSection">
+    <div class="vd-scripts__tabs" role="tablist">
+        @foreach (var (tab, label) in Tabs)
+        {
+            <button type="button"
+                    class="vd-scripts__tab"
+                    role="tab"
+                    aria-selected="@(_tab == tab)"
+                    @onclick="() => SwitchTo(tab)">@label</button>
+        }
+    </div>
+
+    <div class="vd-spacer"></div>
+
+    @if (_tab is not View.Mine)
+    {
+        <input class="vd-input vd-input"
+               style="max-width:220px"
+               placeholder="Search…"
+               value="@_keyword"
+               @oninput="OnSearch" />
+    }
+</SectionContent>
+
+<SectionContent SectionName="@AppShell.ActionsSection">
+    <button type="button" class="vd-btn vd-btn--primary vd-btn--sm" @onclick="CreateBlankAsync">
+        <Icon Name="plus" Size="15" />
+        <span>New script</span>
+    </button>
+</SectionContent>
+
+<div class="vd-scripts">
+    <div class="vd-scripts__body">
+        @if (!Executor.AvailableLanguages.Any())
+        {
+            <EmptyState Icon="warning"
+                        Title="Scripting is switched off"
+                        Description="No language runtimes are enabled on this server. Set Scripting:Enabled in configuration." />
+        }
+        else if (_tab is View.Mine)
+        {
+            @if (_scripts.Count == 0)
+            {
+                <EmptyState Icon="code"
+                            Title="No scripts yet"
+                            Description="Automate the boring parts of Drive, Docs, Sheets, Slides and Calendar in JavaScript, Python or C#. Start from a template, or write one from scratch." />
+            }
+            else
+            {
+                <div class="vd-scripts__grid">
+                    @foreach (var script in _scripts)
+                    {
+                        <button type="button" class="vd-script-card" @onclick="() => Open(script.Id)">
+                            <div class="vd-script-card__head">
+                                <span class="vd-script-card__name">@script.Name</span>
+                                <span class="vd-lang" data-lang="@script.Language">@script.LanguageLabel</span>
+                            </div>
+
+                            @if (!string.IsNullOrWhiteSpace(script.Description))
+                            {
+                                <p class="vd-script-card__summary">@script.Description</p>
+                            }
+
+                            <div class="vd-script-card__meta">
+                                @if (!script.IsEnabled)
+                                {
+                                    <span class="vd-badge">Disabled</span>
+                                }
+                                @if (script.TriggerCount > 0)
+                                {
+                                    <span>@script.TriggerCount trigger@(script.TriggerCount == 1 ? "" : "s")</span>
+                                }
+                                @if (script.LastRunStatus is { } status)
+                                {
+                                    <span class="vd-runstate" data-state="@status">@status</span>
+                                }
+                                <span>v@(script.VersionNumber)</span>
+                            </div>
+                        </button>
+                    }
+                </div>
+            }
+        }
+        else if (_tab is View.Templates)
+        {
+            <div class="vd-scripts__grid">
+                @foreach (var template in _templates)
+                {
+                    <button type="button" class="vd-script-card" @onclick="() => CreateFromTemplateAsync(template)">
+                        <div class="vd-script-card__head">
+                            <span class="vd-script-card__name">@template.Name</span>
+                            <span class="vd-lang" data-lang="@template.Language">@LanguageLabel(template.Language)</span>
+                        </div>
+
+                        <p class="vd-script-card__summary">@template.Summary</p>
+
+                        <div class="vd-script-card__meta">
+                            <span>@template.Category</span>
+                            @if (!string.IsNullOrWhiteSpace(template.AllowedHosts))
+                            {
+                                <span>@template.AllowedHosts</span>
+                            }
+                        </div>
+                    </button>
+                }
+            </div>
+        }
+        else
+        {
+            @if (_listings.Count == 0)
+            {
+                <EmptyState Icon="users"
+                            Title="Nothing shared yet"
+                            Description="Scripts published from this workspace show up here. Publish one from its editor." />
+            }
+            else
+            {
+                <div class="vd-scripts__grid">
+                    @foreach (var listing in _listings)
+                    {
+                        <div class="vd-script-card" style="cursor:default">
+                            <div class="vd-script-card__head">
+                                <span class="vd-script-card__name">@listing.Name</span>
+                                <span class="vd-lang" data-lang="@listing.Language">@LanguageLabel(listing.Language)</span>
+                            </div>
+
+                            @if (!string.IsNullOrWhiteSpace(listing.Summary))
+                            {
+                                <p class="vd-script-card__summary">@listing.Summary</p>
+                            }
+
+                            <div class="vd-script-card__meta">
+                                <span>by @listing.AuthorName</span>
+                                <span>@listing.InstallCount installs</span>
+                            </div>
+
+                            <button type="button"
+                                    class="vd-btn vd-btn--sm"
+                                    @onclick="() => InstallAsync(listing)">
+                                <Icon Name="download" Size="14" />
+                                <span>Install</span>
+                            </button>
+                        </div>
+                    }
+                </div>
+            }
+        }
+    </div>
+</div>
+
+@code {
+    private enum View { Mine, Templates, Market }
+
+    private static readonly (View Tab, string Label)[] Tabs =
+    [
+        (View.Mine, "My scripts"),
+        (View.Templates, "Templates"),
+        (View.Market, "Shared"),
+    ];
+
+    private View _tab = View.Mine;
+    private string _keyword = string.Empty;
+
+    private List<ScriptDto> _scripts = [];
+    private List<ScriptTemplateDto> _templates = [];
+    private List<ScriptPublicationDto> _listings = [];
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task SwitchTo(View tab)
+    {
+        _tab = tab;
+        _keyword = string.Empty;
+        await LoadAsync();
+    }
+
+    private async Task OnSearch(ChangeEventArgs e)
+    {
+        _keyword = e.Value?.ToString() ?? string.Empty;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            switch (_tab)
+            {
+                case View.Mine:
+                    _scripts = [.. await ScriptsService.ListAsync()];
+                    break;
+
+                case View.Templates:
+                    // The gallery is in-process, so searching it needs no round trip.
+                    _templates = [.. Gallery.Search(_keyword, null, null)];
+                    break;
+
+                default:
+                    _listings = [.. await ScriptsService.BrowseAsync(_keyword)];
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex.Message);
+        }
+    }
+
+    private void Open(Guid id) => Nav.NavigateTo($"/scripts/{id}");
+
+    private async Task CreateBlankAsync()
+    {
+        try
+        {
+            var created = await ScriptsService.SaveAsync(new ScriptInput
+            {
+                Name = "Untitled script",
+                Language = Executor.AvailableLanguages.FirstOrDefault(),
+                Code = StarterFor(Executor.AvailableLanguages.FirstOrDefault()),
+                // Disabled and scope-less until its author decides what it may touch. A new script
+                // that could already reach Drive would be the wrong default.
+                Scopes = ScriptScope.None,
+                IsEnabled = false,
+            });
+
+            Open(created.Id);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex.Message);
+        }
+    }
+
+    private async Task CreateFromTemplateAsync(ScriptTemplateDto template)
+    {
+        try
+        {
+            var created = await ScriptsService.SaveAsync(new ScriptInput
+            {
+                Name = template.Name,
+                Description = template.Summary,
+                Language = template.Language,
+                Code = template.Code,
+                Scopes = template.Scopes,
+                AllowedHosts = template.AllowedHosts,
+                TemplateId = template.Id,
+                // Templates carry placeholder ids and, sometimes, a missing API key. Enabling one on
+                // creation would schedule a failure.
+                IsEnabled = false,
+            });
+
+            Toasts.Success($"Created '{created.Name}' from a template.");
+            Open(created.Id);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex.Message);
+        }
+    }
+
+    private async Task InstallAsync(ScriptPublicationDto listing)
+    {
+        try
+        {
+            var created = await ScriptsService.InstallAsync(listing.Id);
+
+            Toasts.Success($"Installed '{created.Name}'. Read it, then enable it.");
+            Open(created.Id);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex.Message);
+        }
+    }
+
+    private static string LanguageLabel(ScriptLanguage language) => language switch
+    {
+        ScriptLanguage.Python => "Python",
+        ScriptLanguage.CSharp => "C#",
+        _ => "JavaScript",
+    };
+
+    /// <summary>A first line that runs, so a new script is never a blank page that also fails.</summary>
+    private static string StarterFor(ScriptLanguage language) => language switch
+    {
+        ScriptLanguage.Python =>
+            "# Grant scopes on the right, then press Run.\n" +
+            "api.Log(\"Hello from Python\")\n" +
+            "result = 1 + 1\n",
+
+        ScriptLanguage.CSharp =>
+            "// Grant scopes on the right, then press Run.\n" +
+            "Log(\"Hello from C#\");\n" +
+            "return 1 + 1;\n",
+
+        _ =>
+            "// Grant scopes on the right, then press Run.\n" +
+            "console.log('Hello from JavaScript');\n" +
+            "1 + 1;\n",
+    };
+}

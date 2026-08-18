@@ -1,0 +1,254 @@
+@*
+    The per-item action menu, shared by the grid card and the list row so both offer exactly the same
+    actions. Which actions appear is driven by the caller's role on the item, not by the view.
+*@
+@inject IDriveService DriveService
+@inject ToastService Toasts
+@inject NavigationManager Nav
+
+<div class="vd-itemmenu" @onfocusout="OnFocusOut">
+    <button type="button"
+            class="vd-btn vd-btn--icon vd-btn--sm"
+            @onclick="Toggle"
+            @onclick:stopPropagation="true"
+            aria-haspopup="menu"
+            aria-expanded="@_open.ToString().ToLowerInvariant()"
+            aria-label="Actions for @Item.Name">
+        <Icon Name="more" Size="16" />
+    </button>
+
+    @if (_open)
+    {
+        <div class="vd-menu" style="inset-inline-end:0;top:calc(100% + 4px)" role="menu"
+             @onclick:stopPropagation="true">
+
+            @if (Mode == DriveMode.Trash)
+            {
+                <button type="button" class="vd-menu__item" @onclick="Restore" role="menuitem">
+                    <Icon Name="restore" Size="16" /> Restore
+                </button>
+                <div class="vd-menu__sep"></div>
+                <button type="button" class="vd-menu__item vd-menu__item--danger"
+                        @onclick="DeleteForever" role="menuitem"
+                        disabled="@(!Item.CanManage)">
+                    <Icon Name="trash" Size="16" /> Delete forever
+                </button>
+            }
+            else
+            {
+                @if (Item.Type != DriveItemType.Folder)
+                {
+                    <a class="vd-menu__item" href="@Item.OpenRoute" role="menuitem">
+                        <Icon Name="edit" Size="16" /> Open
+                    </a>
+                }
+                else
+                {
+                    <a class="vd-menu__item" href="/drive/@Item.Id" role="menuitem">
+                        <Icon Name="folder" Size="16" /> Open folder
+                    </a>
+                }
+
+                <button type="button" class="vd-menu__item" @onclick="ToggleStar" role="menuitem">
+                    <Icon Name="star" Size="16" />
+                    @(Item.IsStarred ? "Remove star" : "Add star")
+                </button>
+
+                <div class="vd-menu__sep"></div>
+
+                <button type="button" class="vd-menu__item" @onclick="() => OnShare.InvokeAsync()"
+                        role="menuitem" disabled="@(!Item.CanManage)">
+                    <Icon Name="share" Size="16" /> Share
+                </button>
+
+                @if (Item.Type == DriveItemType.File)
+                {
+                    <a class="vd-menu__item" href="/drive/download/@Item.Id" role="menuitem">
+                        <Icon Name="download" Size="16" /> Download
+                    </a>
+                }
+
+                <div class="vd-menu__sep"></div>
+
+                <button type="button" class="vd-menu__item" @onclick="StartRename"
+                        role="menuitem" disabled="@(!Item.CanEdit)">
+                    <Icon Name="edit" Size="16" /> Rename
+                </button>
+
+                <button type="button" class="vd-menu__item" @onclick="Duplicate" role="menuitem">
+                    <Icon Name="copy" Size="16" /> Make a copy
+                </button>
+
+                @if (Item.IsEditableDocument)
+                {
+                    <a class="vd-menu__item" href="@($"{Item.OpenRoute}?panel=history")" role="menuitem">
+                        <Icon Name="history" Size="16" /> Version history
+                    </a>
+                }
+
+                <div class="vd-menu__sep"></div>
+
+                <button type="button" class="vd-menu__item vd-menu__item--danger"
+                        @onclick="Trash" role="menuitem" disabled="@(!Item.CanEdit)">
+                    <Icon Name="trash" Size="16" /> Move to trash
+                </button>
+            }
+        </div>
+    }
+</div>
+
+@if (_renaming)
+{
+    <Modal Open="true" Title="Rename" Icon="edit" OpenChanged="_ => _renaming = false">
+        <ChildContent>
+            <div class="vd-field">
+                <label for="rename-@Item.Id">Name</label>
+                <input id="rename-@Item.Id" class="vd-input" @bind="_newName" @bind:event="oninput"
+                       @onkeydown="OnRenameKeyDown" />
+            </div>
+        
+        </ChildContent>
+
+        <Footer>
+            <button type="button" class="vd-btn vd-btn--ghost" @onclick="() => _renaming = false">
+                Cancel
+            </button>
+            <button type="button" class="vd-btn vd-btn--primary" @onclick="CommitRename"
+                    disabled="@string.IsNullOrWhiteSpace(_newName)">
+                Rename
+            </button>
+        </Footer>
+    </Modal>
+}
+
+@code {
+    [Parameter, EditorRequired] public DriveItemDto Item { get; set; } = default!;
+    [Parameter] public DriveMode Mode { get; set; } = DriveMode.Folder;
+    [Parameter] public EventCallback OnChanged { get; set; }
+    [Parameter] public EventCallback OnShare { get; set; }
+
+    private bool _open;
+    private bool _renaming;
+    private string _newName = string.Empty;
+
+    private void Toggle() => _open = !_open;
+
+    private async Task OnFocusOut()
+    {
+        await Task.Delay(160);
+        if (_open)
+        {
+            _open = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ToggleStar()
+    {
+        _open = false;
+        try
+        {
+            await DriveService.SetStarredAsync(Item.Id, !Item.IsStarred);
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception e)
+        {
+            Toasts.Error(e);
+        }
+    }
+
+    private void StartRename()
+    {
+        _open = false;
+        _newName = Item.Name;
+        _renaming = true;
+    }
+
+    private async Task OnRenameKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await CommitRename();
+        if (e.Key == "Escape") _renaming = false;
+    }
+
+    private async Task CommitRename()
+    {
+        var name = _newName.Trim();
+        if (name.Length == 0 || name == Item.Name)
+        {
+            _renaming = false;
+            return;
+        }
+
+        try
+        {
+            await DriveService.RenameAsync(Item.Id, name);
+            _renaming = false;
+            Toasts.Success("Renamed.");
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception e)
+        {
+            Toasts.Error(e);
+        }
+    }
+
+    private async Task Duplicate()
+    {
+        _open = false;
+        try
+        {
+            await DriveService.CopyAsync(Item.Id, Item.ParentId);
+            Toasts.Success("Copy created.");
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception e)
+        {
+            Toasts.Error(e);
+        }
+    }
+
+    private async Task Trash()
+    {
+        _open = false;
+        try
+        {
+            await DriveService.TrashAsync(Item.Id);
+            Toasts.Success($"“{Item.Name}” moved to trash.");
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception e)
+        {
+            Toasts.Error(e);
+        }
+    }
+
+    private async Task Restore()
+    {
+        _open = false;
+        try
+        {
+            await DriveService.RestoreAsync(Item.Id);
+            Toasts.Success("Restored.");
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception e)
+        {
+            Toasts.Error(e);
+        }
+    }
+
+    private async Task DeleteForever()
+    {
+        _open = false;
+        try
+        {
+            await DriveService.DeleteForeverAsync(Item.Id);
+            Toasts.Success("Deleted permanently.");
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception e)
+        {
+            Toasts.Error(e);
+        }
+    }
+}

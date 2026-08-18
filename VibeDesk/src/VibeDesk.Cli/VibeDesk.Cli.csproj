@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>VibeDesk.Cli</RootNamespace>
+    <AssemblyName>vibedesk</AssemblyName>
+    <!-- A tool people put on PATH: one file, no launcher script. -->
+    <PublishSingleFile>true</PublishSingleFile>
+    <InvariantGlobalization>false</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      The DTOs only. No Infrastructure, no EF: the CLI talks to a running server over HTTP and has
+      no business being able to open the database.
+    -->
+    <ProjectReference Include="..\VibeDesk.Application\VibeDesk.Application.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <rect width="32" height="32" rx="7" fill="#0f5c57"/>
+  <!-- The canting line, the same mark the app uses for active state. -->
+  <rect x="6" y="7" width="2.5" height="18" rx="1.2" fill="#d9a047"/>
+  <path d="M12 9h10M12 15h10M12 21h6" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/>
+</svg>

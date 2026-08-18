@@ -1,0 +1,377 @@
+/* Reset, base type, and the primitives used across every app. */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: var(--vd-font-ui);
+  font-size: var(--vd-text-base);
+  line-height: var(--vd-leading);
+  color: var(--vd-ink);
+  background: var(--vd-canvas);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  /* The shell manages its own scrolling regions; the page itself must never scroll sideways. */
+  overflow: hidden;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  margin: 0;
+  font-family: var(--vd-font-display);
+  font-weight: 650;
+  line-height: var(--vd-leading-tight);
+  letter-spacing: -0.011em;
+}
+
+p { margin: 0; }
+
+a {
+  color: var(--vd-primary);
+  text-decoration-color: color-mix(in srgb, var(--vd-primary) 40%, transparent);
+  text-underline-offset: 2px;
+}
+
+a:hover { text-decoration-color: currentColor; }
+
+button, input, select, textarea {
+  font: inherit;
+  color: inherit;
+}
+
+/* Visible keyboard focus everywhere, and never a bare outline:none. */
+:focus-visible {
+  outline: 2px solid var(--vd-primary);
+  outline-offset: 2px;
+  border-radius: var(--vd-radius-sm);
+}
+
+::selection {
+  background: color-mix(in srgb, var(--vd-primary) 26%, transparent);
+}
+
+/* ── the mono label system ──────────────────────────────────────────────────
+   This is the typographic signature. Uppercase letterspaced mono for anything that names a
+   location or a category: sidebar section heads, cell references, column letters, metadata keys.
+   It earns its place because the content genuinely is addressed data. */
+.vd-label {
+  font-family: var(--vd-font-mono);
+  font-size: var(--vd-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--vd-ink-3);
+}
+
+.vd-mono {
+  font-family: var(--vd-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Numbers in grids and metrics must not jitter as they change. */
+.vd-num { font-variant-numeric: tabular-nums; }
+
+/* ── the canting line ───────────────────────────────────────────────────────
+   The one signature ornament: a gold rule marking whatever is active. Named for the canting, the
+   pen used to draw hot wax onto cloth. The slight irregularity in the gradient is the point —
+   a hand-drawn line is never perfectly even, and this is the app's one non-mechanical detail.
+   Applied via .vd-canting on any positioned element. */
+.vd-canting {
+  position: relative;
+}
+
+.vd-canting::before {
+  content: "";
+  position: absolute;
+  inset-block: 3px;
+  inset-inline-start: 0;
+  width: 2px;
+  border-radius: 0 2px 2px 0;
+  background: repeating-linear-gradient(
+    to bottom,
+    var(--vd-gold) 0,
+    var(--vd-gold) 7px,
+    var(--vd-gold-bright) 7px,
+    var(--vd-gold-bright) 9px,
+    var(--vd-gold) 9px,
+    var(--vd-gold) 14px
+  );
+}
+
+/* ── scrollbars ─────────────────────────────────────────────────────────── */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--vd-line-strong) transparent;
+}
+
+*::-webkit-scrollbar { width: 11px; height: 11px; }
+*::-webkit-scrollbar-track { background: transparent; }
+
+*::-webkit-scrollbar-thumb {
+  background: var(--vd-line-strong);
+  border: 3px solid transparent;
+  background-clip: content-box;
+  border-radius: var(--vd-radius-full);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--vd-ink-faint);
+  background-clip: content-box;
+}
+
+/* ── buttons ────────────────────────────────────────────────────────────── */
+.vd-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--vd-2);
+  height: 34px;
+  padding: 0 var(--vd-3);
+  border: 1px solid transparent;
+  border-radius: var(--vd-radius);
+  background: transparent;
+  color: var(--vd-ink);
+  font-size: var(--vd-text-base);
+  font-weight: 550;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--vd-fast) var(--vd-ease),
+    border-color var(--vd-fast) var(--vd-ease),
+    color var(--vd-fast) var(--vd-ease),
+    transform var(--vd-fast) var(--vd-ease);
+}
+
+.vd-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Micro-interaction: a 1px press. Enough to feel mechanical, small enough not to be a bounce. */
+.vd-btn:not(:disabled):active { transform: translateY(1px); }
+
+.vd-btn--primary {
+  background: var(--vd-primary);
+  color: var(--vd-on-primary);
+}
+
+.vd-btn--primary:not(:disabled):hover { background: var(--vd-primary-hover); }
+.vd-btn--primary:not(:disabled):active { background: var(--vd-primary-active); }
+
+.vd-btn--outline {
+  border-color: var(--vd-line-strong);
+  background: var(--vd-surface);
+}
+
+.vd-btn--outline:not(:disabled):hover {
+  border-color: var(--vd-primary);
+  color: var(--vd-primary);
+}
+
+.vd-btn--ghost { color: var(--vd-ink-2); }
+
+.vd-btn--ghost:not(:disabled):hover {
+  background: var(--vd-surface-3);
+  color: var(--vd-ink);
+}
+
+.vd-btn--danger {
+  background: var(--vd-danger);
+  color: #fff;
+}
+
+.vd-btn--danger:not(:disabled):hover {
+  filter: brightness(0.92);
+}
+
+.vd-btn--icon {
+  width: 34px;
+  padding: 0;
+  color: var(--vd-ink-2);
+}
+
+.vd-btn--icon:not(:disabled):hover {
+  background: var(--vd-surface-3);
+  color: var(--vd-ink);
+}
+
+.vd-btn--sm { height: 28px; padding: 0 var(--vd-2); font-size: var(--vd-text-sm); }
+.vd-btn--sm.vd-btn--icon { width: 28px; padding: 0; }
+.vd-btn--lg { height: 40px; padding: 0 var(--vd-5); }
+
+.vd-btn[aria-pressed="true"] {
+  background: var(--vd-primary-soft);
+  color: var(--vd-primary);
+}
+
+/* ── inputs ─────────────────────────────────────────────────────────────── */
+.vd-input,
+.vd-select,
+.vd-textarea {
+  width: 100%;
+  height: 34px;
+  padding: 0 var(--vd-3);
+  border: 1px solid var(--vd-line-strong);
+  border-radius: var(--vd-radius);
+  background: var(--vd-surface);
+  color: var(--vd-ink);
+  font-size: var(--vd-text-base);
+  transition: border-color var(--vd-fast) var(--vd-ease), box-shadow var(--vd-fast) var(--vd-ease);
+}
+
+.vd-textarea {
+  height: auto;
+  min-height: 76px;
+  padding: var(--vd-2) var(--vd-3);
+  line-height: var(--vd-leading);
+  resize: vertical;
+}
+
+.vd-input:focus,
+.vd-select:focus,
+.vd-textarea:focus {
+  outline: none;
+  border-color: var(--vd-primary);
+  box-shadow: var(--vd-shadow-focus);
+}
+
+.vd-input::placeholder,
+.vd-textarea::placeholder { color: var(--vd-ink-faint); }
+
+.vd-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vd-1);
+}
+
+.vd-field > label {
+  font-size: var(--vd-text-sm);
+  font-weight: 550;
+  color: var(--vd-ink-2);
+}
+
+.vd-hint { font-size: var(--vd-text-sm); color: var(--vd-ink-3); }
+.vd-error { font-size: var(--vd-text-sm); color: var(--vd-danger); }
+
+/* ── surfaces ───────────────────────────────────────────────────────────── */
+.vd-card {
+  background: var(--vd-surface);
+  border: 1px solid var(--vd-line);
+  border-radius: var(--vd-radius-lg);
+}
+
+.vd-divider {
+  height: 1px;
+  background: var(--vd-line);
+  border: 0;
+  margin: 0;
+}
+
+/* ── badges & chips ─────────────────────────────────────────────────────── */
+.vd-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--vd-1);
+  height: 20px;
+  padding: 0 var(--vd-2);
+  border-radius: var(--vd-radius-full);
+  background: var(--vd-surface-3);
+  color: var(--vd-ink-2);
+  font-size: var(--vd-text-xs);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.vd-badge--primary { background: var(--vd-primary-soft); color: var(--vd-primary); }
+.vd-badge--gold { background: var(--vd-gold-soft); color: var(--vd-gold); }
+.vd-badge--jade { background: var(--vd-jade-soft); color: var(--vd-jade); }
+.vd-badge--danger { background: var(--vd-danger-soft); color: var(--vd-danger); }
+.vd-badge--warn { background: var(--vd-warn-soft); color: var(--vd-warn); }
+.vd-badge--info { background: var(--vd-info-soft); color: var(--vd-info); }
+
+/* ── utility ────────────────────────────────────────────────────────────── */
+.vd-row { display: flex; align-items: center; gap: var(--vd-2); }
+.vd-col { display: flex; flex-direction: column; }
+.vd-spacer { flex: 1 1 auto; }
+.vd-truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+
+.vd-scroll { overflow: auto; overscroll-behavior: contain; }
+
+/* Wide content (grids, tables, code) scrolls inside itself rather than the page. */
+.vd-scroll-x { overflow-x: auto; }
+
+.vd-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ── motion ─────────────────────────────────────────────────────────────── */
+@keyframes vd-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes vd-rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes vd-slide-in-right {
+  from { transform: translateX(12px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+
+@keyframes vd-spin {
+  to { transform: rotate(1turn); }
+}
+
+/* A single shimmer keyframe drives every loading placeholder. */
+@keyframes vd-shimmer {
+  from { background-position: -200% 0; }
+  to { background-position: 200% 0; }
+}
+
+.vd-skeleton {
+  border-radius: var(--vd-radius-sm);
+  background: linear-gradient(
+    90deg,
+    var(--vd-surface-3) 25%,
+    color-mix(in srgb, var(--vd-surface-3) 55%, var(--vd-surface)) 50%,
+    var(--vd-surface-3) 75%
+  );
+  background-size: 200% 100%;
+  animation: vd-shimmer 1.4s linear infinite;
+}
+
+.vd-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid color-mix(in srgb, currentColor 25%, transparent);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: vd-spin 640ms linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

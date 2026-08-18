@@ -1,0 +1,44 @@
+@implements IDisposable
+@inject ToastService Toasts
+
+<div class="vd-toasts" aria-live="polite" aria-atomic="false">
+    @foreach (var toast in Toasts.Toasts)
+    {
+        <div class="vd-toast" data-kind="@Kind(toast.Kind)" @key="toast.Id" role="status">
+            <span class="vd-toast__bar"></span>
+            <Icon Name="@IconFor(toast.Kind)" Size="17" />
+            <span class="vd-truncate" style="white-space:normal">@toast.Message</span>
+            <button type="button" class="vd-btn vd-btn--icon vd-btn--sm"
+                    style="color:inherit;opacity:.7"
+                    @onclick="() => Toasts.Dismiss(toast.Id)"
+                    aria-label="Dismiss">
+                <Icon Name="close" Size="14" />
+            </button>
+        </div>
+    }
+</div>
+
+@code {
+    protected override void OnInitialized() => Toasts.Changed += OnChanged;
+
+    // The auto-dismiss timer fires on a pool thread, so hop back to the renderer's context.
+    private void OnChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Toasts.Changed -= OnChanged;
+
+    private static string Kind(ToastKind kind) => kind switch
+    {
+        ToastKind.Error => "error",
+        ToastKind.Warn => "warn",
+        ToastKind.Info => "info",
+        _ => "success",
+    };
+
+    private static string IconFor(ToastKind kind) => kind switch
+    {
+        ToastKind.Error => "warning",
+        ToastKind.Warn => "warning",
+        ToastKind.Info => "info",
+        _ => "check",
+    };
+}

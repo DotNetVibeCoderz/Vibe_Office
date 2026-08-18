@@ -1,0 +1,155 @@
+@inject INotificationService Notifications
+@inject NavigationManager Nav
+
+<div class="vd-bell" @onfocusout="OnFocusOut">
+    <button type="button"
+            class="vd-btn vd-btn--icon vd-btn--sm"
+            @onclick="Toggle"
+            aria-haspopup="menu"
+            aria-expanded="@_open.ToString().ToLowerInvariant()"
+            aria-label="@(_unread > 0 ? $"Notifications, {_unread} unread" : "Notifications")">
+        <Icon Name="bell" Size="17" />
+        @if (_unread > 0)
+        {
+            <span class="vd-bell__dot" aria-hidden="true"></span>
+        }
+    </button>
+
+    @if (_open)
+    {
+        <div class="vd-menu vd-bell__panel" role="menu">
+            <div class="vd-row" style="padding:var(--vd-2) var(--vd-2) var(--vd-1)">
+                <span class="vd-label">Notifications</span>
+                <div class="vd-spacer"></div>
+                @if (_unread > 0)
+                {
+                    <button type="button" class="vd-btn vd-btn--ghost vd-btn--sm" @onclick="MarkAll">
+                        Mark all read
+                    </button>
+                }
+            </div>
+
+            <div class="vd-menu__sep"></div>
+
+            @if (_items.Count == 0)
+            {
+                <p class="vd-bell__none">You're all caught up.</p>
+            }
+            else
+            {
+                <div class="vd-bell__list">
+                    @foreach (var item in _items)
+                    {
+                        <button type="button"
+                                class="vd-bell__item @(item.IsRead ? "" : "unread")"
+                                @onclick="() => Open(item)"
+                                role="menuitem">
+                            <span class="vd-bell__icon"><Icon Name="@IconFor(item.Kind)" Size="15" /></span>
+                            <span class="vd-col" style="min-width:0;gap:2px;text-align:start">
+                                <span class="vd-bell__title">@item.Title</span>
+                                @if (!string.IsNullOrEmpty(item.Body))
+                                {
+                                    <span class="vd-bell__body">@item.Body</span>
+                                }
+                                <span class="vd-bell__when">@Relative(item.CreatedAt)</span>
+                            </span>
+                        </button>
+                    }
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private bool _open;
+    private int _unread;
+    private List<NotificationDto> _items = [];
+
+    protected override async Task OnInitializedAsync() => await RefreshCountAsync();
+
+    private async Task RefreshCountAsync()
+    {
+        try
+        {
+            _unread = await Notifications.CountUnreadAsync();
+        }
+        catch (Exception)
+        {
+            _unread = 0;
+        }
+    }
+
+    private async Task Toggle()
+    {
+        _open = !_open;
+        if (!_open) return;
+
+        // Load on open rather than polling: an unread count is cheap, a full list is not.
+        try
+        {
+            _items = [.. await Notifications.ListAsync(take: 20)];
+        }
+        catch (Exception)
+        {
+            _items = [];
+        }
+    }
+
+    private async Task MarkAll()
+    {
+        await Notifications.MarkAllReadAsync();
+        _unread = 0;
+        _items = [.. _items.Select(i => i with { IsRead = true })];
+    }
+
+    private async Task Open(NotificationDto item)
+    {
+        if (!item.IsRead)
+        {
+            await Notifications.MarkReadAsync(item.Id);
+            await RefreshCountAsync();
+        }
+
+        _open = false;
+        if (!string.IsNullOrEmpty(item.Link)) Nav.NavigateTo(item.Link);
+    }
+
+    private async Task OnFocusOut()
+    {
+        await Task.Delay(160);
+        if (_open)
+        {
+            _open = false;
+            StateHasChanged();
+        }
+    }
+
+    private static string IconFor(NotificationKind kind) => kind switch
+    {
+        NotificationKind.Share => "share",
+        NotificationKind.Comment => "comment",
+        NotificationKind.Mention => "comment",
+        NotificationKind.EventReminder => "clock",
+        NotificationKind.EventInvite => "calendar",
+        _ => "info",
+    };
+
+    /// <summary>
+    /// Coarse relative time. Deliberately not a live-updating timestamp: a ticking clock in a
+    /// dropdown re-renders the whole list for no benefit.
+    /// </summary>
+    internal static string Relative(DateTimeOffset when)
+    {
+        var delta = DateTimeOffset.UtcNow - when;
+
+        return delta switch
+        {
+            { TotalSeconds: < 60 } => "just now",
+            { TotalMinutes: < 60 } => $"{(int)delta.TotalMinutes} min ago",
+            { TotalHours: < 24 } => $"{(int)delta.TotalHours} h ago",
+            { TotalDays: < 7 } => $"{(int)delta.TotalDays} d ago",
+            _ => when.ToLocalTime().ToString("d MMM"),
+        };
+    }
+}

@@ -1,0 +1,75 @@
+@inject ICurrentUser CurrentUser
+
+<div class="vd-usermenu" @onfocusout="OnFocusOut">
+    <button type="button"
+            class="vd-btn vd-btn--icon vd-btn--sm"
+            @onclick="Toggle"
+            aria-haspopup="menu"
+            aria-expanded="@_open.ToString().ToLowerInvariant()"
+            aria-label="Account menu">
+        <Avatar Name="@CurrentUser.DisplayName" Size="sm" />
+    </button>
+
+    @if (_open)
+    {
+        <div class="vd-menu" style="inset-inline-end:0;top:calc(100% + 6px)" role="menu">
+            <div class="vd-usermenu__head">
+                <Avatar Name="@CurrentUser.DisplayName" Size="lg" />
+                <div class="vd-col" style="min-width:0">
+                    <strong class="vd-truncate">@(CurrentUser.DisplayName ?? "Signed out")</strong>
+                    <span class="vd-truncate" style="font-size:var(--vd-text-sm);color:var(--vd-ink-3)">
+                        @CurrentUser.Email
+                    </span>
+                </div>
+            </div>
+
+            <div class="vd-menu__sep"></div>
+
+            <a class="vd-menu__item" href="/settings/profile" role="menuitem">
+                <Icon Name="settings" Size="16" /> Settings
+            </a>
+            <a class="vd-menu__item" href="/settings/security" role="menuitem">
+                <Icon Name="shield" Size="16" /> Security &amp; 2FA
+            </a>
+            <a class="vd-menu__item" href="/settings/api-keys" role="menuitem">
+                <Icon Name="key" Size="16" /> API keys
+            </a>
+
+            <div class="vd-menu__sep"></div>
+
+            @*
+                Sign-out is a form POST, not a link: ASP.NET Core requires an antiforgery-protected
+                POST to clear the auth cookie, and a GET sign-out would be triggerable cross-site.
+            *@
+            <form action="/account/logout" method="post">
+                <AntiforgeryToken />
+                <input type="hidden" name="returnUrl" value="/" />
+                <button type="submit" class="vd-menu__item" role="menuitem">
+                    <Icon Name="logout" Size="16" /> Sign out
+                </button>
+            </form>
+        </div>
+    }
+</div>
+
+@code {
+    private bool _open;
+
+    private void Toggle() => _open = !_open;
+
+    /// <summary>
+    /// Closes when focus leaves the whole menu. Using focusout rather than a document click handler
+    /// keeps the menu keyboard-dismissable and needs no JS interop.
+    /// </summary>
+    private async Task OnFocusOut()
+    {
+        // Let focus settle on its new target before deciding; otherwise clicking an item inside the
+        // menu closes it before the click registers.
+        await Task.Delay(140);
+        if (_open)
+        {
+            _open = false;
+            StateHasChanged();
+        }
+    }
+}

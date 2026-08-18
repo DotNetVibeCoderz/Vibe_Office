@@ -1,0 +1,419 @@
+@*
+    Comment and suggestion threads. Shared by all three editors — the anchor format differs per app
+    but the thread mechanics do not.
+
+    Accepting a suggestion changes the document, so it needs Editor; commenting only needs Commenter.
+    That split is the whole point of the Commenter role and the buttons here reflect it.
+*@
+@inject ICommentService Comments
+@inject ToastService Toasts
+
+<div class="vd-side-panel">
+    <div class="vd-side-panel__head">
+        <span class="vd-label">
+            @(_threads.Count == 0 ? "Comments" : $"{OpenCount} open")
+        </span>
+        <div class="vd-spacer"></div>
+
+        <button type="button" class="vd-btn vd-btn--icon vd-btn--sm"
+                aria-pressed="@_showResolved.ToString().ToLowerInvariant()"
+                @onclick="ToggleResolved"
+                title="@(_showResolved ? "Hide resolved" : "Show resolved")"
+                aria-label="@(_showResolved ? "Hide resolved" : "Show resolved")">
+            <Icon Name="check" Size="15" />
+        </button>
+
+        <button type="button" class="vd-btn vd-btn--icon vd-btn--sm" @onclick="OnClose"
+                title="Close comments" aria-label="Close comments">
+            <Icon Name="close" Size="15" />
+        </button>
+    </div>
+
+    <div class="vd-side-panel__body">
+        @if (_loading)
+        {
+            <div class="vd-skeleton" style="height:72px"></div>
+        }
+        else if (_threads.Count == 0)
+        {
+            <p class="vd-hint">
+                @(CanComment
+                    ? "Select text or a cell, then add a comment to start a thread."
+                    : "No comments yet.")
+            </p>
+        }
+        else
+        {
+            @foreach (var thread in _threads)
+            {
+                var root = thread;
+                <div class="vd-thread"
+                     data-kind="@root.Kind.ToString().ToLowerInvariant()"
+                     data-resolved="@root.IsResolved.ToString().ToLowerInvariant()"
+                     @key="root.Id">
+
+                    <div class="vd-thread__item">
+                        <div class="vd-thread__head">
+                            <Avatar Name="@root.AuthorName" Size="sm" />
+                            <span class="vd-thread__author">@root.AuthorName</span>
+                            <div class="vd-spacer"></div>
+                            <span class="vd-thread__when">@NotificationBell.Relative(root.CreatedAt)</span>
+                        </div>
+
+                        @if (!string.IsNullOrEmpty(AnchorLabel(root)))
+                        {
+                            <span class="vd-thread__anchor">@AnchorLabel(root)</span>
+                        }
+
+                        @if (root.Kind == CommentKind.Suggestion)
+                        {
+                            <div class="vd-thread__diff">
+                                @if (!string.IsNullOrEmpty(root.OriginalText))
+                                {
+                                    <span class="vd-thread__del">@root.OriginalText</span>
+                                }
+                                <span class="vd-thread__ins">@root.SuggestedText</span>
+                            </div>
+                        }
+
+                        @if (!string.IsNullOrWhiteSpace(root.Body))
+                        {
+                            <div class="vd-thread__body">@root.Body</div>
+                        }
+                    </div>
+
+                    @foreach (var reply in root.Replies)
+                    {
+                        <div class="vd-thread__item" @key="reply.Id">
+                            <div class="vd-thread__head">
+                                <Avatar Name="@reply.AuthorName" Size="sm" />
+                                <span class="vd-thread__author">@reply.AuthorName</span>
+                                <div class="vd-spacer"></div>
+                                <span class="vd-thread__when">@NotificationBell.Relative(reply.CreatedAt)</span>
+                            </div>
+                            <div class="vd-thread__body">@reply.Body</div>
+                        </div>
+                    }
+
+                    @if (!root.IsResolved && CanComment)
+                    {
+                        <div class="vd-thread__actions">
+                            @if (root.Kind == CommentKind.Suggestion && CanEdit)
+                            {
+                                <button type="button" class="vd-btn vd-btn--sm vd-btn--primary"
+                                        @onclick="() => Accept(root.Id)" disabled="@_busy">
+                                    <Icon Name="check" Size="13" /> Apply
+                                </button>
+                                <button type="button" class="vd-btn vd-btn--sm vd-btn--ghost"
+                                        @onclick="() => Reject(root.Id)" disabled="@_busy">
+                                    Dismiss
+                                </button>
+                            }
+                            else
+                            {
+                                <button type="button" class="vd-btn vd-btn--sm vd-btn--ghost"
+                                        @onclick="() => Resolve(root.Id, true)" disabled="@_busy">
+                                    <Icon Name="check" Size="13" /> Resolve
+                                </button>
+                            }
+
+                            <div class="vd-spacer"></div>
+
+                            <button type="button" class="vd-btn vd-btn--icon vd-btn--sm"
+                                    @onclick="() => StartReply(root.Id)"
+                                    title="Reply" aria-label="Reply">
+                                <Icon Name="comment" Size="13" />
+                            </button>
+                            <button type="button" class="vd-btn vd-btn--icon vd-btn--sm"
+                                    @onclick="() => Delete(root.Id)"
+                                    title="Delete thread" aria-label="Delete thread">
+                                <Icon Name="trash" Size="13" />
+                            </button>
+                        </div>
+                    }
+                    else if (root.IsResolved)
+                    {
+                        <div class="vd-thread__actions">
+                            <span class="vd-badge @BadgeFor(root.Status)">@root.Status</span>
+                            <div class="vd-spacer"></div>
+                            @if (root.Status == CommentStatus.Resolved && CanComment)
+                            {
+                                <button type="button" class="vd-btn vd-btn--sm vd-btn--ghost"
+                                        @onclick="() => Resolve(root.Id, false)" disabled="@_busy">
+                                    Reopen
+                                </button>
+                            }
+                        </div>
+                    }
+
+                    @if (_replyingTo == root.Id)
+                    {
+                        <div class="vd-thread__reply">
+                            <input class="vd-input" placeholder="Reply…"
+                                   @bind="_replyDraft" @bind:event="oninput"
+                                   @onkeydown="e => OnReplyKeyDown(e, root.Id)" />
+                            <button type="button" class="vd-btn vd-btn--primary vd-btn--sm"
+                                    @onclick="() => SendReply(root.Id)"
+                                    disabled="@(_busy || string.IsNullOrWhiteSpace(_replyDraft))">
+                                <Icon Name="send" Size="13" />
+                            </button>
+                        </div>
+                    }
+                </div>
+            }
+        }
+    </div>
+
+    @if (CanComment)
+    {
+        <div class="vd-thread__reply" style="border-block-start:1px solid var(--vd-line)">
+            <input class="vd-input" placeholder="@NewPlaceholder"
+                   @bind="_newDraft" @bind:event="oninput"
+                   @onkeydown="OnNewKeyDown" />
+            <button type="button" class="vd-btn vd-btn--primary vd-btn--sm"
+                    @onclick="AddComment"
+                    disabled="@(_busy || string.IsNullOrWhiteSpace(_newDraft))"
+                    title="Add comment">
+                <Icon Name="send" Size="13" />
+            </button>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Guid ItemId { get; set; }
+
+    /// <summary>App-specific anchor JSON for a new comment, supplied by the editor.</summary>
+    [Parameter] public string? PendingAnchor { get; set; }
+
+    /// <summary>Human-readable description of what the new comment will attach to.</summary>
+    [Parameter] public string? PendingAnchorLabel { get; set; }
+
+    [Parameter] public bool CanComment { get; set; }
+    [Parameter] public bool CanEdit { get; set; }
+
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    /// <summary>Raised with the new revision after a suggestion is applied, so the editor can reload.</summary>
+    [Parameter] public EventCallback<long> OnDocumentChanged { get; set; }
+
+    private List<CommentDto> _threads = [];
+    private bool _loading = true;
+    private bool _busy;
+    private bool _showResolved;
+
+    private Guid? _replyingTo;
+    private string _replyDraft = string.Empty;
+    private string _newDraft = string.Empty;
+
+    private Guid _loadedFor;
+
+    private int OpenCount => _threads.Count(t => !t.IsResolved);
+
+    private string NewPlaceholder => string.IsNullOrEmpty(PendingAnchorLabel)
+        ? "Comment on this document…"
+        : $"Comment on {PendingAnchorLabel}…";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loadedFor == ItemId) return;
+
+        _loadedFor = ItemId;
+        await ReloadAsync();
+    }
+
+    public async Task ReloadAsync()
+    {
+        _loading = true;
+
+        try
+        {
+            _threads = [.. await Comments.ListAsync(ItemId, _showResolved)];
+        }
+        catch (Exception e)
+        {
+            Toasts.Error(e);
+            _threads = [];
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task ToggleResolved()
+    {
+        _showResolved = !_showResolved;
+        await ReloadAsync();
+    }
+
+    private static string BadgeFor(CommentStatus status) => status switch
+    {
+        CommentStatus.Accepted => "vd-badge--jade",
+        CommentStatus.Rejected => "vd-badge--danger",
+        _ => "vd-badge",
+    };
+
+    /// <summary>
+    /// Turns the stored anchor into something a reader recognises. The anchor is app-specific JSON, so
+    /// this covers all three shapes rather than each editor duplicating the parse.
+    /// </summary>
+    private static string? AnchorLabel(CommentDto comment)
+    {
+        var anchor = CommentAnchor.Parse(comment.Anchor);
+
+        if (anchor.A1 is { Length: > 0 } cell) return $"Cell {cell}";
+        if (anchor.ElementId is { Length: > 0 }) return $"Slide {(anchor.SlideIndex ?? 0) + 1}";
+
+        // For Docs, the quoted original text is more useful than a character offset.
+        if (!string.IsNullOrEmpty(comment.OriginalText)) return $"“{Excerpt(comment.OriginalText)}”";
+        if (anchor.From is not null) return null;
+
+        return null;
+    }
+
+    private static string Excerpt(string text, int max = 60) =>
+        text.Length <= max ? text : text[..max] + "…";
+
+    // ── actions ─────────────────────────────────────────────────────────────
+
+    private async Task OnNewKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await AddComment();
+    }
+
+    private async Task AddComment()
+    {
+        var body = _newDraft.Trim();
+        if (body.Length == 0) return;
+
+        _busy = true;
+        try
+        {
+            await Comments.AddAsync(ItemId, body, PendingAnchor);
+            _newDraft = string.Empty;
+            await ReloadAsync();
+        }
+        catch (Exception e)
+        {
+            Toasts.Error(e);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void StartReply(Guid threadId)
+    {
+        _replyingTo = _replyingTo == threadId ? null : threadId;
+        _replyDraft = string.Empty;
+    }
+
+    private async Task OnReplyKeyDown(KeyboardEventArgs e, Guid threadId)
+    {
+        if (e.Key == "Enter") await SendReply(threadId);
+        if (e.Key == "Escape") _replyingTo = null;
+    }
+
+    private async Task SendReply(Guid threadId)
+    {
+        var body = _replyDraft.Trim();
+        if (body.Length == 0) return;
+
+        _busy = true;
+        try
+        {
+            await Comments.AddAsync(ItemId, body, null, parentCommentId: threadId);
+            _replyDraft = string.Empty;
+            _replyingTo = null;
+            await ReloadAsync();
+        }
+        catch (Exception e)
+        {
+            Toasts.Error(e);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task Resolve(Guid commentId, bool resolved)
+    {
+        _busy = true;
+        try
+        {
+            await Comments.ResolveAsync(commentId, resolved);
+            await ReloadAsync();
+        }
+        catch (Exception e)
+        {
+            Toasts.Error(e);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task Accept(Guid commentId)
+    {
+        _busy = true;
+        try
+        {
+            var revision = await Comments.AcceptSuggestionAsync(commentId);
+
+            // The document body changed on the server, so the editor has to reload rather than keep
+            // its in-memory copy — otherwise the next save would overwrite the applied suggestion.
+            await OnDocumentChanged.InvokeAsync(revision);
+            await ReloadAsync();
+
+            Toasts.Success("Suggestion applied.");
+        }
+        catch (Exception e)
+        {
+            Toasts.Error(e);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task Reject(Guid commentId)
+    {
+        _busy = true;
+        try
+        {
+            await Comments.RejectSuggestionAsync(commentId);
+            await ReloadAsync();
+        }
+        catch (Exception e)
+        {
+            Toasts.Error(e);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task Delete(Guid commentId)
+    {
+        _busy = true;
+        try
+        {
+            await Comments.DeleteAsync(commentId);
+            await ReloadAsync();
+        }
+        catch (Exception e)
+        {
+            Toasts.Error(e);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

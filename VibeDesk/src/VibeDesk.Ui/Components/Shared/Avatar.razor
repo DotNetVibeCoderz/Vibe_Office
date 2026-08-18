@@ -1,0 +1,67 @@
+@*
+    Initials avatar. Colour is derived from the name when none is supplied, so the same person keeps
+    the same colour everywhere without the server having to store one.
+*@
+<span class="vd-avatar @SizeClass @Class"
+      style="background:@Background"
+      title="@(Title ?? Name)"
+      aria-hidden="@(string.IsNullOrEmpty(Title) ? "true" : "false")">
+    @Initials
+</span>
+
+@code {
+    [Parameter] public string? Name { get; set; }
+    [Parameter] public string? Color { get; set; }
+
+    /// <summary>sm | md | lg</summary>
+    [Parameter] public string Size { get; set; } = "md";
+
+    [Parameter] public string? Class { get; set; }
+
+    /// <summary>Set when the avatar is not accompanied by a visible name.</summary>
+    [Parameter] public string? Title { get; set; }
+
+    private string SizeClass => Size switch
+    {
+        "sm" => "vd-avatar--sm",
+        "lg" => "vd-avatar--lg",
+        _ => string.Empty,
+    };
+
+    private string Background => !string.IsNullOrWhiteSpace(Color) ? Color! : DeriveColor(Name);
+
+    private string Initials
+    {
+        get
+        {
+            if (string.IsNullOrWhiteSpace(Name)) return "?";
+
+            var parts = Name.Split([' ', '.', '_', '-', '@'], StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length == 0) return "?";
+            if (parts.Length == 1)
+                return parts[0][..Math.Min(2, parts[0].Length)].ToUpperInvariant();
+
+            return $"{char.ToUpperInvariant(parts[0][0])}{char.ToUpperInvariant(parts[^1][0])}";
+        }
+    }
+
+    /// <summary>
+    /// Hue picked from a fixed set rather than a raw hash-to-hue: an unconstrained hue lands on
+    /// yellows and greens that white text cannot sit on legibly.
+    /// </summary>
+    private static readonly string[] Palette =
+    [
+        "#0f5c57", "#2b6cb0", "#7a4bb8", "#b4602c", "#197a5a",
+        "#a3325f", "#3f5a8f", "#8a5a1f", "#2f6f6a", "#6b4fa8",
+    ];
+
+    private static string DeriveColor(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return Palette[0];
+
+        var hash = 0;
+        foreach (var ch in name) hash = (hash * 31 + ch) & 0x7fffffff;
+
+        return Palette[hash % Palette.Length];
+    }
+}

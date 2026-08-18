@@ -1,0 +1,55 @@
+@page "/account/register"
+@layout VibeDesk.Web.Components.Layout.AuthLayout
+@attribute [AllowAnonymous]
+@attribute [ExcludeFromInteractiveRouting]
+
+<h2 class="vd-auth__title">Create your account</h2>
+<p class="vd-auth__sub">You'll get a drive and a calendar to start with.</p>
+
+@if (!string.IsNullOrEmpty(Error))
+{
+    <p class="vd-auth__error" role="alert">
+        <Icon Name="warning" Size="15" /> @Error
+    </p>
+}
+
+<form method="post" action="/account/register" class="vd-auth__form">
+    <AntiforgeryToken />
+
+    <div class="vd-field">
+        <label for="displayName">Name</label>
+        <input id="displayName" name="displayName" type="text" class="vd-input"
+               autocomplete="name" required autofocus placeholder="Sari Wulandari" />
+    </div>
+
+    <div class="vd-field">
+        <label for="email">Email</label>
+        <input id="email" name="email" type="email" class="vd-input"
+               autocomplete="username" required placeholder="you@company.com" />
+    </div>
+
+    <div class="vd-field">
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" class="vd-input"
+               autocomplete="new-password" required minlength="8" />
+        <span class="vd-hint">At least 8 characters, with a number and a lowercase letter.</span>
+    </div>
+
+    <div class="vd-field">
+        <label for="confirmPassword">Confirm password</label>
+        <input id="confirmPassword" name="confirmPassword" type="password" class="vd-input"
+               autocomplete="new-password" required minlength="8" />
+    </div>
+
+    <button type="submit" class="vd-btn vd-btn--primary vd-btn--lg" style="width:100%">
+        Create account
+    </button>
+</form>
+
+<p class="vd-auth__alt">
+    Already have an account? <a href="/account/login">Sign in</a>
+</p>
+
+@code {
+    [SupplyParameterFromQuery] private string? Error { get; set; }
+}

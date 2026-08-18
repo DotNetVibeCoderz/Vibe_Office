@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Migrations live in a per-provider assembly because EF discovers every Migration type in the
+    migrations assembly. With all four providers in one project their snapshots would collide.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>VibeDesk.Migrations.PostgreSql</RootNamespace>
+    <!--
+      `dotnet ef` loads this assembly in its own host process. A class library emits no
+      runtimeconfig.json by default, so without this the host cannot resolve the shared framework
+      that Infrastructure pulls in transitively.
+    -->
+    <GenerateRuntimeConfigurationFiles>true</GenerateRuntimeConfigurationFiles>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\VibeDesk.Infrastructure\VibeDesk.Infrastructure.csproj" />
+  </ItemGroup>
+
+</Project>

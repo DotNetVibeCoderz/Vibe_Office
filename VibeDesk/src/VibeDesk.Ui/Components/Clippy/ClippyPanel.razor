@@ -1,0 +1,731 @@
+@*
+    Mr Clippy. One panel, present in all five apps, grounded in whatever document is open.
+
+    The session list, settings and transcript share one column rather than opening dialogs: the panel
+    is already narrow, and a modal over a 384px dock would cover the thing the user is asking about.
+*@
+@implements IAsyncDisposable
+@inject UiState Ui
+@inject ToastService Toasts
+@inject MarkdownRenderer Markdown
+@inject IJSRuntime Js
+@inject IServiceProvider Services
+
+<div class="vd-chat">
+    <header class="vd-chat__head">
+        <span class="vd-chat__mark" aria-hidden="true"><Icon Name="clippy" Size="17" /></span>
+
+        <div class="vd-col" style="min-width:0;gap:0">
+            <strong class="vd-truncate">Mr Clippy</strong>
+            <span class="vd-chat__sub vd-truncate">@ContextLabel</span>
+        </div>
+
+        <div class="vd-spacer"></div>
+
+        <button type="button" class="vd-btn vd-btn--icon vd-btn--sm"
+                @onclick="() => _view = _view == View.Sessions ? View.Chat : View.Sessions"
+                aria-pressed="@((_view == View.Sessions).ToString().ToLowerInvariant())"
+                title="Conversations" aria-label="Conversations">
+            <Icon Name="list" Size="16" />
+        </button>
+
+        <button type="button" class="vd-btn vd-btn--icon vd-btn--sm"
+                @onclick="() => _view = _view == View.Settings ? View.Chat : View.Settings"
+                aria-pressed="@((_view == View.Settings).ToString().ToLowerInvariant())"
+                title="Assistant settings" aria-label="Assistant settings">
+            <Icon Name="settings" Size="16" />
+        </button>
+
+        <button type="button" class="vd-btn vd-btn--icon vd-btn--sm"
+                @onclick="NewSession" title="New chat" aria-label="New chat">
+            <Icon Name="plus" Size="16" />
+        </button>
+
+        <button type="button" class="vd-btn vd-btn--icon vd-btn--sm"
+                @onclick="Ui.ToggleClippy" title="Hide panel" aria-label="Hide panel">
+            <Icon Name="close" Size="16" />
+        </button>
+    </header>
+
+    @if (Clippy is null || !Clippy.IsConfigured)
+    {
+        <div class="vd-chat__body">
+            <EmptyState Icon="sparkle"
+                        Title="Mr Clippy needs a model"
+                        Description="Add an API key for OpenAI, Anthropic or Gemini under Assistant in appsettings, or point the Ollama endpoint at a local model. Then reload this page.">
+                <Action>
+                    <a class="vd-btn vd-btn--outline" href="/settings/assistant">Open assistant settings</a>
+                </Action>
+            </EmptyState>
+        </div>
+    }
+    else if (_view == View.Sessions)
+    {
+        <div class="vd-chat__body vd-scroll">
+            <div class="vd-chat__sessions">
+                @if (_sessions.Count == 0)
+                {
+                    <p class="vd-chat__hint">No conversations yet.</p>
+                }
+                @foreach (var session in _sessions)
+                {
+                    <div class="vd-chat__session @(session.Id == _sessionId ? "active" : "")">
+                        <button type="button" class="vd-chat__session-open" @onclick="() => OpenSession(session.Id)">
+                            <span class="vd-truncate">@session.Title</span>
+                            <span class="vd-chat__session-meta">
+                                @session.MessageCount msg · @NotificationBell.Relative(session.UpdatedAt)
+                            </span>
+                        </button>
+                        <button type="button" class="vd-btn vd-btn--icon vd-btn--sm"
+                                @onclick="() => DeleteSession(session.Id)"
+                                title="Delete conversation" aria-label="Delete conversation">
+                            <Icon Name="trash" Size="14" />
+                        </button>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+    else if (_view == View.Settings)
+    {
+        <div class="vd-chat__body vd-scroll">
+            <div class="vd-chat__settings">
+                <div class="vd-field">
+                    <label for="clippy-provider">Provider</label>
+                    <select id="clippy-provider" class="vd-select"
+                            value="@(_provider?.ToString() ?? "")"
+                            @onchange="OnProviderChanged">
+                        <option value="">Use default</option>
+                        @foreach (var provider in Clippy.AvailableProviders)
+                        {
+                            <option value="@provider">@provider</option>
+                        }
+                    </select>
+                </div>
+
+                <div class="vd-field">
+                    <label for="clippy-model">Model</label>
+                    <select id="clippy-model" class="vd-select"
+                            value="@(_model ?? "")"
+                            @onchange="e => _model = e.Value?.ToString()">
+                        <option value="">Use default</option>
+                        @foreach (var model in ModelChoices)
+                        {
+                            <option value="@model">@model</option>
+                        }
+                    </select>
+                </div>
+
+                <div class="vd-field">
+                    <label for="clippy-temp">
+                        Temperature
+                        <span class="vd-mono" style="color:var(--vd-ink-3)">@Temp</span>
+                    </label>
+                    <input id="clippy-temp" type="range" min="0" max="1" step="0.05"
+                           value="@Temp" @oninput="OnTemperatureChanged" />
+                    <span class="vd-hint">Lower is more literal, higher is more exploratory.</span>
+                </div>
+
+                <div class="vd-field">
+                    <label for="clippy-persona">Persona</label>
+                    <textarea id="clippy-persona" class="vd-textarea" rows="5"
+                              placeholder="Leave empty to use the configured persona."
+                              @bind="_systemPrompt" @bind:event="oninput"></textarea>
+                </div>
+
+                <div class="vd-row">
+                    <button type="button" class="vd-btn vd-btn--primary" @onclick="SaveSettings">
+                        Save settings
+                    </button>
+                    <button type="button" class="vd-btn vd-btn--ghost" @onclick="ResetSession">
+                        Reset conversation
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="vd-chat__body vd-scroll" @ref="_transcript">
+            @if (_messages.Count == 0 && !_streaming)
+            {
+                <div class="vd-chat__welcome">
+                    <p class="vd-chat__welcome-lead">
+                        Ask about anything in your workspace. I can read your files and edit them.
+                    </p>
+                    <div class="vd-chat__prompts">
+                        @foreach (var prompt in SuggestedPrompts)
+                        {
+                            <button type="button" class="vd-chat__prompt" @onclick="() => Send(prompt)">
+                                @prompt
+                            </button>
+                        }
+                    </div>
+                </div>
+            }
+
+            @foreach (var message in _messages)
+            {
+                <div class="vd-msg vd-msg--@(message.Role.ToString().ToLowerInvariant())" @key="message.Id">
+                    @if (message.Role == ChatRole.Assistant)
+                    {
+                        <span class="vd-msg__mark" aria-hidden="true"><Icon Name="clippy" Size="14" /></span>
+                    }
+
+                    <div class="vd-msg__body">
+                        @if (message.ToolCalls.Count > 0)
+                        {
+                            <div class="vd-msg__tools">
+                                @foreach (var call in message.ToolCalls)
+                                {
+                                    <span class="vd-badge @(call.Succeeded ? "vd-badge--jade" : "vd-badge--danger")"
+                                          title="@call.Summary">
+                                        <Icon Name="@ToolIcon(call.Name)" Size="11" />
+                                        @FriendlyTool(call.Name)
+                                    </span>
+                                }
+                            </div>
+                        }
+
+                        @if (!string.IsNullOrEmpty(message.Error))
+                        {
+                            <p class="vd-msg__error">
+                                <Icon Name="warning" Size="14" /> @message.Error
+                            </p>
+                        }
+
+                        @if (!string.IsNullOrWhiteSpace(message.Content))
+                        {
+                            @if (message.Role == ChatRole.User)
+                            {
+                                @* User text is shown verbatim, never parsed as markup. *@
+                                <div class="vd-msg__text">@message.Content</div>
+                            }
+                            else
+                            {
+                                <div class="vd-md">@((MarkupString)Markdown.ToHtml(message.Content))</div>
+                            }
+                        }
+
+                        @if (message.Attachments.Count > 0)
+                        {
+                            <div class="vd-msg__files">
+                                @foreach (var file in message.Attachments)
+                                {
+                                    @if (file.Kind == ChatAttachmentKind.Image)
+                                    {
+                                        <img class="vd-msg__image" src="@file.Url" alt="@file.FileName" />
+                                    }
+                                    else
+                                    {
+                                        <a class="vd-msg__file" href="@file.Url" target="_blank" rel="noopener">
+                                            <Icon Name="file" Size="14" /> @file.FileName
+                                        </a>
+                                    }
+                                }
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+
+            @if (_streaming)
+            {
+                <div class="vd-msg vd-msg--assistant">
+                    <span class="vd-msg__mark" aria-hidden="true"><Icon Name="clippy" Size="14" /></span>
+                    <div class="vd-msg__body">
+                        @if (_liveTools.Count > 0)
+                        {
+                            <div class="vd-msg__tools">
+                                @foreach (var call in _liveTools)
+                                {
+                                    <span class="vd-badge vd-badge--jade">
+                                        <Icon Name="@ToolIcon(call.Name)" Size="11" /> @FriendlyTool(call.Name)
+                                    </span>
+                                }
+                            </div>
+                        }
+
+                        @if (_live.Length > 0)
+                        {
+                            <div class="vd-md">@((MarkupString)Markdown.ToHtml(_live.ToString()))</div>
+                        }
+                        else
+                        {
+                            <div class="vd-chat__typing" aria-label="Thinking">
+                                <span></span><span></span><span></span>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+
+        <div class="vd-chat__compose">
+            @if (_pending.Count > 0)
+            {
+                <div class="vd-chat__pending">
+                    @foreach (var file in _pending)
+                    {
+                        <span class="vd-badge">
+                            <Icon Name="@(file.Kind == ChatAttachmentKind.Image ? "image" : "file")" Size="11" />
+                            <span class="vd-truncate" style="max-width:120px">@file.FileName</span>
+                            <button type="button" class="vd-chat__pending-x"
+                                    @onclick="() => _pending.Remove(file)" aria-label="Remove attachment">
+                                <Icon Name="close" Size="10" />
+                            </button>
+                        </span>
+                    }
+                </div>
+            }
+
+            <div class="vd-chat__inputrow">
+                <label class="vd-btn vd-btn--icon vd-btn--sm" title="Attach a file">
+                    <Icon Name="attach" Size="16" />
+                    <InputFile OnChange="OnFilesSelected" multiple class="vd-sr-only" accept="image/*,.pdf,.txt,.md,.csv,.json" />
+                </label>
+
+                <textarea class="vd-chat__input"
+                          rows="1"
+                          placeholder="Ask Mr Clippy…"
+                          aria-label="Message"
+                          @bind="_draft"
+                          @bind:event="oninput"
+                          @onkeydown="OnComposeKeyDown"
+                          disabled="@_streaming"></textarea>
+
+                @if (_streaming)
+                {
+                    <button type="button" class="vd-btn vd-btn--icon" @onclick="Stop"
+                            title="Stop generating" aria-label="Stop generating">
+                        <Icon Name="stop" Size="16" />
+                    </button>
+                }
+                else
+                {
+                    <button type="button" class="vd-btn vd-btn--primary vd-btn--icon"
+                            @onclick="() => Send(_draft)"
+                            disabled="@(string.IsNullOrWhiteSpace(_draft) && _pending.Count == 0)"
+                            title="Send" aria-label="Send">
+                        <Icon Name="send" Size="16" />
+                    </button>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private enum View { Chat, Sessions, Settings }
+
+    /// <summary>
+    /// Resolved optionally: the assistant is a separate project that a host may not register, and the
+    /// panel must degrade to an explanation rather than failing to construct.
+    /// </summary>
+    private IClippyService? Clippy => Services.GetService(typeof(IClippyService)) as IClippyService;
+
+    private View _view = View.Chat;
+    private ElementReference _transcript;
+
+    private List<ChatSessionDto> _sessions = [];
+    private List<ChatMessageDto> _messages = [];
+    private Guid? _sessionId;
+
+    private string _draft = string.Empty;
+    private readonly List<ChatAttachmentInput> _pending = [];
+
+    private bool _streaming;
+    private readonly System.Text.StringBuilder _live = new();
+    private readonly List<ToolCallDto> _liveTools = [];
+    private CancellationTokenSource? _generation;
+
+    // Session settings, mirrored locally so the form is editable before saving.
+    private AiProvider? _provider;
+    private string? _model;
+    private double? _temperature;
+    private string? _systemPrompt;
+
+    private string Temp =>
+        (_temperature ?? 0.4).ToString("0.00", System.Globalization.CultureInfo.InvariantCulture);
+
+    private IReadOnlyList<string> ModelChoices =>
+        Clippy is null || _provider is null ? [] : Clippy.ModelsFor(_provider.Value);
+
+    private string ContextLabel => Ui.ActiveItemName is { Length: > 0 } name
+        ? $"Reading “{name}”"
+        : Ui.ActiveApp switch
+        {
+            "sheets" => "In Sheets",
+            "docs" => "In Docs",
+            "slides" => "In Slides",
+            "calendar" => "In Calendar",
+            _ => "In Drive",
+        };
+
+    /// <summary>Prompts tailored to the app, so the first suggestion is always relevant.</summary>
+    private string[] SuggestedPrompts => Ui.ActiveApp switch
+    {
+        "sheets" =>
+        [
+            "Summarise the trend in this sheet",
+            "Add a total row with a SUM formula",
+            "What's driving the biggest change?",
+        ],
+        "docs" =>
+        [
+            "Tighten this document's opening",
+            "Draft a summary section",
+            "Find anything factually inconsistent",
+        ],
+        "slides" =>
+        [
+            "Turn my notes into three slides",
+            "Suggest a stronger title slide",
+            "Write speaker notes for slide 2",
+        ],
+        "calendar" =>
+        [
+            "What's on my plate this week?",
+            "Find a free hour for four people",
+            "Schedule a follow-up next Tuesday",
+        ],
+        _ =>
+        [
+            "What changed in my Drive this week?",
+            "Find the Q3 revenue numbers",
+            "Create a spreadsheet for tracking leads",
+        ],
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Clippy is null || !Clippy.IsConfigured) return;
+
+        try
+        {
+            _sessions = [.. await Clippy.ListSessionsAsync()];
+            if (_sessions.Count > 0) await OpenSession(_sessions[0].Id);
+        }
+        catch (Exception)
+        {
+            // An unreachable assistant must not break the shell.
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // Keep the newest turn in view as tokens arrive.
+        if (_view == View.Chat && (_streaming || _messages.Count > 0))
+        {
+            try
+            {
+                await Js.InvokeVoidAsync("vibedesk.scrollToBottom", _transcript);
+            }
+            catch (JSException)
+            {
+                // The element is gone if the panel closed mid-render.
+            }
+        }
+    }
+
+    private async Task<Guid> EnsureSessionAsync()
+    {
+        if (_sessionId is not null) return _sessionId.Value;
+
+        var session = await Clippy!.CreateSessionAsync(null, CurrentContext());
+        _sessions.Insert(0, session);
+        _sessionId = session.Id;
+        ApplySettings(session);
+        return session.Id;
+    }
+
+    private ClippyContext CurrentContext() => new(
+        Ui.ActiveApp,
+        Ui.ActiveItemId,
+        Ui.ActiveItemName,
+        Ui.ActiveItemType);
+
+    private async Task NewSession()
+    {
+        if (Clippy is null) return;
+
+        _view = View.Chat;
+        _messages = [];
+        _sessionId = null;
+        _draft = string.Empty;
+        _pending.Clear();
+
+        try
+        {
+            await EnsureSessionAsync();
+        }
+        catch (Exception e)
+        {
+            Toasts.Error(e);
+        }
+    }
+
+    private async Task OpenSession(Guid id)
+    {
+        if (Clippy is null) return;
+
+        _view = View.Chat;
+        _sessionId = id;
+
+        try
+        {
+            _messages = [.. await Clippy.GetMessagesAsync(id)];
+
+            var session = await Clippy.GetSessionAsync(id);
+            if (session is not null) ApplySettings(session);
+        }
+        catch (Exception e)
+        {
+            Toasts.Error(e);
+        }
+    }
+
+    private void ApplySettings(ChatSessionDto session)
+    {
+        _provider = session.Provider;
+        _model = session.Model;
+        _temperature = session.Temperature;
+    }
+
+    private async Task DeleteSession(Guid id)
+    {
+        if (Clippy is null) return;
+
+        try
+        {
+            await Clippy.DeleteSessionAsync(id);
+            _sessions.RemoveAll(s => s.Id == id);
+
+            if (_sessionId == id)
+            {
+                _sessionId = null;
+                _messages = [];
+            }
+
+            Toasts.Success("Conversation deleted.");
+        }
+        catch (Exception e)
+        {
+            Toasts.Error(e);
+        }
+    }
+
+    private async Task ResetSession()
+    {
+        if (Clippy is null || _sessionId is null) return;
+
+        try
+        {
+            await Clippy.ResetSessionAsync(_sessionId.Value);
+            _messages = [];
+            _view = View.Chat;
+            Toasts.Success("Conversation reset.");
+        }
+        catch (Exception e)
+        {
+            Toasts.Error(e);
+        }
+    }
+
+    private void OnProviderChanged(ChangeEventArgs e)
+    {
+        var raw = e.Value?.ToString();
+        _provider = Enum.TryParse<AiProvider>(raw, out var parsed) ? parsed : null;
+        // The previous model belongs to the previous provider, so clear it.
+        _model = null;
+    }
+
+    private void OnTemperatureChanged(ChangeEventArgs e)
+    {
+        if (double.TryParse(e.Value?.ToString(),
+                System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out var value))
+        {
+            _temperature = value;
+        }
+    }
+
+    private async Task SaveSettings()
+    {
+        if (Clippy is null) return;
+
+        try
+        {
+            var id = await EnsureSessionAsync();
+            await Clippy.UpdateSessionSettingsAsync(id, _provider, _model, _temperature, _systemPrompt);
+            _view = View.Chat;
+            Toasts.Success("Assistant settings saved.");
+        }
+        catch (Exception e)
+        {
+            Toasts.Error(e);
+        }
+    }
+
+    private async Task OnComposeKeyDown(KeyboardEventArgs e)
+    {
+        // Enter sends, Shift+Enter starts a new line — the convention every chat client uses.
+        if (e.Key == "Enter" && !e.ShiftKey)
+        {
+            await Send(_draft);
+        }
+    }
+
+    private async Task OnFilesSelected(InputFileChangeEventArgs e)
+    {
+        if (Clippy is null) return;
+
+        const long maxBytes = 20L * 1024 * 1024;
+
+        foreach (var file in e.GetMultipleFiles(6))
+        {
+            if (file.Size > maxBytes)
+            {
+                Toasts.Warn($"“{file.Name}” is over 20 MB and was skipped.");
+                continue;
+            }
+
+            try
+            {
+                await using var stream = file.OpenReadStream(maxBytes);
+                var uploaded = await Clippy.UploadAttachmentAsync(file.Name, file.ContentType, stream);
+                _pending.Add(uploaded);
+            }
+            catch (Exception ex)
+            {
+                Toasts.Error(ex);
+            }
+        }
+    }
+
+    private async Task Send(string text)
+    {
+        if (Clippy is null || _streaming) return;
+
+        var message = (text ?? string.Empty).Trim();
+        if (message.Length == 0 && _pending.Count == 0) return;
+
+        _draft = string.Empty;
+        _view = View.Chat;
+
+        var attachments = _pending.ToList();
+        _pending.Clear();
+
+        try
+        {
+            var sessionId = await EnsureSessionAsync();
+
+            // Show the user's turn immediately; the server persists its own copy.
+            _messages.Add(new ChatMessageDto(
+                Guid.NewGuid(), ChatRole.User, message, [],
+                attachments.Select(a => new ChatAttachmentDto(
+                    Guid.NewGuid(), a.Kind, a.FileName, a.ContentType, a.SizeBytes, a.Url)).ToList(),
+                null, null, null, null, null, DateTimeOffset.UtcNow));
+
+            _streaming = true;
+            _live.Clear();
+            _liveTools.Clear();
+
+            _generation?.Dispose();
+            _generation = new CancellationTokenSource();
+
+            string? error = null;
+
+            await foreach (var chunk in Clippy.SendAsync(
+                sessionId, message, CurrentContext(), attachments, _generation.Token))
+            {
+                if (chunk.TextDelta is { Length: > 0 }) _live.Append(chunk.TextDelta);
+                if (chunk.ToolCall is not null) _liveTools.Add(chunk.ToolCall);
+                if (chunk.Error is { Length: > 0 }) error = chunk.Error;
+
+                // Re-render per chunk so text appears as it is generated.
+                StateHasChanged();
+            }
+
+            _messages.Add(new ChatMessageDto(
+                Guid.NewGuid(), ChatRole.Assistant, _live.ToString(),
+                _liveTools.ToList(), [], null, null, null, null, error, DateTimeOffset.UtcNow));
+
+            await RefreshSessionListAsync();
+        }
+        catch (OperationCanceledException)
+        {
+            // Stopped by the user: keep whatever was generated.
+            if (_live.Length > 0)
+            {
+                _messages.Add(new ChatMessageDto(
+                    Guid.NewGuid(), ChatRole.Assistant, _live.ToString(),
+                    _liveTools.ToList(), [], null, null, null, null, null, DateTimeOffset.UtcNow));
+            }
+        }
+        catch (Exception e)
+        {
+            Toasts.Error(e);
+        }
+        finally
+        {
+            _streaming = false;
+            _live.Clear();
+            _liveTools.Clear();
+        }
+    }
+
+    private async Task RefreshSessionListAsync()
+    {
+        try
+        {
+            _sessions = [.. await Clippy!.ListSessionsAsync()];
+        }
+        catch (Exception)
+        {
+            // Non-critical: the transcript is already correct.
+        }
+    }
+
+    private void Stop() => _generation?.Cancel();
+
+    private static string ToolIcon(string name) => name switch
+    {
+        var n when n.Contains("search", StringComparison.OrdinalIgnoreCase) => "globe",
+        var n when n.Contains("scrape", StringComparison.OrdinalIgnoreCase) => "link",
+        var n when n.Contains("drive", StringComparison.OrdinalIgnoreCase) => "drive",
+        var n when n.Contains("sheet", StringComparison.OrdinalIgnoreCase) => "table",
+        var n when n.Contains("doc", StringComparison.OrdinalIgnoreCase) => "description",
+        var n when n.Contains("slide", StringComparison.OrdinalIgnoreCase) => "slideshow",
+        var n when n.Contains("calendar", StringComparison.OrdinalIgnoreCase) => "calendar",
+        var n when n.Contains("time", StringComparison.OrdinalIgnoreCase) => "clock",
+        var n when n.Contains("date", StringComparison.OrdinalIgnoreCase) => "clock",
+        var n when n.Contains("math", StringComparison.OrdinalIgnoreCase) => "function",
+        _ => "sparkle",
+    };
+
+    /// <summary>Turns a kernel function name into something a user recognises.</summary>
+    private static string FriendlyTool(string name)
+    {
+        var trimmed = name.Contains('-') ? name.Split('-')[^1] : name;
+
+        var spaced = System.Text.RegularExpressions.Regex.Replace(
+            trimmed, "(?<=[a-z0-9])(?=[A-Z])", " ");
+
+        return spaced.Replace('_', ' ').ToLowerInvariant() switch
+        {
+            var s when s.Contains("search web") => "searched the web",
+            var s when s.Contains("scrape") => "read a page",
+            var s when s.Contains("read file") => "read a file",
+            var s => s,
+        };
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _generation?.Cancel();
+        _generation?.Dispose();
+        await ValueTask.CompletedTask;
+    }
+}

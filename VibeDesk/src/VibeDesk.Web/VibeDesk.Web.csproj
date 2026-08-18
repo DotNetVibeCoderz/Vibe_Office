@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>VibeDesk.Web</RootNamespace>
+    <UserSecretsId>vibedesk-web-9f2c41a8</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\VibeDesk.Ui\VibeDesk.Ui.csproj" />
+    <ProjectReference Include="..\VibeDesk.Infrastructure\VibeDesk.Infrastructure.csproj" />
+    <ProjectReference Include="..\VibeDesk.Ai\VibeDesk.Ai.csproj" />
+    <ProjectReference Include="..\VibeDesk.Scripting\VibeDesk.Scripting.csproj" />
+  </ItemGroup>
+
+  <!--
+    All four migration assemblies are referenced so switching Database:Provider is a configuration
+    change with no rebuild. They are tiny — a migration set and nothing else.
+  -->
+  <ItemGroup Label="Migrations">
+    <ProjectReference Include="..\Migrations\VibeDesk.Migrations.Sqlite\VibeDesk.Migrations.Sqlite.csproj" />
+    <ProjectReference Include="..\Migrations\VibeDesk.Migrations.SqlServer\VibeDesk.Migrations.SqlServer.csproj" />
+    <ProjectReference Include="..\Migrations\VibeDesk.Migrations.MySql\VibeDesk.Migrations.MySql.csproj" />
+    <ProjectReference Include="..\Migrations\VibeDesk.Migrations.PostgreSql\VibeDesk.Migrations.PostgreSql.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="QRCoder" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,32 @@
+@*
+    Root component for the desktop and mobile hosts.
+
+    The whole app sits behind one gate: with no session there are no routes at all, only the sign-in
+    view. That is stronger than routing to a login page, because a client host has no server to
+    re-check authorisation on navigation — the router simply never exists until a token does.
+*@
+
+<CascadingAuthenticationState>
+    <AuthorizeView>
+        <Authorized>
+            <Router AppAssembly="typeof(ClientRoot).Assembly"
+                    AdditionalAssemblies="new[] { typeof(VibeDesk.Ui.Components.Layout.AppShell).Assembly }">
+                <Found Context="routeData">
+                    <RouteView RouteData="routeData"
+                               DefaultLayout="typeof(VibeDesk.Ui.Components.Layout.ShellLayout)" />
+                    <FocusOnNavigate RouteData="routeData" Selector="h1" />
+                </Found>
+                <NotFound>
+                    <LayoutView Layout="typeof(VibeDesk.Ui.Components.Layout.ShellLayout)">
+                        <EmptyState Icon="search"
+                                    Title="Halaman tidak ditemukan"
+                                    Description="Tautannya mungkin sudah usang, atau itemnya sudah dipindahkan ke sampah." />
+                    </LayoutView>
+                </NotFound>
+            </Router>
+        </Authorized>
+        <NotAuthorized>
+            <SignInView />
+        </NotAuthorized>
+    </AuthorizeView>
+</CascadingAuthenticationState>

@@ -1,0 +1,71 @@
+@page "/account/login"
+@layout VibeDesk.Web.Components.Layout.AuthLayout
+@attribute [AllowAnonymous]
+@attribute [ExcludeFromInteractiveRouting]
+
+@*
+    Static SSR, not interactive: the form posts to an endpoint that writes the auth cookie, which an
+    interactive circuit cannot do. It also means sign-in works with JavaScript disabled.
+*@
+
+<h2 class="vd-auth__title">Sign in</h2>
+<p class="vd-auth__sub">Welcome back.</p>
+
+@if (!string.IsNullOrEmpty(Error))
+{
+    <p class="vd-auth__error" role="alert">
+        <Icon Name="warning" Size="15" /> @Error
+    </p>
+}
+
+<form method="post" action="/account/login" class="vd-auth__form">
+    <AntiforgeryToken />
+    <input type="hidden" name="returnUrl" value="@ReturnUrl" />
+
+    <div class="vd-field">
+        <label for="email">Email</label>
+        <input id="email" name="email" type="email" class="vd-input"
+               autocomplete="username" required autofocus
+               placeholder="you@company.com" />
+    </div>
+
+    <div class="vd-field">
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" class="vd-input"
+               autocomplete="current-password" required />
+    </div>
+
+    <label class="vd-auth__check">
+        <input type="checkbox" name="rememberMe" value="true" />
+        <span>Keep me signed in</span>
+    </label>
+
+    <button type="submit" class="vd-btn vd-btn--primary vd-btn--lg" style="width:100%">
+        Sign in
+    </button>
+</form>
+
+<p class="vd-auth__alt">
+    New here? <a href="/account/register">Create an account</a>
+</p>
+
+@if (ShowDemoHint)
+{
+    <div class="vd-auth__demo">
+        <span class="vd-label">Demo accounts</span>
+        <p>
+            Sign in as <code class="vd-mono">fadhil@@gravicode.com</code> with the password
+            <code class="vd-mono">VibeDesk#2026</code>. Seven more seeded teammates share that password.
+        </p>
+    </div>
+}
+
+@code {
+    [SupplyParameterFromQuery] private string? Error { get; set; }
+    [SupplyParameterFromQuery] private string? ReturnUrl { get; set; }
+
+    [Inject] private IWebHostEnvironment Environment { get; set; } = default!;
+
+    /// <summary>Never show seeded credentials outside development.</summary>
+    private bool ShowDemoHint => Environment.IsDevelopment();
+}

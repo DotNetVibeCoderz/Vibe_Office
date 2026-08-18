@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>VibeDesk.Tests</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <!--
+      xunit.v3 runs on Microsoft.Testing.Platform, which the .NET 10 SDK requires instead of VSTest —
+      hence the executable output and the opt-in below. Microsoft.NET.Test.Sdk and
+      xunit.runner.visualstudio are deliberately absent: they are the VSTest path.
+    -->
+    <OutputType>Exe</OutputType>
+    <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\VibeDesk.Application\VibeDesk.Application.csproj" />
+    <ProjectReference Include="..\..\src\VibeDesk.Ai\VibeDesk.Ai.csproj" />
+    <ProjectReference Include="..\..\src\VibeDesk.Scripting\VibeDesk.Scripting.csproj" />
+    <ProjectReference Include="..\..\src\VibeDesk.Cli\VibeDesk.Cli.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" />
+  </ItemGroup>
+
+</Project>

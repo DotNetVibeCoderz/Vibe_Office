@@ -1,0 +1,348 @@
+/*
+ * Slides.
+ *
+ * Element geometry is stored in percent of the canvas, so one set of coordinates renders identically
+ * in the editor, the thumbnail rail and full-screen presentation. Nothing re-layouts per zoom level.
+ */
+
+.vd-slides {
+  display: flex;
+  min-height: 0;
+  height: 100%;
+  background: var(--vd-canvas);
+}
+
+/* ── thumbnail rail ─────────────────────────────────────────────────────── */
+.vd-rail {
+  flex: 0 0 172px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--vd-surface);
+  border-inline-end: 1px solid var(--vd-line);
+}
+
+.vd-rail__list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--vd-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--vd-2);
+}
+
+.vd-rail__item {
+  display: flex;
+  gap: var(--vd-2);
+  align-items: flex-start;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  text-align: start;
+}
+
+.vd-rail__num {
+  flex: 0 0 auto;
+  width: 16px;
+  padding-block-start: 2px;
+  font-family: var(--vd-font-mono);
+  font-size: 10px;
+  color: var(--vd-ink-faint);
+}
+
+.vd-rail__frame {
+  position: relative;
+  flex: 1 1 auto;
+  aspect-ratio: 16 / 9;
+  border: 1px solid var(--vd-line);
+  border-radius: var(--vd-radius-sm);
+  overflow: hidden;
+  transition: border-color var(--vd-fast) var(--vd-ease);
+}
+
+.vd-rail__item:hover .vd-rail__frame { border-color: var(--vd-line-strong); }
+
+.vd-rail__item[aria-current="true"] .vd-rail__frame {
+  border-color: var(--vd-primary);
+  box-shadow: 0 0 0 2px var(--vd-primary-soft);
+}
+
+/* The canting mark identifies the current slide, same as everywhere else in the app. */
+.vd-rail__item[aria-current="true"] .vd-rail__num {
+  color: var(--vd-gold);
+  font-weight: 700;
+}
+
+.vd-rail__hidden {
+  position: absolute;
+  inset-block-start: 2px;
+  inset-inline-end: 2px;
+  color: var(--vd-ink-faint);
+  background: var(--vd-surface);
+  border-radius: 2px;
+  padding: 1px;
+}
+
+/* ── stage ──────────────────────────────────────────────────────────────── */
+.vd-stage {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.vd-stage__area {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  padding: var(--vd-5);
+  overflow: auto;
+}
+
+/* The slide itself. aspect-ratio plus a width cap keeps the deck's proportions exact. */
+.vd-slide {
+  position: relative;
+  width: min(100%, 960px);
+  aspect-ratio: var(--vd-slide-ratio, 16 / 9);
+  border-radius: var(--vd-radius);
+  box-shadow: var(--vd-shadow-lg);
+  overflow: hidden;
+  /* Percent-based children need a containing block with a known size. */
+  container-type: size;
+}
+
+.vd-slide--thumb {
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+/* ── elements ───────────────────────────────────────────────────────────── */
+.vd-el {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+}
+
+/* Text scales with the slide rather than the viewport, so a thumbnail is a true miniature.
+   cqw = 1% of the slide's width, which is exactly the unit the stored geometry is in. */
+.vd-el--text { line-height: 1.25; }
+
+.vd-el--text > * { margin: 0; width: 100%; }
+
+.vd-el img,
+.vd-el video { width: 100%; height: 100%; object-fit: contain; }
+
+.vd-el--shape { border-radius: inherit; }
+
+.vd-el[data-selected="true"] {
+  outline: 2px solid var(--vd-primary);
+  outline-offset: 2px;
+}
+
+/* Editing handles. Only the move affordance is offered: resize by drag over a circuit is laggy
+   enough to feel broken, so size is edited numerically in the inspector instead. */
+.vd-el[data-editable="true"] { cursor: move; }
+
+/* ── inspector ──────────────────────────────────────────────────────────── */
+.vd-inspector {
+  flex: 0 0 268px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--vd-surface);
+  border-inline-start: 1px solid var(--vd-line);
+}
+
+.vd-inspector__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--vd-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--vd-3);
+}
+
+.vd-inspector__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--vd-2);
+}
+
+/* ── notes ──────────────────────────────────────────────────────────────── */
+.vd-notes {
+  flex: 0 0 auto;
+  border-block-start: 1px solid var(--vd-line);
+  background: var(--vd-surface);
+  padding: var(--vd-2) var(--vd-3);
+}
+
+.vd-notes__input {
+  width: 100%;
+  min-height: 44px;
+  max-height: 140px;
+  border: 0;
+  background: transparent;
+  resize: vertical;
+  font-size: var(--vd-text-sm);
+  color: var(--vd-ink);
+  field-sizing: content;
+}
+
+.vd-notes__input:focus { outline: none; }
+
+/* ── presentation mode ──────────────────────────────────────────────────── */
+.vd-present {
+  position: fixed;
+  inset: 0;
+  z-index: var(--vd-z-modal);
+  display: grid;
+  place-items: center;
+  background: #000;
+}
+
+.vd-present .vd-slide {
+  width: min(100vw, calc(100dvh * var(--vd-slide-ratio-num, 1.7778)));
+  box-shadow: none;
+  border-radius: 0;
+}
+
+.vd-present__bar {
+  position: fixed;
+  inset-block-end: 0;
+  inset-inline: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--vd-3);
+  padding: var(--vd-2) var(--vd-4);
+  background: rgb(0 0 0 / 0.62);
+  color: #fff;
+  opacity: 0;
+  transition: opacity var(--vd-mid) var(--vd-ease);
+}
+
+/* The control bar stays out of the way until the presenter reaches for it. */
+.vd-present:hover .vd-present__bar,
+.vd-present__bar:focus-within { opacity: 1; }
+
+.vd-present__count {
+  font-family: var(--vd-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── presenter view ─────────────────────────────────────────────────────── */
+.vd-presenter {
+  position: fixed;
+  inset: 0;
+  z-index: var(--vd-z-modal);
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: var(--vd-4);
+  padding: var(--vd-4);
+  background: #0b0d0f;
+  color: #e8ebed;
+}
+
+.vd-presenter__current { grid-column: 1; grid-row: 1; display: grid; place-items: center; min-height: 0; }
+.vd-presenter__side { grid-column: 2; grid-row: 1; display: flex; flex-direction: column; gap: var(--vd-3); min-height: 0; }
+
+.vd-presenter__next {
+  flex: 0 0 auto;
+}
+
+.vd-presenter__next .vd-slide { box-shadow: none; border: 1px solid rgb(255 255 255 / 0.14); }
+
+.vd-presenter__notes {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--vd-3);
+  border: 1px solid rgb(255 255 255 / 0.14);
+  border-radius: var(--vd-radius);
+  background: rgb(255 255 255 / 0.04);
+  font-size: var(--vd-text-md);
+  line-height: 1.65;
+  white-space: pre-wrap;
+}
+
+.vd-presenter__bar {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  display: flex;
+  align-items: center;
+  gap: var(--vd-3);
+}
+
+.vd-presenter__timer {
+  font-family: var(--vd-font-mono);
+  font-size: var(--vd-text-lg);
+  font-variant-numeric: tabular-nums;
+}
+
+.vd-presenter__label {
+  font-family: var(--vd-font-mono);
+  font-size: var(--vd-text-xs);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: rgb(232 235 237 / 0.55);
+  margin-block-end: var(--vd-1);
+}
+
+/* ── animations ─────────────────────────────────────────────────────────────
+   Applied on slide entry. Kept to transforms and opacity only: those are the two properties a
+   browser can animate without laying out again, which is what keeps a deck smooth on a projector. */
+@keyframes vd-el-fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes vd-el-fadeInUp { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }
+@keyframes vd-el-slideInLeft { from { opacity: 0; transform: translateX(-32px); } to { opacity: 1; transform: none; } }
+@keyframes vd-el-slideInRight { from { opacity: 0; transform: translateX(32px); } to { opacity: 1; transform: none; } }
+@keyframes vd-el-zoomIn { from { opacity: 0; transform: scale(0.86); } to { opacity: 1; transform: none; } }
+@keyframes vd-el-bounceIn {
+  0% { opacity: 0; transform: scale(0.7); }
+  60% { opacity: 1; transform: scale(1.06); }
+  100% { transform: none; }
+}
+
+.vd-el[data-anim] { animation-fill-mode: both; animation-timing-function: var(--vd-ease); }
+
+.vd-el[data-anim="fadeIn"] { animation-name: vd-el-fadeIn; }
+.vd-el[data-anim="fadeInUp"] { animation-name: vd-el-fadeInUp; }
+.vd-el[data-anim="slideInLeft"] { animation-name: vd-el-slideInLeft; }
+.vd-el[data-anim="slideInRight"] { animation-name: vd-el-slideInRight; }
+.vd-el[data-anim="zoomIn"] { animation-name: vd-el-zoomIn; }
+.vd-el[data-anim="bounceIn"] { animation-name: vd-el-bounceIn; }
+
+/* Slide transitions, keyed so a re-render restarts them. */
+@keyframes vd-slide-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes vd-slide-slideLeft { from { transform: translateX(6%); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes vd-slide-slideUp { from { transform: translateY(6%); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes vd-slide-zoom { from { transform: scale(0.96); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes vd-slide-flip { from { transform: perspective(1200px) rotateY(9deg); opacity: 0; } to { transform: none; opacity: 1; } }
+
+.vd-slide[data-transition="fade"] { animation: vd-slide-fade var(--vd-slide-ms, 400ms) var(--vd-ease) both; }
+.vd-slide[data-transition="slideLeft"] { animation: vd-slide-slideLeft var(--vd-slide-ms, 400ms) var(--vd-ease) both; }
+.vd-slide[data-transition="slideUp"] { animation: vd-slide-slideUp var(--vd-slide-ms, 400ms) var(--vd-ease) both; }
+.vd-slide[data-transition="zoom"] { animation: vd-slide-zoom var(--vd-slide-ms, 400ms) var(--vd-ease) both; }
+.vd-slide[data-transition="flip"] { animation: vd-slide-flip var(--vd-slide-ms, 400ms) var(--vd-ease) both; }
+
+/* Thumbnails never animate — a rail of twenty replaying entrances is noise, not information. */
+.vd-slide--thumb,
+.vd-slide--thumb .vd-el { animation: none !important; }
+
+@media (max-width: 1100px) {
+  .vd-inspector { display: none; }
+}
+
+@media (max-width: 800px) {
+  .vd-rail { flex-basis: 108px; }
+  .vd-presenter { grid-template-columns: 1fr; grid-template-rows: auto auto 1fr auto; }
+  .vd-presenter__current { grid-column: 1; grid-row: 1; }
+  .vd-presenter__side { grid-column: 1; grid-row: 2 / 4; }
+}

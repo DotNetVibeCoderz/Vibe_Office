@@ -1,0 +1,52 @@
+@page "/account/two-factor"
+@layout VibeDesk.Web.Components.Layout.AuthLayout
+@attribute [AllowAnonymous]
+@attribute [ExcludeFromInteractiveRouting]
+
+<h2 class="vd-auth__title">Two-step verification</h2>
+<p class="vd-auth__sub">Enter the 6-digit code from your authenticator app.</p>
+
+@if (!string.IsNullOrEmpty(Error))
+{
+    <p class="vd-auth__error" role="alert">
+        <Icon Name="warning" Size="15" /> @Error
+    </p>
+}
+
+<form method="post" action="/account/login-2fa" class="vd-auth__form">
+    <AntiforgeryToken />
+    <input type="hidden" name="returnUrl" value="@ReturnUrl" />
+    <input type="hidden" name="rememberMe" value="@(RememberMe?.ToString() ?? "false")" />
+
+    <div class="vd-field">
+        <label for="code">Code</label>
+        @*
+            inputmode numeric brings up the digit keypad on mobile; autocomplete one-time-code lets
+            iOS and Android offer the code from the notification.
+        *@
+        <input id="code" name="code" type="text" class="vd-input vd-mono"
+               inputmode="numeric" autocomplete="one-time-code"
+               required autofocus placeholder="123 456"
+               style="letter-spacing:.18em;font-size:var(--vd-text-lg);text-align:center" />
+        <span class="vd-hint">Lost your device? Enter a recovery code instead.</span>
+    </div>
+
+    <label class="vd-auth__check">
+        <input type="checkbox" name="rememberMachine" value="true" />
+        <span>Don't ask again on this device</span>
+    </label>
+
+    <button type="submit" class="vd-btn vd-btn--primary vd-btn--lg" style="width:100%">
+        Verify
+    </button>
+</form>
+
+<p class="vd-auth__alt">
+    <a href="/account/login">Use a different account</a>
+</p>
+
+@code {
+    [SupplyParameterFromQuery] private string? Error { get; set; }
+    [SupplyParameterFromQuery] private string? ReturnUrl { get; set; }
+    [SupplyParameterFromQuery] private bool? RememberMe { get; set; }
+}

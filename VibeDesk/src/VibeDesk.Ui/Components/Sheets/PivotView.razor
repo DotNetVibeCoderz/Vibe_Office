@@ -1,0 +1,108 @@
+@*
+    Pivot table. Aggregation happens in FormulaEngine.BuildPivot so the same numbers serve the grid,
+    the REST API and the assistant's answers; this component only lays them out.
+*@
+<div class="vd-scroll-x">
+    @if (Result.RowKeys.Count == 0 || Result.ValueLabels.Count == 0)
+    {
+        <p class="vd-hint" style="padding:var(--vd-3)">
+            Set a source range with a header row, then pick fields to group by and values to summarise.
+        </p>
+    }
+    else
+    {
+        <table class="vd-pivot">
+            <thead>
+                <tr>
+                    <th scope="col">@RowHeader</th>
+                    @foreach (var column in Result.ColumnKeys)
+                    {
+                        @foreach (var label in Result.ValueLabels)
+                        {
+                            <th scope="col">
+                                @if (!string.IsNullOrEmpty(column))
+                                {
+                                    <span>@column</span>
+                                    @if (Result.ValueLabels.Count > 1)
+                                    {
+                                        <span class="vd-pivot__sub"> · @label</span>
+                                    }
+                                }
+                                else
+                                {
+                                    @label
+                                }
+                            </th>
+                        }
+                    }
+                    @if (Result.ColumnKeys.Count > 1)
+                    {
+                        <th scope="col">Total</th>
+                    }
+                </tr>
+            </thead>
+
+            <tbody>
+                @foreach (var rowKey in Result.RowKeys)
+                {
+                    <tr>
+                        <th scope="row">@(string.IsNullOrEmpty(rowKey) ? "All" : rowKey)</th>
+                        @foreach (var column in Result.ColumnKeys)
+                        {
+                            @foreach (var label in Result.ValueLabels)
+                            {
+                                <td>@Num(Result.Get(rowKey, column, label))</td>
+                            }
+                        }
+                        @if (Result.ColumnKeys.Count > 1)
+                        {
+                            <td>@Num(RowTotal(rowKey))</td>
+                        }
+                    </tr>
+                }
+            </tbody>
+
+            @if (Result.RowKeys.Count > 1)
+            {
+                <tfoot>
+                    <tr>
+                        <th scope="row">Total</th>
+                        @foreach (var column in Result.ColumnKeys)
+                        {
+                            @foreach (var label in Result.ValueLabels)
+                            {
+                                <td>@Num(ColumnTotal(column, label))</td>
+                            }
+                        }
+                        @if (Result.ColumnKeys.Count > 1)
+                        {
+                            <td>@Num(GrandTotal())</td>
+                        }
+                    </tr>
+                </tfoot>
+            }
+        </table>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public PivotResult Result { get; set; } = default!;
+
+    /// <summary>Names the grouping dimension so the corner cell isn't blank.</summary>
+    [Parameter] public string RowHeader { get; set; } = "Group";
+
+    private static string Num(double value) =>
+        value == 0 ? "—" : value.ToString("#,##0.##", System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// Totals are summed from the computed cells rather than recomputed from source, so a row total can
+    /// never disagree with the cells above it.
+    /// </summary>
+    private double RowTotal(string rowKey) =>
+        Result.Cells.Where(c => c.RowKey == rowKey).Sum(c => c.Value);
+
+    private double ColumnTotal(string columnKey, string valueLabel) =>
+        Result.Cells.Where(c => c.ColumnKey == columnKey && c.ValueLabel == valueLabel).Sum(c => c.Value);
+
+    private double GrandTotal() => Result.Cells.Sum(c => c.Value);
+}

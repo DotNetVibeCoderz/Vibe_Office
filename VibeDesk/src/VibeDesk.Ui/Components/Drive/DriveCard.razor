@@ -1,0 +1,88 @@
+@*
+    Grid card. The whole card is the link, with the action menu layered on top — so a click anywhere
+    opens the item, which is what people expect from a file grid.
+*@
+<article class="vd-filecard @(Item.IsTrashed ? "trashed" : "")">
+    <a class="vd-filecard__link"
+       href="@(Mode == DriveMode.Trash ? null : Route)"
+       aria-label="@Item.Name">
+
+        <div class="vd-filecard__thumb" style="--vd-file-hue:@ColorFor(Item.Type)">
+            <Icon Name="@Item.Icon" Size="26" />
+            @if (Item.IsStarred)
+            {
+                <span class="vd-filecard__star" title="Starred">
+                    <Icon Name="star" Size="13" />
+                </span>
+            }
+        </div>
+
+        <div class="vd-filecard__body">
+            <h3 class="vd-filecard__name" title="@Item.Name">@Item.Name</h3>
+            <p class="vd-filecard__meta">
+                @if (Item.Type == DriveItemType.Folder)
+                {
+                    <span>Folder</span>
+                }
+                else if (Item.SizeBytes > 0)
+                {
+                    <span class="vd-mono">@SideNav.Format(Item.SizeBytes)</span>
+                }
+                else
+                {
+                    <span>@TypeLabel(Item.Type)</span>
+                }
+                <span aria-hidden="true">·</span>
+                <span>@NotificationBell.Relative(Item.UpdatedAt)</span>
+            </p>
+        </div>
+    </a>
+
+    <div class="vd-filecard__badges">
+        @if (Item.IsShared)
+        {
+            <span class="vd-badge vd-badge--info" title="Shared">
+                <Icon Name="share" Size="10" />
+            </span>
+        }
+        @if (Item.CommentCount > 0)
+        {
+            <span class="vd-badge vd-badge--gold" title="@Item.CommentCount open comments">
+                <Icon Name="comment" Size="10" /> @Item.CommentCount
+            </span>
+        }
+    </div>
+
+    <div class="vd-filecard__actions">
+        <DriveItemMenu Item="Item" Mode="Mode" OnChanged="OnChanged" OnShare="OnShare" />
+    </div>
+</article>
+
+@code {
+    [Parameter, EditorRequired] public DriveItemDto Item { get; set; } = default!;
+    [Parameter] public DriveMode Mode { get; set; } = DriveMode.Folder;
+    [Parameter] public EventCallback OnChanged { get; set; }
+    [Parameter] public EventCallback OnShare { get; set; }
+
+    private string Route => Item.Type == DriveItemType.Folder
+        ? $"/drive/{Item.Id}"
+        : Item.OpenRoute;
+
+    internal static string ColorFor(DriveItemType type) => type switch
+    {
+        DriveItemType.Document => "var(--vd-app-docs)",
+        DriveItemType.Spreadsheet => "var(--vd-app-sheets)",
+        DriveItemType.Presentation => "var(--vd-app-slides)",
+        DriveItemType.Folder => "var(--vd-app-drive)",
+        _ => "var(--vd-ink-3)",
+    };
+
+    internal static string TypeLabel(DriveItemType type) => type switch
+    {
+        DriveItemType.Document => "Document",
+        DriveItemType.Spreadsheet => "Spreadsheet",
+        DriveItemType.Presentation => "Presentation",
+        DriveItemType.Folder => "Folder",
+        _ => "File",
+    };
+}

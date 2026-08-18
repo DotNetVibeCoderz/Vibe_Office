@@ -1,0 +1,213 @@
+@*
+    Renders one slide.
+
+    The same component draws the editor stage, the thumbnail rail and the full-screen presentation.
+    That is possible because element geometry is stored in percent and text is sized in `cqw`
+    (1% of the slide's width) — so a 140px thumbnail is a true miniature of the 960px stage without
+    any per-zoom recalculation.
+*@
+<div class="vd-slide @(Thumbnail ? "vd-slide--thumb" : "")"
+     style="@SlideStyle"
+     data-transition="@(Animate ? Slide.Transition : null)"
+     @key="Slide.Id">
+
+    @foreach (var element in Ordered)
+    {
+        var el = element;
+        <div class="vd-el vd-el--@el.Type"
+             style="@ElementStyle(el)"
+             data-anim="@(Animate && el.Animation is not null ? el.Animation.Type : null)"
+             data-selected="@((SelectedElementId == el.Id).ToString().ToLowerInvariant())"
+             data-editable="@Editable.ToString().ToLowerInvariant()"
+             @onclick="() => OnElementClick.InvokeAsync(el.Id)"
+             @onclick:stopPropagation="Editable">
+
+            @switch (el.Type)
+            {
+                case "text":
+                    @((MarkupString)(el.Text ?? string.Empty))
+                    break;
+
+                case "image":
+                    @if (!string.IsNullOrEmpty(el.Src))
+                    {
+                        <img src="@el.Src" alt="@(el.Alt ?? string.Empty)" />
+                    }
+                    break;
+
+                case "video":
+                    @if (!string.IsNullOrEmpty(el.Src))
+                    {
+                        @* No autoplay: a deck that starts talking the moment a slide appears is a
+                           hazard in a room, so playback stays under the presenter's control. *@
+                        <video src="@el.Src" controls preload="metadata"></video>
+                    }
+                    break;
+
+                case "audio":
+                    @if (!string.IsNullOrEmpty(el.Src))
+                    {
+                        <audio src="@el.Src" controls preload="metadata" style="width:100%"></audio>
+                    }
+                    break;
+
+                case "chart":
+                    @if (ChartFor is not null && el.SourceSpreadsheetId is not null)
+                    {
+                        var data = ChartFor(el);
+                        @if (data is not null)
+                        {
+                            <ChartView Data="data" />
+                        }
+                    }
+                    break;
+
+                case "shape":
+                    @* The shape is the box itself; its style carries the geometry. *@
+                    break;
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Slide Slide { get; set; } = default!;
+
+    /// <summary>Deck theme, supplying the background and default text colours.</summary>
+    [Parameter] public string Theme { get; set; } = "aurora";
+
+    [Parameter] public double AspectRatio { get; set; } = 16d / 9d;
+
+    /// <summary>Suppresses animations and shadows for the thumbnail rail.</summary>
+    [Parameter] public bool Thumbnail { get; set; }
+
+    /// <summary>Plays entry animations and the slide transition.</summary>
+    [Parameter] public bool Animate { get; set; }
+
+    [Parameter] public bool Editable { get; set; }
+    [Parameter] public string? SelectedElementId { get; set; }
+    [Parameter] public EventCallback<string> OnElementClick { get; set; }
+
+    /// <summary>
+    /// Resolves a live chart from a linked spreadsheet. Supplied by the page rather than looked up
+    /// here, so this component stays free of services and can render in any host.
+    /// </summary>
+    [Parameter] public Func<SlideElement, ChartData?>? ChartFor { get; set; }
+
+    private SlideThemes.Theme ThemeDef => SlideThemes.Get(Theme);
+
+    /// <summary>Painter's order: lowest Z first, so a later element sits on top.</summary>
+    private IEnumerable<SlideElement> Ordered => Slide.Elements.OrderBy(e => e.Z);
+
+    private static string N(double value) =>
+        value.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
+
+    private string SlideStyle
+    {
+        get
+        {
+            var background = !string.IsNullOrWhiteSpace(Slide.Background)
+                ? Slide.Background!
+                : ThemeDef.Background;
+
+            var parts = new List<string>
+            {
+                $"background:{background}",
+                $"color:{ThemeDef.BodyColor}",
+                $"font-family:{ThemeDef.FontFamily},var(--vd-font-ui)",
+                $"--vd-slide-ratio:{N(AspectRatio)}",
+                $"--vd-slide-ratio-num:{N(AspectRatio)}",
+            };
+
+            if (Animate) parts.Add($"--vd-slide-ms:{Slide.TransitionMs}ms");
+
+            return string.Join(';', parts);
+        }
+    }
+
+    private string ElementStyle(SlideElement el)
+    {
+        var style = el.Style;
+
+        var parts = new List<string>
+        {
+            $"left:{N(el.X)}%",
+            $"top:{N(el.Y)}%",
+            $"width:{N(el.W)}%",
+            $"height:{N(el.H)}%",
+            $"z-index:{el.Z}",
+        };
+
+        if (Math.Abs(el.Rotation) > 0.01) parts.Add($"rotate:{N(el.Rotation)}deg");
+
+        // Font size is expressed in container-query width units so text scales with the slide.
+        // The stored number is treated as a size at the 960px reference width.
+        var fontSize = style.FontSize ?? DefaultFontSize(el);
+        parts.Add($"font-size:{N(fontSize / 9.6)}cqw");
+
+        parts.Add($"color:{style.Color ?? DefaultColor(el)}");
+
+        if (!string.IsNullOrEmpty(style.Background)) parts.Add($"background:{style.Background}");
+        if (!string.IsNullOrEmpty(style.FontFamily)) parts.Add($"font-family:{style.FontFamily}");
+        if (style.Bold) parts.Add("font-weight:680");
+        if (style.Italic) parts.Add("font-style:italic");
+
+        var align = style.Align ?? "left";
+        parts.Add($"text-align:{align}");
+        parts.Add($"justify-content:{align switch { "center" => "center", "right" => "flex-end", _ => "flex-start" }}");
+
+        if (style.BorderRadius is > 0) parts.Add($"border-radius:{N(style.BorderRadius.Value)}px");
+        if (!string.IsNullOrEmpty(style.Border)) parts.Add($"border:{style.Border}");
+        if (style.Opacity is > 0 and < 1) parts.Add($"opacity:{N(style.Opacity.Value)}");
+        if (!string.IsNullOrEmpty(style.Shadow)) parts.Add($"box-shadow:{style.Shadow}");
+
+        if (el.Type == "shape") parts.Add(ShapeStyle(style.Shape));
+
+        if (Animate && el.Animation is { } animation)
+        {
+            parts.Add($"animation-duration:{animation.DurationMs}ms");
+            // Order sequences the entrance; delay offsets within that step.
+            var delay = animation.DelayMs + animation.Order * 220;
+            parts.Add($"animation-delay:{delay}ms");
+        }
+
+        return string.Join(';', parts.Where(p => p.Length > 0));
+    }
+
+    /// <summary>Non-rectangular shapes are cut with clip-path rather than SVG, so styling still applies.</summary>
+    private static string ShapeStyle(string? shape) => shape switch
+    {
+        "ellipse" => "border-radius:50%",
+        "triangle" => "clip-path:polygon(50% 0,100% 100%,0 100%)",
+        "arrow" => "clip-path:polygon(0 30%,62% 30%,62% 0,100% 50%,62% 100%,62% 70%,0 70%)",
+        "line" => "clip-path:polygon(0 46%,100% 46%,100% 54%,0 54%)",
+        _ => string.Empty,
+    };
+
+    /// <summary>
+    /// Titles default larger than body text so a deck built without touching the inspector still has
+    /// a hierarchy.
+    /// </summary>
+    private double DefaultFontSize(SlideElement el)
+    {
+        if (el.Type != "text") return 24;
+
+        var text = el.Text ?? string.Empty;
+        if (text.Contains("<h1", StringComparison.OrdinalIgnoreCase)) return 56;
+        if (text.Contains("<h2", StringComparison.OrdinalIgnoreCase)) return 38;
+        if (text.Contains("<h3", StringComparison.OrdinalIgnoreCase)) return 28;
+
+        return 22;
+    }
+
+    private string DefaultColor(SlideElement el)
+    {
+        if (el.Type != "text") return ThemeDef.BodyColor;
+
+        var text = el.Text ?? string.Empty;
+        var isHeading = text.Contains("<h1", StringComparison.OrdinalIgnoreCase)
+                        || text.Contains("<h2", StringComparison.OrdinalIgnoreCase);
+
+        return isHeading ? ThemeDef.TitleColor : ThemeDef.BodyColor;
+    }
+}

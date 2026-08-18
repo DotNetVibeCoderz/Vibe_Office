@@ -1,0 +1,477 @@
+@*
+    The cell grid.
+
+    Rows are virtualised: a 200×26 sheet is 5,200 cells, and rendering every one over a SignalR
+    circuit would make each keystroke re-diff the whole grid. Virtualize keeps the live DOM to the
+    visible window, which is what makes typing feel local.
+*@
+@inject IJSRuntime Js
+
+<div class="vd-grid" @ref="_scroller" tabindex="0"
+     @onkeydown="OnKeyDown" @onkeydown:preventDefault="_preventDefaultKey">
+
+    <div class="vd-grid__head" style="grid-template-columns:@ColumnTemplate">
+        <div class="vd-grid__corner" aria-hidden="true"></div>
+        @for (var c = 0; c < ColCount; c++)
+        {
+            var col = c;
+            <div class="vd-grid__colhead"
+                 data-active="@(Selection.Range.Start.Col <= col && col <= Selection.Range.End.Col)"
+                 data-freeze-col="@(Sheet.FrozenCols > 0 && col == Sheet.FrozenCols - 1)"
+                 @onclick="() => SelectColumn(col)"
+                 title="Column @CellAddress.ColumnName(col)">
+                @CellAddress.ColumnName(col)
+            </div>
+        }
+    </div>
+
+    <Virtualize Items="_rowIndices" ItemSize="26" OverscanCount="6" Context="row">
+        <div class="vd-grid__row" style="grid-template-columns:@ColumnTemplate">
+            <div class="vd-grid__rowhead"
+                 data-active="@(Selection.Range.Start.Row <= row && row <= Selection.Range.End.Row)"
+                 data-freeze-row="@(Sheet.FrozenRows > 0 && row == Sheet.FrozenRows - 1)"
+                 @onclick="() => SelectRow(row)"
+                 title="Row @(row + 1)">
+                @(row + 1)
+            </div>
+
+            @for (var c = 0; c < ColCount; c++)
+            {
+                var col = c;
+                var key = $"{CellAddress.ColumnName(col)}{row + 1}";
+                var cell = Sheet.Cells.GetValueOrDefault(key);
+                var editing = _editing && Selection.IsAnchor(row, col);
+
+                <div class="vd-grid__cell"
+                     style="@StyleFor(cell, key)"
+                     data-active="@Selection.IsAnchor(row, col)"
+                     data-in-range="@(Selection.Contains(row, col) && !Selection.IsAnchor(row, col))"
+                     data-num="@IsNumeric(cell)"
+                     data-error="@IsError(cell)"
+                     data-note="@(!string.IsNullOrEmpty(cell?.N))"
+                     data-freeze-row="@(Sheet.FrozenRows > 0 && row == Sheet.FrozenRows - 1)"
+                     data-freeze-col="@(Sheet.FrozenCols > 0 && col == Sheet.FrozenCols - 1)"
+                     title="@cell?.N"
+                     @onclick="e => OnCellClick(row, col, e)"
+                     @ondblclick="() => BeginEdit(row, col)">
+
+                    @if (editing)
+                    {
+                        <input class="vd-grid__editor"
+                               @ref="_editor"
+                               value="@_draft"
+                               @oninput="e => _draft = e.Value?.ToString() ?? string.Empty"
+                               @onkeydown="OnEditorKeyDown"
+                               @onblur="CommitEdit" />
+                    }
+                    else
+                    {
+                        @Display(cell)
+                    }
+                </div>
+            }
+        </div>
+    </Virtualize>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public SheetTab Sheet { get; set; } = default!;
+    [Parameter, EditorRequired] public SpreadsheetModel Model { get; set; } = default!;
+
+    [Parameter] public SheetSelection Selection { get; set; }
+    [Parameter] public EventCallback<SheetSelection> SelectionChanged { get; set; }
+
+    /// <summary>Style overrides produced by conditional formatting, keyed by A1.</summary>
+    [Parameter] public IReadOnlyDictionary<string, CellStyle>? ConditionalStyles { get; set; }
+
+    [Parameter] public bool ReadOnly { get; set; }
+
+    /// <summary>Raised with the A1 key and the raw text the user committed.</summary>
+    [Parameter] public EventCallback<(string Key, string Raw)> OnCommit { get; set; }
+
+    private ElementReference _scroller;
+    private ElementReference _editor;
+
+    private bool _editing;
+    private string _draft = string.Empty;
+
+    /// <summary>Set only for the keys we handle, so browser shortcuts keep working otherwise.</summary>
+    private bool _preventDefaultKey;
+
+    private List<int> _rowIndices = [];
+    private int _renderedRowCount = -1;
+
+    /// <summary>Focus the freshly rendered editor rather than leaving the caret in the grid.</summary>
+    private bool _focusEditor;
+
+    private int RowCount => Math.Max(Sheet.RowCount, 50);
+    private int ColCount => Math.Max(Sheet.ColCount, 12);
+
+    protected override void OnParametersSet()
+    {
+        // Rebuild only when the row count actually changed: this list feeds Virtualize, and handing it
+        // a new instance every render would reset its scroll position.
+        if (_renderedRowCount != RowCount)
+        {
+            _rowIndices = [.. Enumerable.Range(0, RowCount)];
+            _renderedRowCount = RowCount;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focusEditor)
+        {
+            _focusEditor = false;
+            try
+            {
+                await Js.InvokeVoidAsync("vibedesk.focus", _editor);
+                await Js.InvokeVoidAsync("vibedesk.selectAll", _editor);
+            }
+            catch (JSException)
+            {
+                // The editor was dismissed before the focus call landed.
+            }
+        }
+    }
+
+    /// <summary>Gutter width plus each column's width, as a CSS grid template.</summary>
+    private string ColumnTemplate
+    {
+        get
+        {
+            var parts = new List<string>(ColCount + 1) { "var(--vd-gutter-w)" };
+
+            for (var c = 0; c < ColCount; c++)
+            {
+                var name = CellAddress.ColumnName(c);
+                var width = Sheet.ColWidths.TryGetValue(name, out var w) && w > 20 ? w : 96;
+                parts.Add($"{width.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}px");
+            }
+
+            return string.Join(' ', parts);
+        }
+    }
+
+    // ── display ─────────────────────────────────────────────────────────────
+
+    private string Display(Cell? cell)
+    {
+        if (cell is null) return string.Empty;
+
+        // V holds the cached result for formula cells and the literal otherwise, so the grid never
+        // has to evaluate anything itself.
+        var raw = cell.V ?? string.Empty;
+        if (raw.Length == 0) return string.Empty;
+
+        return string.IsNullOrEmpty(cell.Fmt) ? raw : FormatNumber(raw, cell.Fmt);
+    }
+
+    /// <summary>
+    /// Applies an Excel-style number format. Falls back to the raw text when the value is not numeric,
+    /// so a format left on a text cell shows the text rather than an error.
+    /// </summary>
+    private static string FormatNumber(string raw, string format)
+    {
+        if (!double.TryParse(raw, System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out var value))
+        {
+            return raw;
+        }
+
+        try
+        {
+            if (format.Contains('%'))
+            {
+                var decimals = DecimalsIn(format);
+                return value.ToString($"P{decimals}", System.Globalization.CultureInfo.InvariantCulture);
+            }
+
+            return value.ToString(format, System.Globalization.CultureInfo.InvariantCulture);
+        }
+        catch (FormatException)
+        {
+            return raw;
+        }
+    }
+
+    private static int DecimalsIn(string format)
+    {
+        var dot = format.IndexOf('.');
+        if (dot < 0) return 0;
+
+        var count = 0;
+        for (var i = dot + 1; i < format.Length && (format[i] == '0' || format[i] == '#'); i++) count++;
+        return count;
+    }
+
+    private static bool IsNumeric(Cell? cell)
+    {
+        if (string.IsNullOrEmpty(cell?.V)) return false;
+        if (FormulaValue.ParseErrorText(cell.V) != FormulaError.None) return false;
+
+        return double.TryParse(cell.V, System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture, out _);
+    }
+
+    private static bool IsError(Cell? cell) =>
+        cell?.V is { Length: > 0 } v && FormulaValue.ParseErrorText(v) != FormulaError.None;
+
+    /// <summary>
+    /// Merges the cell's own style with any conditional-format override. The conditional rule wins,
+    /// which is the whole point of it.
+    /// </summary>
+    private string StyleFor(Cell? cell, string key)
+    {
+        CellStyle? baseStyle = null;
+        if (cell?.S is { Length: > 0 } styleKey)
+        {
+            Model.Styles.TryGetValue(styleKey, out baseStyle);
+        }
+
+        CellStyle? conditional = null;
+        ConditionalStyles?.TryGetValue(key, out conditional);
+
+        if (baseStyle is null && conditional is null) return string.Empty;
+
+        var css = new List<string>(8);
+
+        var bold = (conditional?.Bold ?? false) || (baseStyle?.Bold ?? false);
+        var italic = (conditional?.Italic ?? false) || (baseStyle?.Italic ?? false);
+        var underline = (conditional?.Underline ?? false) || (baseStyle?.Underline ?? false);
+        var strike = (conditional?.Strike ?? false) || (baseStyle?.Strike ?? false);
+
+        if (bold) css.Add("font-weight:650");
+        if (italic) css.Add("font-style:italic");
+
+        if (underline || strike)
+        {
+            var decorations = new List<string>(2);
+            if (underline) decorations.Add("underline");
+            if (strike) decorations.Add("line-through");
+            css.Add($"text-decoration:{string.Join(' ', decorations)}");
+        }
+
+        var color = conditional?.Color ?? baseStyle?.Color;
+        var background = conditional?.Background ?? baseStyle?.Background;
+
+        if (!string.IsNullOrEmpty(background)) css.Add($"background:{background}");
+
+        if (!string.IsNullOrEmpty(color))
+        {
+            css.Add($"color:{color}");
+        }
+        else if (!string.IsNullOrEmpty(background))
+        {
+            // A stored background is a fixed colour, but the default text colour is a theme token.
+            // In dark mode that pairs near-white text with a light fill and the value disappears, so
+            // derive the ink from the fill's luminance instead of inheriting.
+            var ink = ContrastInk(background);
+            if (ink is not null) css.Add($"color:{ink}");
+        }
+
+        var align = conditional?.Align ?? baseStyle?.Align;
+        if (!string.IsNullOrEmpty(align)) css.Add($"text-align:{align}");
+
+        var family = baseStyle?.FontFamily;
+        if (!string.IsNullOrEmpty(family)) css.Add($"font-family:{family}");
+
+        var size = baseStyle?.FontSize;
+        if (size is > 0) css.Add($"font-size:{size.Value.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)}px");
+
+        if (baseStyle?.Wrap == true) css.Add("white-space:normal");
+
+        return string.Join(';', css);
+    }
+
+
+    /// <summary>
+    /// Picks black or white text for a fixed background, using WCAG relative luminance. Returns null
+    /// when the colour cannot be parsed, so the cell falls back to the inherited theme ink.
+    /// </summary>
+    private static string? ContrastInk(string background)
+    {
+        var hex = background.Trim();
+        if (!hex.StartsWith('#')) return null;
+
+        hex = hex[1..];
+        if (hex.Length == 3) hex = string.Concat(hex.Select(c => new string(c, 2)));
+        if (hex.Length is not (6 or 8)) return null;
+
+        if (!int.TryParse(hex[..2], System.Globalization.NumberStyles.HexNumber, null, out var r)) return null;
+        if (!int.TryParse(hex[2..4], System.Globalization.NumberStyles.HexNumber, null, out var g)) return null;
+        if (!int.TryParse(hex[4..6], System.Globalization.NumberStyles.HexNumber, null, out var b)) return null;
+
+        var luminance = 0.2126 * Linear(r) + 0.7152 * Linear(g) + 0.0722 * Linear(b);
+
+        // 0.36 rather than 0.5: black-on-mid-tone stays readable further up the range than
+        // white-on-mid-tone does.
+        return luminance > 0.36 ? "#16191c" : "#f4f6f7";
+
+        static double Linear(int channel)
+        {
+            var v = channel / 255.0;
+            return v <= 0.04045 ? v / 12.92 : Math.Pow((v + 0.055) / 1.055, 2.4);
+        }
+    }
+
+    // ── selection ───────────────────────────────────────────────────────────
+
+    private async Task OnCellClick(int row, int col, MouseEventArgs e)
+    {
+        // Committing first means clicking away from an in-progress edit keeps the typed value, which
+        // is what every spreadsheet does.
+        if (_editing) await CommitEdit();
+
+        var next = e.ShiftKey
+            ? Selection.ExtendTo(row, col)
+            : SheetSelection.At(row, col);
+
+        await SelectionChanged.InvokeAsync(next);
+    }
+
+    private async Task SelectColumn(int col)
+    {
+        if (_editing) await CommitEdit();
+
+        await SelectionChanged.InvokeAsync(new SheetSelection(
+            new CellAddress(0, col),
+            new CellAddress(RowCount - 1, col)));
+    }
+
+    private async Task SelectRow(int row)
+    {
+        if (_editing) await CommitEdit();
+
+        await SelectionChanged.InvokeAsync(new SheetSelection(
+            new CellAddress(row, 0),
+            new CellAddress(row, ColCount - 1)));
+    }
+
+    // ── editing ─────────────────────────────────────────────────────────────
+
+    /// <summary>Opens the in-cell editor seeded with the formula if there is one, else the literal.</summary>
+    private void BeginEdit(int row, int col, string? seed = null)
+    {
+        if (ReadOnly) return;
+
+        var key = new CellAddress(row, col).ToKey();
+        var cell = Sheet.Cells.GetValueOrDefault(key);
+
+        _draft = seed ?? (!string.IsNullOrEmpty(cell?.F) ? cell.F : cell?.V ?? string.Empty);
+        _editing = true;
+        _focusEditor = true;
+    }
+
+    private async Task CommitEdit()
+    {
+        if (!_editing) return;
+
+        _editing = false;
+        var key = Selection.Anchor.ToKey();
+        await OnCommit.InvokeAsync((key, _draft));
+        _draft = string.Empty;
+    }
+
+    private void CancelEdit()
+    {
+        _editing = false;
+        _draft = string.Empty;
+    }
+
+    private async Task OnEditorKeyDown(KeyboardEventArgs e)
+    {
+        switch (e.Key)
+        {
+            case "Enter":
+                await CommitEdit();
+                await Move(1, 0);
+                break;
+
+            case "Tab":
+                await CommitEdit();
+                await Move(0, e.ShiftKey ? -1 : 1);
+                break;
+
+            case "Escape":
+                CancelEdit();
+                break;
+        }
+    }
+
+    private async Task OnKeyDown(KeyboardEventArgs e)
+    {
+        // The editor has its own handler; don't double-handle while it is open.
+        if (_editing) { _preventDefaultKey = false; return; }
+
+        _preventDefaultKey = true;
+
+        switch (e.Key)
+        {
+            case "ArrowUp": await Move(-1, 0, e.ShiftKey); return;
+            case "ArrowDown": await Move(1, 0, e.ShiftKey); return;
+            case "ArrowLeft": await Move(0, -1, e.ShiftKey); return;
+            case "ArrowRight": await Move(0, 1, e.ShiftKey); return;
+            case "Enter": await Move(1, 0); return;
+            case "Tab": await Move(0, e.ShiftKey ? -1 : 1); return;
+
+            case "Home":
+                await SelectionChanged.InvokeAsync(Selection.MoveTo(Selection.Anchor.Row, 0));
+                return;
+
+            case "PageDown": await Move(20, 0); return;
+            case "PageUp": await Move(-20, 0); return;
+
+            case "F2":
+                BeginEdit(Selection.Anchor.Row, Selection.Anchor.Col);
+                return;
+
+            case "Delete":
+            case "Backspace":
+                await ClearSelection();
+                return;
+        }
+
+        // A printable character starts an edit with that character, replacing the cell — the
+        // type-to-replace behaviour people expect from a grid.
+        if (e.Key.Length == 1 && !e.CtrlKey && !e.AltKey && !e.MetaKey)
+        {
+            BeginEdit(Selection.Anchor.Row, Selection.Anchor.Col, e.Key);
+            return;
+        }
+
+        _preventDefaultKey = false;
+    }
+
+    private async Task Move(int deltaRow, int deltaCol, bool extend = false)
+    {
+        var target = extend ? Selection.Extent : Selection.Anchor;
+
+        var row = Math.Clamp(target.Row + deltaRow, 0, RowCount - 1);
+        var col = Math.Clamp(target.Col + deltaCol, 0, ColCount - 1);
+
+        var next = extend
+            ? Selection.ExtendTo(row, col)
+            : Selection.MoveTo(row, col);
+
+        await SelectionChanged.InvokeAsync(next);
+    }
+
+    /// <summary>Clears every cell in the selection, leaving styles in place.</summary>
+    private async Task ClearSelection()
+    {
+        if (ReadOnly) return;
+
+        foreach (var address in Selection.Range.Cells())
+        {
+            var key = address.ToKey();
+            if (Sheet.Cells.ContainsKey(key))
+            {
+                await OnCommit.InvokeAsync((key, string.Empty));
+            }
+        }
+    }
+
+    /// <summary>Called by the page so the formula bar and the grid stay one editing surface.</summary>
+    public void StartEditFromFormulaBar() => BeginEdit(Selection.Anchor.Row, Selection.Anchor.Col);
+}

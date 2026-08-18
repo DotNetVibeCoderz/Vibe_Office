@@ -1,0 +1,83 @@
+syntax = "proto3";
+
+option csharp_namespace = "VibeDesk.Api.Grpc";
+
+package vibedesk;
+
+import "google/protobuf/timestamp.proto";
+
+// The third transport over the same domain services. gRPC exists here for clients that want strict
+// streaming and a generated contract; the REST surface stays the default.
+service Drive {
+  rpc Query (QueryRequest) returns (QueryReply);
+  rpc Get (ItemRequest) returns (DriveItem);
+
+  // Server streaming: a folder's contents arrive as they are projected rather than as one payload.
+  rpc StreamChildren (ChildrenRequest) returns (stream DriveItem);
+
+  rpc GetContent (ItemRequest) returns (DocumentContent);
+  rpc SaveContent (SaveContentRequest) returns (SaveContentReply);
+}
+
+message QueryRequest {
+  string keyword = 1;
+  string parent_id = 2;   // empty for "anywhere"
+  string type = 3;        // folder | document | spreadsheet | presentation | file; empty for any
+  int32 skip = 4;
+  int32 take = 5;
+  bool recursive = 6;
+}
+
+message QueryReply {
+  repeated DriveItem items = 1;
+  int32 total_count = 2;
+  bool has_more = 3;
+}
+
+message ItemRequest {
+  string id = 1;
+}
+
+message ChildrenRequest {
+  string parent_id = 1;
+  bool recursive = 2;
+}
+
+message DriveItem {
+  string id = 1;
+  string type = 2;
+  string name = 3;
+  string parent_id = 4;
+  string owner_name = 5;
+  int64 size_bytes = 6;
+  bool is_starred = 7;
+  bool is_shared = 8;
+  string my_role = 9;
+  int32 version_number = 10;
+  google.protobuf.Timestamp updated_at = 11;
+  string open_route = 12;
+}
+
+message DocumentContent {
+  string id = 1;
+  string type = 2;
+  string name = 3;
+  string data = 4;        // provider-agnostic JSON, shaped by type
+  int64 revision = 5;
+  string my_role = 6;
+}
+
+message SaveContentRequest {
+  string id = 1;
+  string data = 2;
+  int64 base_revision = 3;   // -1 forces the write
+}
+
+// Mirrors the REST 409 rather than throwing: a stale save is an expected outcome in a collaborative
+// editor, and the client needs the server's copy to rebase on.
+message SaveContentReply {
+  bool accepted = 1;
+  int64 revision = 2;
+  string server_data = 3;
+  string reason = 4;
+}

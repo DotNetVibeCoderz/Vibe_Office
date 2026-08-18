@@ -1,0 +1,214 @@
+@*
+    Primary navigation plus the recent-files list and the storage meter.
+
+    Order encodes how people actually work: the five apps first, then the ways into Drive that cut
+    across them (recent, shared, starred, trash), then recent documents as direct jumps.
+*@
+@implements IDisposable
+@inject IDriveService Drive
+@inject NavigationManager Nav
+@inject UiState Ui
+
+<div class="vd-side__scroll">
+    <nav class="vd-nav" aria-label="Applications">
+        @foreach (var entry in Apps)
+        {
+            <a class="vd-nav__item @(IsActive(entry.Match) ? "active" : "")"
+               href="@entry.Href"
+               title="@entry.Label">
+                <span class="vd-nav__icon" style="color:@entry.Color">
+                    <Icon Name="@entry.Icon" Size="18" />
+                </span>
+                <span class="vd-nav__label">@entry.Label</span>
+            </a>
+        }
+    </nav>
+
+    <div class="vd-side__section vd-label">Drive</div>
+    <nav class="vd-nav" aria-label="Drive views">
+        @foreach (var entry in DriveViews)
+        {
+            <a class="vd-nav__item @(IsActive(entry.Match) ? "active" : "")"
+               href="@entry.Href"
+               title="@entry.Label">
+                <span class="vd-nav__icon"><Icon Name="@entry.Icon" Size="17" /></span>
+                <span class="vd-nav__label">@entry.Label</span>
+            </a>
+        }
+    </nav>
+
+    @if (_recent.Count > 0)
+    {
+        <div class="vd-side__section vd-label">Recent</div>
+        <nav class="vd-nav" aria-label="Recent documents">
+            @foreach (var item in _recent)
+            {
+                <a class="vd-nav__item" href="@item.OpenRoute" title="@item.Name">
+                    <span class="vd-nav__icon" style="color:@ColorFor(item.Type)">
+                        <Icon Name="@item.Icon" Size="16" />
+                    </span>
+                    <span class="vd-nav__label">@item.Name</span>
+                </a>
+            }
+        </nav>
+    }
+</div>
+
+<div class="vd-side__foot">
+    @if (_usage is not null)
+    {
+        <div class="vd-quota">
+            <div class="vd-row" style="justify-content:space-between;margin-bottom:var(--vd-1)">
+                <span class="vd-label">Storage</span>
+                <span class="vd-mono" style="font-size:var(--vd-text-xs);color:var(--vd-ink-3)">
+                    @Format(_usage.UsedBytes) / @Format(_usage.QuotaBytes)
+                </span>
+            </div>
+            <div class="vd-quota__bar"
+                 role="progressbar"
+                 aria-valuenow="@((int)_usage.UsedPercent)"
+                 aria-valuemin="0"
+                 aria-valuemax="100"
+                 aria-label="Storage used">
+                <div class="vd-quota__fill"
+                     data-level="@Level(_usage.UsedPercent)"
+                     style="width:@Percent(_usage.UsedPercent)"></div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private readonly List<DriveItemDto> _recent = [];
+    private StorageUsageDto? _usage;
+
+    private sealed record NavEntry(string Label, string Href, string Icon, string Match, string Color = "inherit");
+
+    private static readonly NavEntry[] Apps =
+    [
+        new("Drive", "/drive", "drive", "/drive", "var(--vd-app-drive)"),
+        new("Docs", "/docs", "description", "/docs", "var(--vd-app-docs)"),
+        new("Sheets", "/sheets", "table", "/sheets", "var(--vd-app-sheets)"),
+        new("Slides", "/slides", "slideshow", "/slides", "var(--vd-app-slides)"),
+        new("Calendar", "/calendar", "calendar", "/calendar", "var(--vd-app-calendar)"),
+        new("Scripts", "/scripts", "code", "/scripts", "var(--vd-app-scripts)"),
+    ];
+
+    private static readonly NavEntry[] DriveViews =
+    [
+        new("Shared with me", "/drive/shared", "users", "/drive/shared"),
+        new("Starred", "/drive/starred", "star", "/drive/starred"),
+        new("Trash", "/drive/trash", "trash", "/drive/trash"),
+    ];
+
+    protected override void OnInitialized()
+    {
+        Nav.LocationChanged += OnLocationChanged;
+        Ui.Changed += OnUiChanged;
+    }
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            var recent = await Drive.QueryAsync(new DriveQuery
+            {
+                Recursive = true,
+                Types = [DriveItemType.Document, DriveItemType.Spreadsheet, DriveItemType.Presentation],
+                SortBy = "updated",
+                Descending = true,
+                Take = 6,
+            });
+
+            _recent.Clear();
+            _recent.AddRange(recent.Items);
+
+            _usage = await Drive.GetUsageAsync();
+        }
+        catch (Exception)
+        {
+            // The sidebar is chrome: if these reads fail the app must still be navigable.
+        }
+    }
+
+    private void OnUiChanged() => InvokeAsync(StateHasChanged);
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e) =>
+        InvokeAsync(async () =>
+        {
+            // Recents and quota both change as the user works, so refresh them on navigation.
+            await LoadAsync();
+            StateHasChanged();
+        });
+
+    private bool IsActive(string match)
+    {
+        var path = "/" + Nav.ToBaseRelativePath(Nav.Uri).Split('?')[0].TrimEnd('/');
+
+        // Exact match for the Drive sub-views, prefix match for the apps, so /sheets/{id} keeps
+        // Sheets highlighted without also lighting up /drive.
+        if (DriveViews.Any(v => v.Match == match)) return path == match;
+
+        if (match == "/drive")
+            return path == "/drive" || (path.StartsWith("/drive/") && !DriveViews.Any(v => v.Match == path));
+
+        return path == match || path.StartsWith(match + "/", StringComparison.Ordinal);
+    }
+
+    private static string ColorFor(DriveItemType type) => type switch
+    {
+        DriveItemType.Document => "var(--vd-app-docs)",
+        DriveItemType.Spreadsheet => "var(--vd-app-sheets)",
+        DriveItemType.Presentation => "var(--vd-app-slides)",
+        DriveItemType.Folder => "var(--vd-app-drive)",
+        _ => "var(--vd-ink-3)",
+    };
+
+    /// <summary>
+    /// CSS lengths must use a dot as the decimal separator regardless of the user's locale, so this
+    /// formats invariantly rather than relying on the current culture.
+    /// </summary>
+    private static string Percent(double value)
+    {
+        // A sliver is always shown so an almost-empty drive still reads as a meter.
+        var clamped = Math.Clamp(value, 1.5, 100);
+        return clamped.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) + "%";
+    }
+
+    private static string Level(double percent) => percent switch
+    {
+        >= 92 => "full",
+        >= 75 => "warn",
+        _ => "ok",
+    };
+
+    /// <summary>Binary units, one decimal only where it adds information.</summary>
+    internal static string Format(long bytes)
+    {
+        if (bytes <= 0) return "0 B";
+
+        string[] units = ["B", "KB", "MB", "GB", "TB"];
+        var order = 0;
+        double size = bytes;
+
+        while (size >= 1024 && order < units.Length - 1)
+        {
+            size /= 1024;
+            order++;
+        }
+
+        var formatted = order == 0 || size >= 100
+            ? size.ToString("0")
+            : size.ToString("0.#");
+
+        return $"{formatted} {units[order]}";
+    }
+
+    public void Dispose()
+    {
+        Nav.LocationChanged -= OnLocationChanged;
+        Ui.Changed -= OnUiChanged;
+    }
+}

@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>VibeDesk.Scripting</RootNamespace>
+  </PropertyGroup>
+
+  <!--
+    Application only. The scripting engine talks to Drive, Sheets and the rest through the same
+    interfaces the UI uses, which is what makes a script's permissions exactly the user's permissions
+    rather than a second, parallel set of rules.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\VibeDesk.Application\VibeDesk.Application.csproj" />
+    <ProjectReference Include="..\VibeDesk.Domain\VibeDesk.Domain.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Jint" />
+    <PackageReference Include="IronPython" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Scripting" />
+    <PackageReference Include="Microsoft.Extensions.Http" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
+  </ItemGroup>
+
+</Project>

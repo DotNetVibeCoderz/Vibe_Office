@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk.Razor">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>VibeDesk.Desktop</RootNamespace>
+    <OutputType>WinExe</OutputType>
+    <AssemblyName>VibeDesk</AssemblyName>
+    <!-- Photino hosts the native window; nothing here is Windows-specific. -->
+    <EnableDefaultCompileItems>true</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <!--
+    Ui and Client only. Referencing VibeDesk.Infrastructure here would pull the ASP.NET Core shared
+    framework into a desktop app; everything this host needs arrives over the API instead.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\VibeDesk.Ui\VibeDesk.Ui.csproj" />
+    <ProjectReference Include="..\VibeDesk.Client\VibeDesk.Client.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Photino.Blazor" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.CommandLine" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Update="wwwroot\**" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

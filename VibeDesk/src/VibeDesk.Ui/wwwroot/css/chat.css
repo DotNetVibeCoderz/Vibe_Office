@@ -1,0 +1,500 @@
+/* Mr Clippy panel and the markdown surface its replies render into. */
+
+.vd-chat {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+
+.vd-chat__head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--vd-2);
+  padding: var(--vd-2) var(--vd-2) var(--vd-2) var(--vd-3);
+  border-block-end: 1px solid var(--vd-line);
+  min-width: 0;
+}
+
+.vd-chat__mark {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--vd-radius-sm);
+  background: var(--vd-primary-soft);
+  color: var(--vd-primary);
+}
+
+.vd-chat__sub {
+  font-size: var(--vd-text-xs);
+  color: var(--vd-ink-3);
+}
+
+.vd-chat__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: var(--vd-3);
+}
+
+.vd-chat__hint,
+.vd-chat__welcome-lead {
+  font-size: var(--vd-text-sm);
+  color: var(--vd-ink-3);
+  margin-block-end: var(--vd-3);
+}
+
+/* ── suggested prompts ──────────────────────────────────────────────────── */
+.vd-chat__prompts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vd-2);
+}
+
+.vd-chat__prompt {
+  padding: var(--vd-2) var(--vd-3);
+  border: 1px solid var(--vd-line);
+  border-radius: var(--vd-radius);
+  background: var(--vd-surface-2);
+  color: var(--vd-ink-2);
+  font-size: var(--vd-text-sm);
+  text-align: start;
+  cursor: pointer;
+  transition: border-color var(--vd-fast) var(--vd-ease), color var(--vd-fast) var(--vd-ease);
+}
+
+.vd-chat__prompt:hover {
+  border-color: var(--vd-primary);
+  color: var(--vd-primary);
+}
+
+/* ── sessions list ──────────────────────────────────────────────────────── */
+.vd-chat__sessions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vd-1);
+}
+
+.vd-chat__session {
+  display: flex;
+  align-items: center;
+  gap: var(--vd-1);
+  border-radius: var(--vd-radius);
+  padding-inline-end: var(--vd-1);
+}
+
+.vd-chat__session:hover { background: var(--vd-surface-3); }
+
+.vd-chat__session.active {
+  background: var(--vd-primary-soft);
+}
+
+.vd-chat__session-open {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  padding: var(--vd-2);
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: start;
+  cursor: pointer;
+  font-size: var(--vd-text-sm);
+}
+
+.vd-chat__session-meta {
+  font-family: var(--vd-font-mono);
+  font-size: 10px;
+  color: var(--vd-ink-faint);
+}
+
+/* ── settings form ──────────────────────────────────────────────────────── */
+.vd-chat__settings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vd-4);
+}
+
+.vd-chat__settings input[type="range"] {
+  accent-color: var(--vd-primary);
+  width: 100%;
+}
+
+/* ── messages ───────────────────────────────────────────────────────────── */
+.vd-msg {
+  display: flex;
+  gap: var(--vd-2);
+  margin-block-end: var(--vd-4);
+  animation: vd-rise var(--vd-mid) var(--vd-ease);
+}
+
+.vd-msg--user {
+  /* The user's own turn is right-aligned and tinted, so the transcript reads as a dialogue. */
+  justify-content: flex-end;
+}
+
+.vd-msg__mark {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  margin-block-start: 2px;
+  border-radius: var(--vd-radius-full);
+  background: var(--vd-primary-soft);
+  color: var(--vd-primary);
+}
+
+.vd-msg__body { min-width: 0; }
+
+.vd-msg--user .vd-msg__body {
+  max-width: 86%;
+  padding: var(--vd-2) var(--vd-3);
+  border-radius: var(--vd-radius-lg) var(--vd-radius-sm) var(--vd-radius-lg) var(--vd-radius-lg);
+  background: var(--vd-primary-soft);
+  color: var(--vd-ink);
+}
+
+.vd-msg--assistant .vd-msg__body { flex: 1 1 auto; }
+
+.vd-msg__text { white-space: pre-wrap; font-size: var(--vd-text-base); }
+
+.vd-msg__tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--vd-1);
+  margin-block-end: var(--vd-2);
+}
+
+.vd-msg__error {
+  display: flex;
+  align-items: center;
+  gap: var(--vd-2);
+  padding: var(--vd-2) var(--vd-3);
+  border-radius: var(--vd-radius);
+  background: var(--vd-danger-soft);
+  color: var(--vd-danger);
+  font-size: var(--vd-text-sm);
+}
+
+.vd-msg__files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--vd-2);
+  margin-block-start: var(--vd-2);
+}
+
+.vd-msg__image {
+  max-width: 100%;
+  max-height: 260px;
+  border-radius: var(--vd-radius);
+  border: 1px solid var(--vd-line);
+}
+
+.vd-msg__file {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--vd-1);
+  padding: var(--vd-1) var(--vd-2);
+  border: 1px solid var(--vd-line);
+  border-radius: var(--vd-radius-sm);
+  font-size: var(--vd-text-sm);
+  text-decoration: none;
+  color: var(--vd-ink-2);
+}
+
+/* Typing indicator: three dots on a staggered cycle. */
+.vd-chat__typing {
+  display: flex;
+  gap: 4px;
+  padding-block: var(--vd-2);
+}
+
+.vd-chat__typing span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--vd-ink-faint);
+  animation: vd-typing 1.1s var(--vd-ease) infinite;
+}
+
+.vd-chat__typing span:nth-child(2) { animation-delay: 0.15s; }
+.vd-chat__typing span:nth-child(3) { animation-delay: 0.3s; }
+
+@keyframes vd-typing {
+  0%, 60%, 100% { opacity: 0.25; transform: none; }
+  30% { opacity: 1; transform: translateY(-3px); }
+}
+
+/* ── composer ───────────────────────────────────────────────────────────── */
+.vd-chat__compose {
+  flex: 0 0 auto;
+  padding: var(--vd-2) var(--vd-3) var(--vd-3);
+  border-block-start: 1px solid var(--vd-line);
+}
+
+.vd-chat__pending {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--vd-1);
+  margin-block-end: var(--vd-2);
+}
+
+.vd-chat__pending-x {
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+  opacity: 0.6;
+}
+
+.vd-chat__pending-x:hover { opacity: 1; }
+
+.vd-chat__inputrow {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--vd-1);
+}
+
+.vd-chat__input {
+  flex: 1 1 auto;
+  min-height: 34px;
+  max-height: 168px;
+  padding: var(--vd-2) var(--vd-3);
+  border: 1px solid var(--vd-line-strong);
+  border-radius: var(--vd-radius);
+  background: var(--vd-surface);
+  font-size: var(--vd-text-base);
+  line-height: var(--vd-leading);
+  resize: none;
+  /* Grows with content up to max-height, then scrolls. */
+  field-sizing: content;
+}
+
+.vd-chat__input:focus {
+  outline: none;
+  border-color: var(--vd-primary);
+  box-shadow: var(--vd-shadow-focus);
+}
+
+/* ── notification bell ──────────────────────────────────────────────────── */
+.vd-bell,
+.vd-usermenu { position: relative; }
+
+.vd-bell__dot {
+  position: absolute;
+  top: 5px;
+  inset-inline-end: 6px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--vd-danger);
+  box-shadow: 0 0 0 2px var(--vd-surface);
+}
+
+.vd-bell__panel {
+  inset-inline-end: 0;
+  top: calc(100% + 6px);
+  width: 340px;
+}
+
+.vd-bell__none,
+.vd-search__status {
+  padding: var(--vd-4);
+  font-size: var(--vd-text-sm);
+  color: var(--vd-ink-3);
+  text-align: center;
+}
+
+.vd-search__status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--vd-2);
+}
+
+.vd-bell__list {
+  max-height: 380px;
+  overflow-y: auto;
+}
+
+.vd-bell__item {
+  display: flex;
+  gap: var(--vd-2);
+  width: 100%;
+  padding: var(--vd-2);
+  border: 0;
+  border-radius: var(--vd-radius-sm);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.vd-bell__item:hover { background: var(--vd-surface-3); }
+
+/* Unread carries the gold mark, the same signal used for active state elsewhere. */
+.vd-bell__item.unread { background: var(--vd-gold-soft); }
+.vd-bell__item.unread:hover { background: color-mix(in srgb, var(--vd-gold-soft) 70%, var(--vd-surface-3)); }
+
+.vd-bell__icon {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--vd-radius-sm);
+  background: var(--vd-surface-3);
+  color: var(--vd-ink-2);
+}
+
+.vd-bell__title { font-size: var(--vd-text-sm); font-weight: 570; }
+.vd-bell__body { font-size: var(--vd-text-sm); color: var(--vd-ink-3); }
+
+.vd-bell__when {
+  font-family: var(--vd-font-mono);
+  font-size: 10px;
+  color: var(--vd-ink-faint);
+}
+
+/* ── user menu ──────────────────────────────────────────────────────────── */
+.vd-usermenu__head {
+  display: flex;
+  align-items: center;
+  gap: var(--vd-3);
+  padding: var(--vd-3) var(--vd-2);
+}
+
+.vd-usermenu form { display: contents; }
+
+/* ── global search results ──────────────────────────────────────────────── */
+.vd-search__hit {
+  display: flex;
+  align-items: center;
+  gap: var(--vd-2);
+  width: 100%;
+  padding: var(--vd-2);
+  border: 0;
+  border-radius: var(--vd-radius-sm);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.vd-search__hit:hover { background: var(--vd-surface-3); }
+
+.vd-search__hit-icon {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+}
+
+.vd-search__hit-meta {
+  font-size: var(--vd-text-xs);
+  color: var(--vd-ink-3);
+}
+
+/* ── markdown surface ───────────────────────────────────────────────────────
+   Scoped so assistant output cannot restyle the app. Sizes step down from the UI scale because a
+   reply lives inside a 384px column, not a document page. */
+.vd-md {
+  font-size: var(--vd-text-base);
+  line-height: var(--vd-leading-loose);
+  color: var(--vd-ink);
+  overflow-wrap: break-word;
+}
+
+.vd-md > :first-child { margin-block-start: 0; }
+.vd-md > :last-child { margin-block-end: 0; }
+
+.vd-md p { margin-block: 0 var(--vd-3); }
+
+.vd-md h1, .vd-md h2, .vd-md h3, .vd-md h4 {
+  margin-block: var(--vd-4) var(--vd-2);
+  line-height: var(--vd-leading-tight);
+}
+
+.vd-md h1 { font-size: var(--vd-text-lg); }
+.vd-md h2 { font-size: var(--vd-text-md); }
+.vd-md h3 { font-size: var(--vd-text-base); }
+.vd-md h4 { font-size: var(--vd-text-base); color: var(--vd-ink-2); }
+
+.vd-md ul, .vd-md ol { margin-block: 0 var(--vd-3); padding-inline-start: var(--vd-5); }
+.vd-md li { margin-block-end: var(--vd-1); }
+.vd-md li::marker { color: var(--vd-ink-faint); }
+
+.vd-md blockquote {
+  margin: 0 0 var(--vd-3);
+  padding: var(--vd-1) var(--vd-3);
+  border-inline-start: 2px solid var(--vd-gold);
+  color: var(--vd-ink-2);
+}
+
+.vd-md code {
+  padding: 1px 5px;
+  border-radius: var(--vd-radius-sm);
+  background: var(--vd-surface-3);
+  font-family: var(--vd-font-mono);
+  font-size: 0.9em;
+}
+
+.vd-md pre {
+  margin: 0 0 var(--vd-3);
+  padding: var(--vd-3);
+  border: 1px solid var(--vd-line);
+  border-radius: var(--vd-radius);
+  background: var(--vd-surface-2);
+  /* Code scrolls inside its own box; the panel must never scroll sideways. */
+  overflow-x: auto;
+}
+
+.vd-md pre code {
+  padding: 0;
+  background: none;
+  font-size: var(--vd-text-sm);
+  line-height: 1.55;
+}
+
+/* Tables also get their own scroll container. */
+.vd-md table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  margin-block: 0 var(--vd-3);
+  border-collapse: collapse;
+  font-size: var(--vd-text-sm);
+}
+
+.vd-md th, .vd-md td {
+  padding: var(--vd-1) var(--vd-2);
+  border: 1px solid var(--vd-line);
+  text-align: start;
+}
+
+.vd-md th {
+  background: var(--vd-surface-3);
+  font-weight: 620;
+  white-space: nowrap;
+}
+
+.vd-md img,
+.vd-md__media {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--vd-radius);
+  margin-block-end: var(--vd-3);
+}
+
+.vd-md__media { display: block; width: 100%; }
+
+.vd-md hr { margin-block: var(--vd-4); border: 0; border-top: 1px solid var(--vd-line); }
+
+.vd-md input[type="checkbox"] { margin-inline-end: var(--vd-1); accent-color: var(--vd-primary); }

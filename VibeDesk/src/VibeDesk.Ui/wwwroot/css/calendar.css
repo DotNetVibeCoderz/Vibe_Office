@@ -1,0 +1,350 @@
+/*
+ * Calendar.
+ *
+ * Month is a 7-column grid of day cells; week and day are a time axis with absolutely positioned
+ * events. Both read from the same expanded occurrence list, so recurrence never reaches the view.
+ */
+
+.vd-cal {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--vd-surface);
+}
+
+/* ── month ──────────────────────────────────────────────────────────────── */
+.vd-cal__weekdays {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  border-block-end: 1px solid var(--vd-line);
+  background: var(--vd-surface-2);
+}
+
+.vd-cal__weekday {
+  padding: var(--vd-1) var(--vd-2);
+  font-family: var(--vd-font-mono);
+  font-size: var(--vd-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--vd-ink-3);
+  text-align: center;
+}
+
+.vd-cal__month {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  /* Rows share the height evenly so a 6-week month still fits without scrolling the grid. */
+  grid-auto-rows: minmax(0, 1fr);
+  overflow: auto;
+}
+
+.vd-cal__day {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 92px;
+  padding: var(--vd-1);
+  border-inline-end: 1px solid var(--vd-line);
+  border-block-end: 1px solid var(--vd-line);
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.vd-cal__day:hover { background: var(--vd-surface-2); }
+.vd-cal__day[data-outside="true"] { background: var(--vd-surface-2); }
+.vd-cal__day[data-outside="true"] .vd-cal__daynum { color: var(--vd-ink-faint); }
+
+.vd-cal__daynum {
+  align-self: flex-start;
+  display: grid;
+  place-items: center;
+  min-width: 22px;
+  height: 22px;
+  padding-inline: 5px;
+  border-radius: var(--vd-radius-full);
+  font-family: var(--vd-font-mono);
+  font-size: var(--vd-text-xs);
+  font-weight: 600;
+  color: var(--vd-ink-2);
+}
+
+/* Today is the one date that gets a filled marker; everything else stays quiet. */
+.vd-cal__day[data-today="true"] .vd-cal__daynum {
+  background: var(--vd-primary);
+  color: var(--vd-on-primary);
+}
+
+.vd-cal__chip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px var(--vd-1);
+  border-radius: var(--vd-radius-sm);
+  font-size: var(--vd-text-xs);
+  line-height: 1.45;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border: 0;
+  text-align: start;
+  cursor: pointer;
+  background: transparent;
+  color: var(--vd-ink);
+}
+
+.vd-cal__chip:hover { background: var(--vd-surface-3); }
+
+.vd-cal__dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+/* An all-day event reads as a filled band rather than a dot plus time. */
+.vd-cal__chip[data-allday="true"] {
+  color: #fff;
+  padding-inline: var(--vd-2);
+}
+
+.vd-cal__chip[data-allday="true"] .vd-cal__dot { display: none; }
+
+.vd-cal__time {
+  font-family: var(--vd-font-mono);
+  font-size: 10px;
+  color: var(--vd-ink-3);
+  flex: 0 0 auto;
+}
+
+.vd-cal__more {
+  align-self: flex-start;
+  padding: 0 var(--vd-1);
+  border: 0;
+  background: transparent;
+  font-size: 10px;
+  color: var(--vd-ink-3);
+  cursor: pointer;
+}
+
+.vd-cal__more:hover { color: var(--vd-primary); text-decoration: underline; }
+
+/* ── week & day ─────────────────────────────────────────────────────────── */
+.vd-cal__timegrid {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  position: relative;
+}
+
+.vd-cal__timerow {
+  display: grid;
+  /* Gutter plus one column per day. */
+  grid-template-columns: 56px repeat(var(--vd-cal-days, 7), minmax(0, 1fr));
+}
+
+.vd-cal__hour {
+  height: 48px;
+  border-block-start: 1px solid var(--vd-line);
+}
+
+.vd-cal__hourlabel {
+  height: 48px;
+  padding-inline-end: var(--vd-2);
+  border-block-start: 1px solid var(--vd-line);
+  border-inline-end: 1px solid var(--vd-line);
+  font-family: var(--vd-font-mono);
+  font-size: 10px;
+  color: var(--vd-ink-faint);
+  text-align: end;
+  /* Nudged up so the label sits beside the line, not below it. */
+  transform: translateY(-6px);
+}
+
+.vd-cal__col {
+  position: relative;
+  border-inline-end: 1px solid var(--vd-line);
+}
+
+.vd-cal__col[data-today="true"] { background: var(--vd-primary-soft-2); }
+
+.vd-cal__event {
+  position: absolute;
+  inset-inline: 2px;
+  padding: 2px var(--vd-1);
+  border-radius: var(--vd-radius-sm);
+  border: 0;
+  border-inline-start: 3px solid currentColor;
+  font-size: var(--vd-text-xs);
+  line-height: 1.35;
+  text-align: start;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.vd-cal__event strong { display: block; font-weight: 600; }
+
+.vd-cal__event-time {
+  font-family: var(--vd-font-mono);
+  font-size: 10px;
+  opacity: 0.8;
+}
+
+/* The current-time line: the one moving part in the view. */
+.vd-cal__now {
+  position: absolute;
+  inset-inline: 0;
+  height: 0;
+  border-block-start: 2px solid var(--vd-danger);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.vd-cal__now::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: -4px;
+  inset-block-start: -4px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--vd-danger);
+}
+
+.vd-cal__daycols {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: grid;
+  grid-template-columns: 56px repeat(var(--vd-cal-days, 7), minmax(0, 1fr));
+  background: var(--vd-surface);
+  border-block-end: 1px solid var(--vd-line);
+}
+
+.vd-cal__daycol {
+  padding: var(--vd-1);
+  text-align: center;
+  border-inline-end: 1px solid var(--vd-line);
+}
+
+.vd-cal__daycol-name {
+  font-family: var(--vd-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--vd-ink-3);
+}
+
+.vd-cal__daycol-num {
+  display: inline-grid;
+  place-items: center;
+  min-width: 24px;
+  height: 24px;
+  border-radius: var(--vd-radius-full);
+  font-weight: 620;
+}
+
+.vd-cal__daycol[data-today="true"] .vd-cal__daycol-num {
+  background: var(--vd-primary);
+  color: var(--vd-on-primary);
+}
+
+/* ── agenda ─────────────────────────────────────────────────────────────── */
+.vd-cal__agenda {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--vd-4);
+}
+
+.vd-cal__agenda-day {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: var(--vd-3);
+  padding-block: var(--vd-3);
+  border-block-end: 1px solid var(--vd-line);
+}
+
+.vd-cal__agenda-date {
+  font-family: var(--vd-font-mono);
+  font-size: var(--vd-text-xs);
+  color: var(--vd-ink-3);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.vd-cal__agenda-item {
+  display: flex;
+  align-items: baseline;
+  gap: var(--vd-3);
+  padding: var(--vd-1) 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: start;
+  cursor: pointer;
+  width: 100%;
+}
+
+.vd-cal__agenda-item:hover { color: var(--vd-primary); }
+
+/* ── calendar list in the toolbar ───────────────────────────────────────── */
+.vd-cal__pickers {
+  display: flex;
+  align-items: center;
+  gap: var(--vd-1);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.vd-cal__pickers::-webkit-scrollbar { display: none; }
+
+.vd-cal__picker {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--vd-1);
+  height: 26px;
+  padding-inline: var(--vd-2);
+  border: 1px solid var(--vd-line);
+  border-radius: var(--vd-radius-full);
+  background: var(--vd-surface);
+  font-size: var(--vd-text-xs);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.vd-cal__picker[aria-pressed="false"] { opacity: 0.45; }
+
+/* ── event dialog ───────────────────────────────────────────────────────── */
+.vd-event__row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--vd-2);
+}
+
+.vd-event__attendees {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--vd-1);
+}
+
+.vd-event__attachment {
+  display: flex;
+  align-items: center;
+  gap: var(--vd-2);
+  padding: var(--vd-1) var(--vd-2);
+  border: 1px solid var(--vd-line);
+  border-radius: var(--vd-radius-sm);
+  font-size: var(--vd-text-sm);
+}
+
+@media (max-width: 800px) {
+  .vd-cal__day { min-height: 68px; }
+  .vd-cal__time { display: none; }
+  .vd-event__row { grid-template-columns: 1fr; }
+  .vd-cal__agenda-day { grid-template-columns: 1fr; gap: var(--vd-1); }
+}

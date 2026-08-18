@@ -1,0 +1,165 @@
+@*
+    The "New" button. Creating a document navigates straight into it — a newly created file the user
+    then has to find is a worse outcome than one that opens ready to type in.
+*@
+@inject IDriveService DriveService
+@inject NavigationManager Nav
+@inject ToastService Toasts
+
+<div class="vd-newmenu" @onfocusout="OnFocusOut">
+    <button type="button"
+            class="vd-btn @(Primary ? "vd-btn--primary" : "vd-btn--primary")"
+            @onclick="Toggle"
+            aria-haspopup="menu"
+            aria-expanded="@_open.ToString().ToLowerInvariant()"
+            disabled="@_busy">
+        @if (_busy)
+        {
+            <span class="vd-spinner"></span>
+        }
+        else
+        {
+            <Icon Name="plus" Size="16" />
+        }
+        <span>New</span>
+        <Icon Name="chevron-down" Size="14" />
+    </button>
+
+    @if (_open)
+    {
+        <div class="vd-menu" style="inset-inline-start:0;top:calc(100% + 4px)" role="menu">
+            <button type="button" class="vd-menu__item" @onclick="CreateFolder" role="menuitem">
+                <span style="color:var(--vd-app-drive)"><Icon Name="folder" Size="16" /></span>
+                New folder
+            </button>
+
+            <div class="vd-menu__sep"></div>
+
+            <button type="button" class="vd-menu__item"
+                    @onclick="() => Create(DriveItemType.Document)" role="menuitem">
+                <span style="color:var(--vd-app-docs)"><Icon Name="description" Size="16" /></span>
+                Document
+            </button>
+            <button type="button" class="vd-menu__item"
+                    @onclick="() => Create(DriveItemType.Spreadsheet)" role="menuitem">
+                <span style="color:var(--vd-app-sheets)"><Icon Name="table" Size="16" /></span>
+                Spreadsheet
+            </button>
+            <button type="button" class="vd-menu__item"
+                    @onclick="() => Create(DriveItemType.Presentation)" role="menuitem">
+                <span style="color:var(--vd-app-slides)"><Icon Name="slideshow" Size="16" /></span>
+                Presentation
+            </button>
+        </div>
+    }
+</div>
+
+@if (_namingFolder)
+{
+    <Modal Open="true" Title="New folder" Icon="folder" OpenChanged="_ => _namingFolder = false">
+        <ChildContent>
+            <div class="vd-field">
+                <label for="new-folder-name">Name</label>
+                <input id="new-folder-name" class="vd-input" @bind="_folderName" @bind:event="oninput"
+                       @onkeydown="OnFolderKeyDown" placeholder="Untitled folder" />
+            </div>
+        
+        </ChildContent>
+
+        <Footer>
+            <button type="button" class="vd-btn vd-btn--ghost" @onclick="() => _namingFolder = false">
+                Cancel
+            </button>
+            <button type="button" class="vd-btn vd-btn--primary" @onclick="CommitFolder">
+                Create
+            </button>
+        </Footer>
+    </Modal>
+}
+
+@code {
+    [Parameter] public Guid? ParentId { get; set; }
+    [Parameter] public EventCallback OnCreated { get; set; }
+
+    /// <summary>Reserved for callers that want the button styled as the page's primary action.</summary>
+    [Parameter] public bool Primary { get; set; }
+
+    private bool _open;
+    private bool _busy;
+    private bool _namingFolder;
+    private string _folderName = string.Empty;
+
+    private void Toggle() => _open = !_open;
+
+    private async Task OnFocusOut()
+    {
+        await Task.Delay(160);
+        if (_open)
+        {
+            _open = false;
+            StateHasChanged();
+        }
+    }
+
+    private void CreateFolder()
+    {
+        _open = false;
+        _folderName = string.Empty;
+        _namingFolder = true;
+    }
+
+    private async Task OnFolderKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await CommitFolder();
+        if (e.Key == "Escape") _namingFolder = false;
+    }
+
+    private async Task CommitFolder()
+    {
+        _namingFolder = false;
+        _busy = true;
+
+        try
+        {
+            var name = string.IsNullOrWhiteSpace(_folderName) ? "Untitled folder" : _folderName.Trim();
+            await DriveService.CreateFolderAsync(name, ParentId);
+            Toasts.Success("Folder created.");
+            await OnCreated.InvokeAsync();
+        }
+        catch (Exception e)
+        {
+            Toasts.Error(e);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task Create(DriveItemType type)
+    {
+        _open = false;
+        _busy = true;
+
+        try
+        {
+            var item = await DriveService.CreateDocumentAsync(type, DefaultName(type), ParentId);
+            Nav.NavigateTo(item.OpenRoute);
+        }
+        catch (Exception e)
+        {
+            Toasts.Error(e);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private static string DefaultName(DriveItemType type) => type switch
+    {
+        DriveItemType.Spreadsheet => "Untitled spreadsheet",
+        DriveItemType.Presentation => "Untitled presentation",
+        _ => "Untitled document",
+    };
+}

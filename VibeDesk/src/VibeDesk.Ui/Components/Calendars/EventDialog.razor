@@ -1,0 +1,529 @@
+@*
+    Create and edit an event, including attendees, reminders and Drive attachments.
+
+    Times are edited in the browser's local zone and converted to UTC on save; the service stores and
+    compares only UTC, so no view ever has to reason about offsets.
+*@
+@inject ICalendarService CalendarService
+@inject IDriveService DriveService
+@inject ToastService Toasts
+
+<Modal Open="Open" OpenChanged="OpenChanged" Wide="true"
+       Title="@(Event is null ? "New event" : "Edit event")" Icon="calendar">
+    <ChildContent>
+        <div class="vd-col" style="gap:var(--vd-3)">
+            <div class="vd-field">
+                <label for="ev-title">Title</label>
+                <input id="ev-title" class="vd-input" @bind="_title" placeholder="What is it?" />
+            </div>
+
+            <div class="vd-event__row">
+                <div class="vd-field">
+                    <label for="ev-start">Starts</label>
+                    <input id="ev-start" class="vd-input" type="@(_allDay ? "date" : "datetime-local")"
+                           value="@FormatFor(_start)" @onchange="OnStartChanged" />
+                </div>
+                <div class="vd-field">
+                    <label for="ev-end">Ends</label>
+                    <input id="ev-end" class="vd-input" type="@(_allDay ? "date" : "datetime-local")"
+                           value="@FormatFor(_end)" @onchange="OnEndChanged" />
+                </div>
+            </div>
+
+            <label class="vd-auth__check">
+                <input type="checkbox" checked="@_allDay" @onchange="OnAllDayChanged" />
+                <span>All day</span>
+            </label>
+
+            <div class="vd-event__row">
+                <div class="vd-field">
+                    <label for="ev-cal">Calendar</label>
+                    <select id="ev-cal" class="vd-select" @bind="_calendarId">
+                        @foreach (var calendar in EditableCalendars)
+                        {
+                            <option value="@calendar.Id">@calendar.Name</option>
+                        }
+                    </select>
+                </div>
+                <div class="vd-field">
+                    <label for="ev-loc">Location</label>
+                    <input id="ev-loc" class="vd-input" @bind="_location" placeholder="Room, or a link" />
+                </div>
+            </div>
+
+            <div class="vd-field">
+                <label for="ev-desc">Description</label>
+                <textarea id="ev-desc" class="vd-textarea" rows="3" @bind="_description"></textarea>
+            </div>
+
+            <div class="vd-event__row">
+                <div class="vd-field">
+                    <label for="ev-repeat">Repeats</label>
+                    <select id="ev-repeat" class="vd-select" @bind="_recurrence">
+                        <option value="@RecurrenceFrequency.None">Does not repeat</option>
+                        <option value="@RecurrenceFrequency.Daily">Daily</option>
+                        <option value="@RecurrenceFrequency.Weekly">Weekly</option>
+                        <option value="@RecurrenceFrequency.Monthly">Monthly</option>
+                        <option value="@RecurrenceFrequency.Yearly">Yearly</option>
+                    </select>
+                </div>
+
+                @if (_recurrence != RecurrenceFrequency.None)
+                {
+                    <div class="vd-field">
+                        <label for="ev-until">Until</label>
+                        <input id="ev-until" class="vd-input" type="date"
+                               value="@(_until?.ToString("yyyy-MM-dd"))" @onchange="OnUntilChanged" />
+                        <span class="vd-hint">Leave empty to repeat indefinitely.</span>
+                    </div>
+                }
+            </div>
+
+            @if (_recurrence == RecurrenceFrequency.Weekly)
+            {
+                <div class="vd-field">
+                    <label>On these days</label>
+                    <div class="vd-cal__pickers">
+                        @foreach (var (ordinal, label) in Weekdays)
+                        {
+                            var day = ordinal;
+                            <button type="button" class="vd-cal__picker"
+                                    aria-pressed="@(_byDay.Contains(day).ToString().ToLowerInvariant())"
+                                    @onclick="() => ToggleDay(day)">
+                                @label
+                            </button>
+                        }
+                    </div>
+                </div>
+            }
+
+            <div class="vd-field">
+                <label for="ev-guests">Guests</label>
+                <div class="vd-row">
+                    <input id="ev-guests" class="vd-input" @bind="_attendeeDraft"
+                           @onkeydown="OnAttendeeKeyDown" placeholder="teammate@company.com" />
+                    <button type="button" class="vd-btn vd-btn--outline" @onclick="AddAttendee">Add</button>
+                </div>
+
+                @if (_attendees.Count > 0)
+                {
+                    <div class="vd-event__attendees" style="margin-block-start:var(--vd-2)">
+                        @foreach (var email in _attendees)
+                        {
+                            var address = email;
+                            <span class="vd-badge">
+                                @address
+                                <button type="button" class="vd-chat__pending-x"
+                                        @onclick="() => _attendees.Remove(address)"
+                                        aria-label="Remove @address">
+                                    <Icon Name="close" Size="10" />
+                                </button>
+                            </span>
+                        }
+                    </div>
+                }
+            </div>
+
+            <div class="vd-field">
+                <label for="ev-remind">Reminder</label>
+                <select id="ev-remind" class="vd-select" @bind="_reminderMinutes">
+                    <option value="-1">No reminder</option>
+                    <option value="0">At the time of the event</option>
+                    <option value="5">5 minutes before</option>
+                    <option value="10">10 minutes before</option>
+                    <option value="30">30 minutes before</option>
+                    <option value="60">1 hour before</option>
+                    <option value="1440">1 day before</option>
+                </select>
+            </div>
+
+            <div class="vd-field">
+                <label>Attachments from Drive</label>
+                <div class="vd-row">
+                    <select class="vd-select" @bind="_attachmentPick">
+                        <option value="">Choose a file…</option>
+                        @foreach (var file in _driveItems)
+                        {
+                            <option value="@file.Id">@file.Name</option>
+                        }
+                    </select>
+                    <button type="button" class="vd-btn vd-btn--outline" @onclick="AddAttachment">Attach</button>
+                </div>
+                <span class="vd-hint">Guests are given access when the event is saved.</span>
+
+                @if (_attachments.Count > 0)
+                {
+                    <div class="vd-col" style="gap:var(--vd-1);margin-block-start:var(--vd-2)">
+                        @foreach (var attachment in _attachments)
+                        {
+                            var a = attachment;
+                            <div class="vd-event__attachment">
+                                <Icon Name="file" Size="14" />
+                                <span class="vd-truncate">@a.Name</span>
+                                <div class="vd-spacer"></div>
+                                <button type="button" class="vd-btn vd-btn--icon vd-btn--sm"
+                                        @onclick="() => _attachments.Remove(a)"
+                                        aria-label="Remove @a.Name">
+                                    <Icon Name="close" Size="13" />
+                                </button>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    </ChildContent>
+
+    <Footer>
+        @if (Event is not null)
+        {
+            <button type="button" class="vd-btn vd-btn--ghost" style="color:var(--vd-danger)"
+                    @onclick="Delete" disabled="@_busy">
+                <Icon Name="trash" Size="15" /> Delete
+            </button>
+
+            @if (Event.MyResponse != AttendeeResponse.NeedsAction || Event.Attendees.Count > 0)
+            {
+                <select class="vd-select vd-select--inline" style="min-width:150px"
+                        value="@Event.MyResponse" @onchange="OnResponseChanged" aria-label="Your response">
+                    <option value="@AttendeeResponse.NeedsAction">Respond…</option>
+                    <option value="@AttendeeResponse.Accepted">Going</option>
+                    <option value="@AttendeeResponse.Tentative">Maybe</option>
+                    <option value="@AttendeeResponse.Declined">Not going</option>
+                </select>
+            }
+        }
+
+        <div class="vd-spacer"></div>
+        <button type="button" class="vd-btn vd-btn--ghost" @onclick="() => OpenChanged.InvokeAsync(false)">
+            Cancel
+        </button>
+        <button type="button" class="vd-btn vd-btn--primary" @onclick="Save" disabled="@_busy">
+            @if (_busy)
+            {
+                <span class="vd-spinner"></span>
+            }
+            Save
+        </button>
+    </Footer>
+</Modal>
+
+@code {
+    [Parameter] public bool Open { get; set; }
+    [Parameter] public EventCallback<bool> OpenChanged { get; set; }
+
+    /// <summary>Null for a new event.</summary>
+    [Parameter] public EventOccurrenceDto? Event { get; set; }
+
+    [Parameter] public IReadOnlyList<CalendarDto> Calendars { get; set; } = [];
+
+    /// <summary>Pre-filled start for a new event, e.g. the slot the user clicked.</summary>
+    [Parameter] public DateTimeOffset? DefaultStart { get; set; }
+
+    [Parameter] public EventCallback OnSaved { get; set; }
+
+    private string _title = string.Empty;
+    private string? _description;
+    private string? _location;
+    private DateTime _start = DateTime.Now;
+    private DateTime _end = DateTime.Now.AddHours(1);
+    private bool _allDay;
+    private Guid _calendarId;
+    private RecurrenceFrequency _recurrence = RecurrenceFrequency.None;
+    private DateTime? _until;
+    private readonly List<int> _byDay = [];
+    private readonly List<string> _attendees = [];
+    private string _attendeeDraft = string.Empty;
+    private int _reminderMinutes = 10;
+
+    private readonly List<(Guid Id, string Name)> _attachments = [];
+    private string _attachmentPick = string.Empty;
+    private List<DriveItemDto> _driveItems = [];
+
+    private bool _busy;
+
+    /// <summary>Identity of the event the form was last populated from, so reopening refills it.</summary>
+    private Guid? _loadedFor;
+    private bool _wasOpen;
+
+    private IEnumerable<CalendarDto> EditableCalendars => Calendars.Where(c => c.CanEdit);
+
+    private static readonly (int Ordinal, string Label)[] Weekdays =
+    [
+        (1, "Mon"), (2, "Tue"), (3, "Wed"), (4, "Thu"), (5, "Fri"), (6, "Sat"), (0, "Sun"),
+    ];
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!Open)
+        {
+            _wasOpen = false;
+            return;
+        }
+
+        // Repopulate when the dialog opens, or when it is reused for a different event.
+        if (_wasOpen && _loadedFor == Event?.EventId) return;
+
+        _wasOpen = true;
+        _loadedFor = Event?.EventId;
+
+        Populate();
+        await LoadDriveItemsAsync();
+    }
+
+    private void Populate()
+    {
+        _attendees.Clear();
+        _attachments.Clear();
+        _byDay.Clear();
+        _attendeeDraft = string.Empty;
+        _attachmentPick = string.Empty;
+
+        if (Event is null)
+        {
+            var start = (DefaultStart ?? DateTimeOffset.Now).ToLocalTime().DateTime;
+
+            _title = string.Empty;
+            _description = null;
+            _location = null;
+            _start = start;
+            _end = start.AddHours(1);
+            _allDay = false;
+            _calendarId = EditableCalendars.FirstOrDefault()?.Id ?? Guid.Empty;
+            _recurrence = RecurrenceFrequency.None;
+            _until = null;
+            _reminderMinutes = 10;
+            return;
+        }
+
+        _title = Event.Title;
+        _description = Event.Description;
+        _location = Event.Location;
+        _start = Event.StartUtc.ToLocalTime().DateTime;
+        _end = Event.EndUtc.ToLocalTime().DateTime;
+        _allDay = Event.IsAllDay;
+        _calendarId = Event.CalendarId;
+        _recurrence = Event.IsRecurring ? RecurrenceFrequency.Weekly : RecurrenceFrequency.None;
+        _until = null;
+
+        foreach (var attendee in Event.Attendees) _attendees.Add(attendee.Email);
+
+        _reminderMinutes = Event.Reminders.Count > 0 ? Event.Reminders[0].MinutesBefore : -1;
+
+        foreach (var attachment in Event.Attachments)
+        {
+            _attachments.Add((attachment.DriveItemId, attachment.Name));
+        }
+    }
+
+    private async Task LoadDriveItemsAsync()
+    {
+        if (_driveItems.Count > 0) return;
+
+        try
+        {
+            var page = await DriveService.QueryAsync(new DriveQuery
+            {
+                Recursive = true,
+                SortBy = "updated",
+                Take = 60,
+            });
+
+            // Folders cannot be attached to an event; only files and documents.
+            _driveItems = [.. page.Items.Where(i => i.Type != DriveItemType.Folder)];
+        }
+        catch (Exception)
+        {
+            _driveItems = [];
+        }
+    }
+
+    // ── field handlers ──────────────────────────────────────────────────────
+
+    private string FormatFor(DateTime value) =>
+        _allDay ? value.ToString("yyyy-MM-dd") : value.ToString("yyyy-MM-ddTHH:mm");
+
+    private void OnStartChanged(ChangeEventArgs e)
+    {
+        if (!TryParseLocal(e.Value?.ToString(), out var value)) return;
+
+        // Keep the duration when the start moves, which is what people expect from a calendar.
+        var duration = _end - _start;
+        _start = value;
+        _end = value + (duration > TimeSpan.Zero ? duration : TimeSpan.FromHours(1));
+    }
+
+    private void OnEndChanged(ChangeEventArgs e)
+    {
+        if (!TryParseLocal(e.Value?.ToString(), out var value)) return;
+        _end = value;
+    }
+
+    private void OnUntilChanged(ChangeEventArgs e) =>
+        _until = TryParseLocal(e.Value?.ToString(), out var value) ? value.Date : null;
+
+    private bool TryParseLocal(string? raw, out DateTime value) =>
+        DateTime.TryParse(raw, System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.None, out value);
+
+    private void OnAllDayChanged(ChangeEventArgs e)
+    {
+        _allDay = e.Value is bool b && b;
+
+        if (_allDay)
+        {
+            _start = _start.Date;
+            // An all-day event ends at the end of its last day, not at midnight starting it.
+            _end = _end.Date <= _start.Date ? _start.Date.AddDays(1) : _end.Date;
+        }
+        else if (_end <= _start)
+        {
+            _end = _start.AddHours(1);
+        }
+    }
+
+    private void ToggleDay(int ordinal)
+    {
+        if (!_byDay.Remove(ordinal)) _byDay.Add(ordinal);
+    }
+
+    private void OnAttendeeKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key is "Enter" or ",") AddAttendee();
+    }
+
+    private void AddAttendee()
+    {
+        var email = _attendeeDraft.Trim().TrimEnd(',');
+
+        if (email.Length == 0) return;
+
+        if (!email.Contains('@') || email.StartsWith('@') || email.EndsWith('@'))
+        {
+            Toasts.Warn("That doesn't look like an email address.");
+            return;
+        }
+
+        if (!_attendees.Contains(email, StringComparer.OrdinalIgnoreCase)) _attendees.Add(email);
+        _attendeeDraft = string.Empty;
+    }
+
+    private void AddAttachment()
+    {
+        if (!Guid.TryParse(_attachmentPick, out var id)) return;
+        if (_attachments.Any(a => a.Id == id)) return;
+
+        var item = _driveItems.FirstOrDefault(i => i.Id == id);
+        if (item is null) return;
+
+        _attachments.Add((item.Id, item.Name));
+        _attachmentPick = string.Empty;
+    }
+
+    // ── save & delete ───────────────────────────────────────────────────────
+
+    private async Task Save()
+    {
+        if (string.IsNullOrWhiteSpace(_title))
+        {
+            Toasts.Warn("Give the event a title.");
+            return;
+        }
+
+        if (_calendarId == Guid.Empty)
+        {
+            Toasts.Warn("Choose a calendar you can write to.");
+            return;
+        }
+
+        if (_end <= _start)
+        {
+            Toasts.Warn("The event has to end after it starts.");
+            return;
+        }
+
+        _busy = true;
+
+        try
+        {
+            var input = new EventInput
+            {
+                Id = Event?.EventId,
+                CalendarId = _calendarId,
+                Title = _title.Trim(),
+                Description = _description,
+                Location = _location,
+                StartUtc = ToUtc(_start),
+                EndUtc = ToUtc(_end),
+                IsAllDay = _allDay,
+                Recurrence = _recurrence,
+                RecurrenceUntilUtc = _until is null ? null : ToUtc(_until.Value.AddDays(1)),
+                RecurrenceByDay = _recurrence == RecurrenceFrequency.Weekly && _byDay.Count > 0
+                    ? _byDay
+                    : null,
+                AttendeeEmails = _attendees,
+                Reminders = _reminderMinutes >= 0
+                    ? [new ReminderInput(ReminderMethod.Notification, _reminderMinutes)]
+                    : [],
+                AttachmentIds = [.. _attachments.Select(a => a.Id)],
+            };
+
+            await CalendarService.SaveEventAsync(input);
+
+            Toasts.Success(Event is null ? "Event created." : "Event updated.");
+            await OnSaved.InvokeAsync();
+        }
+        catch (Exception e)
+        {
+            Toasts.Error(e);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private static DateTimeOffset ToUtc(DateTime local) =>
+        new DateTimeOffset(local, TimeZoneInfo.Local.GetUtcOffset(local)).ToUniversalTime();
+
+    private async Task Delete()
+    {
+        if (Event is null) return;
+
+        _busy = true;
+
+        try
+        {
+            // A recurring occurrence is cancelled individually; a one-off deletes outright.
+            await CalendarService.DeleteEventAsync(
+                Event.EventId, Event.IsRecurring ? Event.StartUtc : null);
+
+            Toasts.Success(Event.IsRecurring ? "This occurrence was removed." : "Event deleted.");
+            await OnSaved.InvokeAsync();
+        }
+        catch (Exception e)
+        {
+            Toasts.Error(e);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task OnResponseChanged(ChangeEventArgs e)
+    {
+        if (Event is null) return;
+        if (!Enum.TryParse<AttendeeResponse>(e.Value?.ToString(), out var response)) return;
+
+        try
+        {
+            await CalendarService.RespondAsync(Event.EventId, response);
+            Toasts.Success("Response sent.");
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+    }
+}

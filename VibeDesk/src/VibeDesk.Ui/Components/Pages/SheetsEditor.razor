@@ -1,0 +1,1039 @@
+@page "/sheets/{Id:guid}"
+@attribute [Authorize]
+
+@implements IAsyncDisposable
+@inject IDocumentContentService Content
+@inject IDriveService DriveService
+@inject IVersionService Versions
+@inject ToastService Toasts
+@inject UiState Ui
+@inject NavigationManager Nav
+
+<PageTitle>@(_item?.Name ?? "Spreadsheet") · VibeDesk</PageTitle>
+
+<SectionContent SectionName="@AppShell.TitleSection">
+    <span class="vd-doctitle">
+        <span style="color:var(--vd-app-sheets)"><Icon Name="table" Size="17" /></span>
+        <input class="vd-doctitle__input"
+               value="@(_item?.Name ?? "")"
+               aria-label="Spreadsheet name"
+               disabled="@(!CanEdit)"
+               @onchange="OnRename" />
+        <span class="vd-doctitle__state">@SaveLabel</span>
+    </span>
+</SectionContent>
+
+<SectionContent SectionName="@AppShell.ActionsSection">
+    @if (_item is not null)
+    {
+        <span class="vd-badge @(CanEdit ? "vd-badge--jade" : "vd-badge--warn")">@_item.MyRole</span>
+    }
+</SectionContent>
+
+<SectionContent SectionName="@AppShell.ToolbarSection">
+    <div class="vd-toolbar__group">
+        <button type="button" class="vd-btn vd-btn--icon vd-btn--sm" disabled="@(!CanEdit)"
+                @onclick="() => ToggleStyle(s => s.Bold = !s.Bold)" title="Bold" aria-label="Bold">
+            <Icon Name="bold" Size="15" />
+        </button>
+        <button type="button" class="vd-btn vd-btn--icon vd-btn--sm" disabled="@(!CanEdit)"
+                @onclick="() => ToggleStyle(s => s.Italic = !s.Italic)" title="Italic" aria-label="Italic">
+            <Icon Name="italic" Size="15" />
+        </button>
+        <button type="button" class="vd-btn vd-btn--icon vd-btn--sm" disabled="@(!CanEdit)"
+                @onclick="() => ToggleStyle(s => s.Underline = !s.Underline)" title="Underline" aria-label="Underline">
+            <Icon Name="underline" Size="15" />
+        </button>
+    </div>
+
+    <span class="vd-toolbar__sep"></span>
+
+    <div class="vd-toolbar__group">
+        <button type="button" class="vd-btn vd-btn--icon vd-btn--sm" disabled="@(!CanEdit)"
+                @onclick='() => ToggleStyle(s => s.Align = "left")' title="Align left" aria-label="Align left">
+            <Icon Name="align-left" Size="15" />
+        </button>
+        <button type="button" class="vd-btn vd-btn--icon vd-btn--sm" disabled="@(!CanEdit)"
+                @onclick='() => ToggleStyle(s => s.Align = "center")' title="Align centre" aria-label="Align centre">
+            <Icon Name="align-center" Size="15" />
+        </button>
+        <button type="button" class="vd-btn vd-btn--icon vd-btn--sm" disabled="@(!CanEdit)"
+                @onclick='() => ToggleStyle(s => s.Align = "right")' title="Align right" aria-label="Align right">
+            <Icon Name="align-right" Size="15" />
+        </button>
+    </div>
+
+    <span class="vd-toolbar__sep"></span>
+
+    <select class="vd-select vd-select--inline" disabled="@(!CanEdit)"
+            @onchange="OnFormatChanged" aria-label="Number format">
+        <option value="">Format</option>
+        <option value="#,##0">1,234</option>
+        <option value="#,##0.00">1,234.00</option>
+        <option value="0.0%">12.3%</option>
+        <option value="$#,##0.00">$1,234.00</option>
+        <option value="CLEAR">Plain</option>
+    </select>
+
+    <span class="vd-toolbar__sep"></span>
+
+    <div class="vd-toolbar__group">
+        <button type="button" class="vd-btn vd-btn--ghost vd-btn--sm" disabled="@(!CanEdit)"
+                @onclick="() => _chartDialog = true" title="Insert chart">
+            <Icon Name="chart-column" Size="15" /> Chart
+        </button>
+        <button type="button" class="vd-btn vd-btn--ghost vd-btn--sm" disabled="@(!CanEdit)"
+                @onclick="() => _pivotDialog = true" title="Insert pivot table">
+            <Icon Name="pivot" Size="15" /> Pivot
+        </button>
+        <button type="button" class="vd-btn vd-btn--ghost vd-btn--sm" disabled="@(!CanEdit)"
+                @onclick="() => _cfDialog = true" title="Conditional formatting">
+            <Icon Name="paint" Size="15" /> Rules
+        </button>
+    </div>
+
+    <span class="vd-toolbar__sep"></span>
+
+    <button type="button" class="vd-btn vd-btn--icon vd-btn--sm" disabled="@(!CanEdit)"
+            @onclick="FreezeAtSelection" title="Freeze up to selection" aria-label="Freeze panes">
+        <Icon Name="freeze" Size="15" />
+    </button>
+
+    <div class="vd-spacer"></div>
+
+    <button type="button" class="vd-btn vd-btn--icon vd-btn--sm" @onclick="Recalculate"
+            title="Recalculate" aria-label="Recalculate">
+        <Icon Name="refresh" Size="15" />
+    </button>
+    <button type="button" class="vd-btn vd-btn--icon vd-btn--sm" disabled="@(!CanEdit)"
+            @onclick="SaveVersion" title="Save a version" aria-label="Save a version">
+        <Icon Name="history" Size="15" />
+    </button>
+</SectionContent>
+
+@if (_loading)
+{
+    <div class="vd-sheet"><div class="vd-skeleton" style="flex:1 1 auto;margin:var(--vd-3)"></div></div>
+}
+else if (_model is null || _sheet is null)
+{
+    <EmptyState Icon="table" Title="We couldn't open this spreadsheet"
+                Description="It may have been moved to trash, or you may no longer have access." />
+}
+else
+{
+    <div class="vd-sheet">
+        <FormulaBar Selection="_selection"
+                    Raw="@AnchorRaw"
+                    ReadOnly="@(!CanEdit)"
+                    Stats="_stats"
+                    OnCommit="CommitFromFormulaBar" />
+
+        <SheetGrid @ref="_grid"
+                   Sheet="_sheet"
+                   Model="_model"
+                   Selection="_selection"
+                   SelectionChanged="OnSelectionChanged"
+                   ConditionalStyles="_conditionalStyles"
+                   ReadOnly="@(!CanEdit)"
+                   OnCommit="OnCellCommit" />
+
+        @* Charts and pivots sit below the grid rather than floating over it: a card that covers the
+           cells it summarises hides the thing the user is checking. *@
+        @if (_sheet.Charts.Count > 0 || _sheet.Pivots.Count > 0)
+        {
+            <div class="vd-sheet__panel">
+                <div class="vd-sheet__panel-bar">
+                    <span class="vd-label">
+                        @_sheet.Charts.Count chart@(_sheet.Charts.Count == 1 ? "" : "s")
+                        · @_sheet.Pivots.Count pivot@(_sheet.Pivots.Count == 1 ? "" : "s")
+                    </span>
+                    <div class="vd-spacer"></div>
+                    <button type="button" class="vd-btn vd-btn--icon vd-btn--sm"
+                            @onclick="() => _panelOpen = !_panelOpen"
+                            aria-expanded="@_panelOpen.ToString().ToLowerInvariant()"
+                            aria-label="@(_panelOpen ? "Collapse" : "Expand")">
+                        <Icon Name="@(_panelOpen ? "chevron-down" : "chevron-up")" Size="15" />
+                    </button>
+                </div>
+
+                @if (_panelOpen)
+                {
+                    <div class="vd-sheet__panel-body">
+                        @foreach (var spec in _sheet.Charts)
+                        {
+                            var chart = spec;
+                            <div class="vd-sheet__viz" @key="chart.Id">
+                                <ChartView Data="_engine!.BuildChartData(chart, _sheet.Name)" />
+                                @if (CanEdit)
+                                {
+                                    <button type="button" class="vd-sheet__viz-x"
+                                            @onclick="() => RemoveChart(chart.Id)"
+                                            aria-label="Remove chart">
+                                        <Icon Name="close" Size="13" />
+                                    </button>
+                                }
+                            </div>
+                        }
+
+                        @foreach (var spec in _sheet.Pivots)
+                        {
+                            var pivot = spec;
+                            <div class="vd-sheet__viz" @key="pivot.Id">
+                                <div class="vd-chartwrap__bar">
+                                    <span class="vd-label vd-truncate">@pivot.Title</span>
+                                </div>
+                                <PivotView Result="_engine!.BuildPivot(pivot, _sheet.Name)"
+                                           RowHeader="@(pivot.Rows.FirstOrDefault() ?? "Group")" />
+                                @if (CanEdit)
+                                {
+                                    <button type="button" class="vd-sheet__viz-x"
+                                            @onclick="() => RemovePivot(pivot.Id)"
+                                            aria-label="Remove pivot table">
+                                        <Icon Name="close" Size="13" />
+                                    </button>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        }
+
+        <div class="vd-tabs">
+            @foreach (var tab in _model.Sheets)
+            {
+                var sheet = tab;
+                <button type="button"
+                        class="vd-tab @(sheet.Id == _sheet.Id ? "active" : "")"
+                        @onclick="() => SwitchSheet(sheet.Id)"
+                        @ondblclick="() => StartRenameSheet(sheet)">
+                    @if (!string.IsNullOrEmpty(sheet.TabColor))
+                    {
+                        <span class="vd-tab__dot" style="background:@sheet.TabColor"></span>
+                    }
+                    @sheet.Name
+                </button>
+            }
+
+            @if (CanEdit)
+            {
+                <button type="button" class="vd-btn vd-btn--icon vd-btn--sm" @onclick="AddSheet"
+                        title="Add sheet" aria-label="Add sheet">
+                    <Icon Name="plus" Size="15" />
+                </button>
+
+                @if (_model.Sheets.Count > 1)
+                {
+                    <button type="button" class="vd-btn vd-btn--icon vd-btn--sm" @onclick="DeleteSheet"
+                            title="Delete this sheet" aria-label="Delete this sheet">
+                        <Icon Name="trash" Size="14" />
+                    </button>
+                }
+            }
+        </div>
+
+        <div class="vd-sheet__status">
+            <span class="vd-sheet__stat">@_selection.Label</span>
+            <span>@_sheet.Cells.Count filled cells</span>
+            <div class="vd-spacer"></div>
+            <span class="vd-sheet__stat">rev @_revision</span>
+        </div>
+    </div>
+}
+
+<Modal @bind-Open="_chartDialog" Title="Insert chart" Icon="chart-column">
+    <ChildContent>
+        <div class="vd-col" style="gap:var(--vd-3)">
+            <div class="vd-field">
+                <label for="chart-title">Title</label>
+                <input id="chart-title" class="vd-input" @bind="_newChartTitle" />
+            </div>
+            <div class="vd-field">
+                <label for="chart-kind">Type</label>
+                <select id="chart-kind" class="vd-select" @bind="_newChartKind">
+                    <option value="column">Column</option>
+                    <option value="bar">Bar</option>
+                    <option value="line">Line</option>
+                    <option value="area">Area</option>
+                    <option value="pie">Pie</option>
+                    <option value="doughnut">Doughnut</option>
+                    <option value="scatter">Scatter</option>
+                </select>
+            </div>
+            <div class="vd-field">
+                <label for="chart-cat">Category range</label>
+                <input id="chart-cat" class="vd-input vd-mono" @bind="_newChartCategories" placeholder="A2:A10" />
+            </div>
+            <div class="vd-field">
+                <label for="chart-series">Series ranges</label>
+                <input id="chart-series" class="vd-input vd-mono" @bind="_newChartSeries" placeholder="B2:B10, C2:C10" />
+                <span class="vd-hint">Comma-separated. One range per series.</span>
+            </div>
+            <label class="vd-auth__check">
+                <input type="checkbox" @bind="_newChartStacked" />
+                <span>Stack the series</span>
+            </label>
+        </div>
+    </ChildContent>
+    <Footer>
+        <button type="button" class="vd-btn vd-btn--ghost" @onclick="() => _chartDialog = false">Cancel</button>
+        <button type="button" class="vd-btn vd-btn--primary" @onclick="AddChart">Insert chart</button>
+    </Footer>
+</Modal>
+
+<Modal @bind-Open="_pivotDialog" Title="Insert pivot table" Icon="pivot">
+    <ChildContent>
+        <div class="vd-col" style="gap:var(--vd-3)">
+            <div class="vd-field">
+                <label for="pivot-title">Title</label>
+                <input id="pivot-title" class="vd-input" @bind="_newPivotTitle" />
+            </div>
+            <div class="vd-field">
+                <label for="pivot-src">Source range</label>
+                <input id="pivot-src" class="vd-input vd-mono" @bind="_newPivotSource" placeholder="A1:F40" />
+                <span class="vd-hint">Include the header row — field names come from it.</span>
+            </div>
+            <div class="vd-field">
+                <label for="pivot-rows">Group rows by</label>
+                <input id="pivot-rows" class="vd-input" @bind="_newPivotRows" placeholder="Region" />
+            </div>
+            <div class="vd-field">
+                <label for="pivot-cols">Group columns by</label>
+                <input id="pivot-cols" class="vd-input" @bind="_newPivotColumns" placeholder="Quarter (optional)" />
+            </div>
+            <div class="vd-row" style="gap:var(--vd-2);align-items:flex-end">
+                <div class="vd-field" style="flex:1 1 auto">
+                    <label for="pivot-val">Summarise</label>
+                    <input id="pivot-val" class="vd-input" @bind="_newPivotValue" placeholder="Total" />
+                </div>
+                <div class="vd-field" style="flex:0 0 140px">
+                    <label for="pivot-agg">Using</label>
+                    <select id="pivot-agg" class="vd-select" @bind="_newPivotAggregate">
+                        <option value="sum">Sum</option>
+                        <option value="count">Count</option>
+                        <option value="average">Average</option>
+                        <option value="min">Min</option>
+                        <option value="max">Max</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+    </ChildContent>
+    <Footer>
+        <button type="button" class="vd-btn vd-btn--ghost" @onclick="() => _pivotDialog = false">Cancel</button>
+        <button type="button" class="vd-btn vd-btn--primary" @onclick="AddPivot">Insert pivot</button>
+    </Footer>
+</Modal>
+
+<Modal @bind-Open="_cfDialog" Title="Conditional formatting" Icon="paint" Wide="true">
+    <ChildContent>
+        @if (_sheet is not null)
+        {
+            @foreach (var rule in _sheet.ConditionalFormats)
+            {
+                var r = rule;
+                <div class="vd-cf__rule">
+                    <div class="vd-field">
+                        <label>Range</label>
+                        <input class="vd-input vd-mono" value="@r.Range"
+                               @onchange="e => { r.Range = e.Value?.ToString() ?? r.Range; MarkDirty(); }" />
+                    </div>
+                    <div class="vd-field">
+                        <label>When</label>
+                        <select class="vd-select" value="@r.Op"
+                                @onchange="e => { r.Op = e.Value?.ToString() ?? r.Op; MarkDirty(); }">
+                            <option value="greaterThan">Greater than</option>
+                            <option value="lessThan">Less than</option>
+                            <option value="between">Between</option>
+                            <option value="equal">Equal to</option>
+                            <option value="notEqual">Not equal to</option>
+                            <option value="contains">Contains</option>
+                            <option value="isEmpty">Is empty</option>
+                            <option value="notEmpty">Is not empty</option>
+                            <option value="colorScale">Colour scale</option>
+                        </select>
+                    </div>
+                    <div class="vd-field">
+                        <label>Value</label>
+                        <input class="vd-input" value="@r.Value1"
+                               @onchange="e => { r.Value1 = e.Value?.ToString(); MarkDirty(); }" />
+                    </div>
+                    <button type="button" class="vd-btn vd-btn--icon vd-btn--sm"
+                            @onclick="() => RemoveRule(r.Id)" aria-label="Remove rule">
+                        <Icon Name="trash" Size="14" />
+                    </button>
+                </div>
+            }
+
+            @if (_sheet.ConditionalFormats.Count == 0)
+            {
+                <p class="vd-hint">No rules yet. Add one to highlight cells automatically.</p>
+            }
+        }
+    </ChildContent>
+    <Footer>
+        <button type="button" class="vd-btn vd-btn--outline" @onclick="AddRule">
+            <Icon Name="plus" Size="15" /> Add rule
+        </button>
+        <div class="vd-spacer"></div>
+        <button type="button" class="vd-btn vd-btn--primary" @onclick="ApplyRules">Done</button>
+    </Footer>
+</Modal>
+
+<Modal @bind-Open="_renameSheetDialog" Title="Rename sheet" Icon="edit">
+    <ChildContent>
+        <div class="vd-field">
+            <label for="sheet-name">Name</label>
+            <input id="sheet-name" class="vd-input" @bind="_sheetNameDraft" />
+        </div>
+    </ChildContent>
+    <Footer>
+        <button type="button" class="vd-btn vd-btn--ghost" @onclick="() => _renameSheetDialog = false">Cancel</button>
+        <button type="button" class="vd-btn vd-btn--primary" @onclick="CommitRenameSheet">Rename</button>
+    </Footer>
+</Modal>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private DriveItemDto? _item;
+    private SpreadsheetModel? _model;
+    private SheetTab? _sheet;
+    private FormulaEngine? _engine;
+
+    private SheetGrid? _grid;
+    private SheetSelection _selection = SheetSelection.At(0, 0);
+
+    private Dictionary<string, CellStyle> _conditionalStyles = [];
+    private IReadOnlyList<(string Label, string Value)>? _stats;
+
+    private bool _loading = true;
+    private long _revision;
+    private bool _dirty;
+    private bool _saving;
+    private bool _panelOpen = true;
+
+    /// <summary>Debounces autosave so a burst of edits becomes one write.</summary>
+    private CancellationTokenSource? _saveDebounce;
+    private static readonly TimeSpan SaveDelay = TimeSpan.FromMilliseconds(1100);
+
+    // dialog state
+    private bool _chartDialog, _pivotDialog, _cfDialog, _renameSheetDialog;
+    private string _newChartTitle = "Chart";
+    private string _newChartKind = "column";
+    private string _newChartCategories = string.Empty;
+    private string _newChartSeries = string.Empty;
+    private bool _newChartStacked;
+    private string _newPivotTitle = "Pivot table";
+    private string _newPivotSource = string.Empty;
+    private string _newPivotRows = string.Empty;
+    private string _newPivotColumns = string.Empty;
+    private string _newPivotValue = string.Empty;
+    private string _newPivotAggregate = "sum";
+    private string _sheetNameDraft = string.Empty;
+    private string? _renamingSheetId;
+
+    private bool CanEdit => _item?.CanEdit == true;
+
+    private string SaveLabel => _saving ? "Saving…" : _dirty ? "Unsaved changes" : "All changes saved";
+
+    private string AnchorRaw
+    {
+        get
+        {
+            if (_sheet is null) return string.Empty;
+
+            var cell = _sheet.Cells.GetValueOrDefault(_selection.Anchor.ToKey());
+            return !string.IsNullOrEmpty(cell?.F) ? cell.F : cell?.V ?? string.Empty;
+        }
+    }
+
+    protected override async Task OnParametersSetAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+
+        try
+        {
+            _item = await DriveService.GetAsync(Id);
+            if (_item is null) return;
+
+            Ui.SetContext("sheets", Id, _item.Name, DriveItemType.Spreadsheet);
+            await DriveService.TouchAsync(Id);
+
+            var content = await Content.GetAsync(Id);
+            if (content is null) return;
+
+            _revision = content.Revision;
+            _model = ContentJson.Deserialize<SpreadsheetModel>(content.Data);
+
+            if (_model.Sheets.Count == 0) _model.Sheets.Add(new SheetTab());
+            _sheet = _model.Sheets[0];
+
+            Recalculate();
+        }
+        catch (Exception e)
+        {
+            Toasts.Error(e);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    /// <summary>
+    /// Rebuilds the engine and rewrites every cached formula result. A fresh engine per pass is
+    /// deliberate — it memoises internally, so reusing one would serve stale values after an edit.
+    /// </summary>
+    private void Recalculate()
+    {
+        if (_model is null || _sheet is null) return;
+
+        _engine = new FormulaEngine(_model);
+        _engine.RecalculateAll();
+        _conditionalStyles = _engine.EvaluateConditionalFormats(_sheet);
+        UpdateStats();
+    }
+
+    /// <summary>
+    /// Aggregates over a multi-cell selection, the way the status bar of a spreadsheet does. Skipped
+    /// for a single cell, where the value is already on screen.
+    /// </summary>
+    private void UpdateStats()
+    {
+        if (_engine is null || _sheet is null || _selection.IsSingleCell)
+        {
+            _stats = null;
+            return;
+        }
+
+        var numbers = new List<double>();
+        var filled = 0;
+
+        foreach (var address in _selection.Range.Cells())
+        {
+            var value = _engine.GetCell(_sheet.Name, address);
+            if (value.IsEmpty) continue;
+
+            filled++;
+            var number = value.ToNumber();
+            if (!number.IsError && number.Kind == FormulaValueKind.Number) numbers.Add(number.RawNumber);
+        }
+
+        if (filled == 0)
+        {
+            _stats = null;
+            return;
+        }
+
+        var stats = new List<(string, string)> { ("count", filled.ToString()) };
+
+        if (numbers.Count > 0)
+        {
+            stats.Insert(0, ("sum", Fmt(numbers.Sum())));
+            stats.Insert(1, ("avg", Fmt(numbers.Average())));
+            stats.Add(("min", Fmt(numbers.Min())));
+            stats.Add(("max", Fmt(numbers.Max())));
+        }
+
+        _stats = stats;
+    }
+
+    private static string Fmt(double value) =>
+        value.ToString("#,##0.##", System.Globalization.CultureInfo.InvariantCulture);
+
+    private void OnSelectionChanged(SheetSelection selection)
+    {
+        _selection = selection;
+        UpdateStats();
+    }
+
+    // ── editing ─────────────────────────────────────────────────────────────
+
+    private async Task OnCellCommit((string Key, string Raw) commit)
+    {
+        if (_sheet is null || !CanEdit) return;
+
+        SetCell(commit.Key, commit.Raw);
+        Recalculate();
+        await ScheduleSaveAsync();
+    }
+
+    private async Task CommitFromFormulaBar(string raw)
+    {
+        if (!CanEdit) return;
+        await OnCellCommit((_selection.Anchor.ToKey(), raw));
+    }
+
+    /// <summary>
+    /// Writes raw user text into a cell. Leading <c>=</c> becomes a formula; everything else is a
+    /// literal. Clearing removes the cell entirely unless it carries style or a note worth keeping.
+    /// </summary>
+    private void SetCell(string key, string raw)
+    {
+        if (_sheet is null) return;
+
+        var existing = _sheet.Cells.GetValueOrDefault(key);
+
+        if (string.IsNullOrEmpty(raw))
+        {
+            if (existing is null) return;
+
+            if (string.IsNullOrEmpty(existing.S) && string.IsNullOrEmpty(existing.Fmt)
+                && string.IsNullOrEmpty(existing.N))
+            {
+                _sheet.Cells.Remove(key);
+            }
+            else
+            {
+                existing.V = null;
+                existing.F = null;
+            }
+
+            return;
+        }
+
+        var cell = existing ?? new Cell();
+
+        if (raw.StartsWith('='))
+        {
+            cell.F = raw;
+            // V is filled by the recalculation that follows.
+        }
+        else
+        {
+            cell.F = null;
+            cell.V = raw;
+        }
+
+        _sheet.Cells[key] = cell;
+
+        // Grow the sheet so the user can keep typing past the previous edge.
+        if (CellAddress.TryParse(key, out var address))
+        {
+            if (address.Row + 10 > _sheet.RowCount) _sheet.RowCount = address.Row + 30;
+            if (address.Col + 3 > _sheet.ColCount) _sheet.ColCount = address.Col + 8;
+        }
+    }
+
+    // ── styling ─────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Applies a style change across the selection.
+    /// </summary>
+    /// <remarks>
+    /// Styles are interned in <c>Model.Styles</c> and referenced by key, so a thousand bold cells share
+    /// one style object instead of storing a thousand copies in the payload.
+    /// </remarks>
+    private async Task ToggleStyle(Action<CellStyle> mutate)
+    {
+        if (_sheet is null || _model is null || !CanEdit) return;
+
+        foreach (var address in _selection.Range.Cells())
+        {
+            var key = address.ToKey();
+            var cell = _sheet.Cells.GetValueOrDefault(key);
+
+            if (cell is null)
+            {
+                cell = new Cell();
+                _sheet.Cells[key] = cell;
+            }
+
+            var style = Clone(cell.S is { Length: > 0 } k && _model.Styles.TryGetValue(k, out var s) ? s : null);
+            mutate(style);
+            cell.S = InternStyle(style);
+        }
+
+        MarkDirty();
+        await ScheduleSaveAsync();
+    }
+
+    private static CellStyle Clone(CellStyle? source) => source is null
+        ? new CellStyle()
+        : new CellStyle
+        {
+            Bold = source.Bold,
+            Italic = source.Italic,
+            Underline = source.Underline,
+            Strike = source.Strike,
+            Color = source.Color,
+            Background = source.Background,
+            FontFamily = source.FontFamily,
+            FontSize = source.FontSize,
+            Align = source.Align,
+            VAlign = source.VAlign,
+            Wrap = source.Wrap,
+            Border = source.Border,
+        };
+
+    /// <summary>Returns the key of an equivalent stored style, adding one only when none matches.</summary>
+    private string InternStyle(CellStyle style)
+    {
+        if (_model is null) return string.Empty;
+
+        var signature = Signature(style);
+
+        foreach (var (key, existing) in _model.Styles)
+        {
+            if (Signature(existing) == signature) return key;
+        }
+
+        var newKey = $"s{_model.Styles.Count + 1}";
+        while (_model.Styles.ContainsKey(newKey)) newKey += "x";
+
+        _model.Styles[newKey] = style;
+        return newKey;
+    }
+
+    private static string Signature(CellStyle s) =>
+        string.Join('|',
+            s.Bold, s.Italic, s.Underline, s.Strike,
+            s.Color, s.Background, s.FontFamily, s.FontSize,
+            s.Align, s.VAlign, s.Wrap, s.Border);
+
+    private async Task OnFormatChanged(ChangeEventArgs e)
+    {
+        if (_sheet is null || !CanEdit) return;
+
+        var format = e.Value?.ToString();
+        if (string.IsNullOrEmpty(format)) return;
+
+        foreach (var address in _selection.Range.Cells())
+        {
+            var key = address.ToKey();
+            var cell = _sheet.Cells.GetValueOrDefault(key);
+            if (cell is null && format == "CLEAR") continue;
+
+            cell ??= new Cell();
+            cell.Fmt = format == "CLEAR" ? null : format;
+            _sheet.Cells[key] = cell;
+        }
+
+        MarkDirty();
+        await ScheduleSaveAsync();
+    }
+
+    private async Task FreezeAtSelection()
+    {
+        if (_sheet is null || !CanEdit) return;
+
+        // Freezing "up to" the anchor: a selection on row 2 freezes row 1, which is the header case.
+        _sheet.FrozenRows = _selection.Anchor.Row;
+        _sheet.FrozenCols = _selection.Anchor.Col;
+
+        MarkDirty();
+        await ScheduleSaveAsync();
+    }
+
+    // ── charts, pivots, rules ───────────────────────────────────────────────
+
+    private async Task AddChart()
+    {
+        if (_sheet is null || !CanEdit) return;
+
+        var series = _newChartSeries
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .ToList();
+
+        if (series.Count == 0)
+        {
+            Toasts.Warn("Add at least one series range, for example B2:B10.");
+            return;
+        }
+
+        _sheet.Charts.Add(new ChartSpec
+        {
+            Title = string.IsNullOrWhiteSpace(_newChartTitle) ? "Chart" : _newChartTitle.Trim(),
+            Kind = _newChartKind,
+            CategoryRange = string.IsNullOrWhiteSpace(_newChartCategories) ? null : _newChartCategories.Trim(),
+            SeriesRanges = series,
+            SeriesNames = series.Select((_, i) => $"Series {i + 1}").ToList(),
+            Stacked = _newChartStacked,
+        });
+
+        _chartDialog = false;
+        _panelOpen = true;
+        MarkDirty();
+        await ScheduleSaveAsync();
+    }
+
+    private async Task RemoveChart(string id)
+    {
+        if (_sheet is null) return;
+        _sheet.Charts.RemoveAll(c => c.Id == id);
+        MarkDirty();
+        await ScheduleSaveAsync();
+    }
+
+    private async Task AddPivot()
+    {
+        if (_sheet is null || !CanEdit) return;
+
+        if (string.IsNullOrWhiteSpace(_newPivotSource) || string.IsNullOrWhiteSpace(_newPivotValue))
+        {
+            Toasts.Warn("A pivot needs a source range and a field to summarise.");
+            return;
+        }
+
+        _sheet.Pivots.Add(new PivotSpec
+        {
+            Title = string.IsNullOrWhiteSpace(_newPivotTitle) ? "Pivot table" : _newPivotTitle.Trim(),
+            SourceRange = _newPivotSource.Trim(),
+            Rows = string.IsNullOrWhiteSpace(_newPivotRows) ? [] : [_newPivotRows.Trim()],
+            Columns = string.IsNullOrWhiteSpace(_newPivotColumns) ? [] : [_newPivotColumns.Trim()],
+            Values = [new PivotValue { Field = _newPivotValue.Trim(), Aggregate = _newPivotAggregate }],
+        });
+
+        _pivotDialog = false;
+        _panelOpen = true;
+        MarkDirty();
+        await ScheduleSaveAsync();
+    }
+
+    private async Task RemovePivot(string id)
+    {
+        if (_sheet is null) return;
+        _sheet.Pivots.RemoveAll(p => p.Id == id);
+        MarkDirty();
+        await ScheduleSaveAsync();
+    }
+
+    private void AddRule()
+    {
+        if (_sheet is null) return;
+
+        _sheet.ConditionalFormats.Add(new ConditionalFormatRule
+        {
+            Range = _selection.IsSingleCell ? $"{_selection.Anchor.ToKey()}:{_selection.Anchor.ToKey()}"
+                : _selection.Range.ToA1(),
+            Op = "greaterThan",
+            Value1 = "0",
+            Style = new CellStyle { Background = "#dcfce7", Color = "#166534", Bold = true },
+        });
+
+        MarkDirty();
+    }
+
+    private void RemoveRule(string id)
+    {
+        _sheet?.ConditionalFormats.RemoveAll(r => r.Id == id);
+        MarkDirty();
+    }
+
+    private async Task ApplyRules()
+    {
+        _cfDialog = false;
+        Recalculate();
+        await ScheduleSaveAsync();
+    }
+
+    // ── sheets ──────────────────────────────────────────────────────────────
+
+    private void SwitchSheet(string id)
+    {
+        if (_model is null) return;
+
+        _sheet = _model.Sheets.FirstOrDefault(s => s.Id == id) ?? _sheet;
+        _selection = SheetSelection.At(0, 0);
+        Recalculate();
+    }
+
+    private async Task AddSheet()
+    {
+        if (_model is null || !CanEdit) return;
+
+        var index = _model.Sheets.Count + 1;
+        var name = $"Sheet{index}";
+        while (_model.Sheets.Any(s => s.Name == name)) name = $"Sheet{++index}";
+
+        var sheet = new SheetTab { Id = $"s{Guid.NewGuid():N}"[..9], Name = name };
+        _model.Sheets.Add(sheet);
+        _sheet = sheet;
+        _selection = SheetSelection.At(0, 0);
+
+        Recalculate();
+        MarkDirty();
+        await ScheduleSaveAsync();
+    }
+
+    private async Task DeleteSheet()
+    {
+        if (_model is null || _sheet is null || _model.Sheets.Count <= 1 || !CanEdit) return;
+
+        _model.Sheets.Remove(_sheet);
+        _sheet = _model.Sheets[0];
+        _selection = SheetSelection.At(0, 0);
+
+        Recalculate();
+        MarkDirty();
+        await ScheduleSaveAsync();
+    }
+
+    private void StartRenameSheet(SheetTab sheet)
+    {
+        if (!CanEdit) return;
+
+        _renamingSheetId = sheet.Id;
+        _sheetNameDraft = sheet.Name;
+        _renameSheetDialog = true;
+    }
+
+    private async Task CommitRenameSheet()
+    {
+        _renameSheetDialog = false;
+
+        if (_model is null || _renamingSheetId is null) return;
+
+        var target = _model.Sheets.FirstOrDefault(s => s.Id == _renamingSheetId);
+        var name = _sheetNameDraft.Trim();
+
+        if (target is null || name.Length == 0) return;
+
+        if (_model.Sheets.Any(s => s.Id != target.Id && s.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))
+        {
+            Toasts.Warn("Another sheet already uses that name.");
+            return;
+        }
+
+        // Formulas reference sheets by name, so a rename would break them silently. Rewriting every
+        // formula is out of scope here; warn instead of corrupting the workbook quietly.
+        var oldName = target.Name;
+        target.Name = name;
+
+        var referenced = _model.Sheets
+            .SelectMany(s => s.Cells.Values)
+            .Any(c => c.F?.Contains(oldName, StringComparison.OrdinalIgnoreCase) == true);
+
+        if (referenced)
+        {
+            Toasts.Warn($"Formulas still reference “{oldName}”. Update them to “{name}”.");
+        }
+
+        Recalculate();
+        MarkDirty();
+        await ScheduleSaveAsync();
+    }
+
+    // ── persistence ─────────────────────────────────────────────────────────
+
+    private void MarkDirty() => _dirty = true;
+
+    private async Task ScheduleSaveAsync()
+    {
+        MarkDirty();
+
+        _saveDebounce?.Cancel();
+        _saveDebounce?.Dispose();
+        _saveDebounce = new CancellationTokenSource();
+        var token = _saveDebounce.Token;
+
+        try
+        {
+            await Task.Delay(SaveDelay, token);
+            await SaveAsync();
+        }
+        catch (OperationCanceledException)
+        {
+            // Superseded by a newer edit; that edit will save.
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_model is null || !CanEdit || _saving) return;
+
+        _saving = true;
+        StateHasChanged();
+
+        try
+        {
+            var json = ContentJson.Serialize(_model);
+            var result = await Content.SaveAsync(Id, json, _revision);
+
+            if (result.Accepted)
+            {
+                _revision = result.Revision;
+                _dirty = false;
+            }
+            else
+            {
+                // A collaborator saved first. Take their copy rather than overwriting it, and tell the
+                // user plainly instead of losing one side silently.
+                _revision = result.Revision;
+                if (result.ServerData is not null)
+                {
+                    _model = ContentJson.Deserialize<SpreadsheetModel>(result.ServerData);
+                    _sheet = _model.Sheets.FirstOrDefault(s => s.Id == _sheet?.Id) ?? _model.Sheets[0];
+                    Recalculate();
+                }
+
+                Toasts.Warn("Someone else saved first — this spreadsheet has been refreshed with their changes.");
+                _dirty = false;
+            }
+        }
+        catch (Exception e)
+        {
+            Toasts.Error(e);
+        }
+        finally
+        {
+            _saving = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnRename(ChangeEventArgs e)
+    {
+        var name = e.Value?.ToString()?.Trim();
+        if (string.IsNullOrEmpty(name) || name == _item?.Name) return;
+
+        try
+        {
+            _item = await DriveService.RenameAsync(Id, name);
+            Ui.SetContext("sheets", Id, _item.Name, DriveItemType.Spreadsheet);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+    }
+
+    private async Task SaveVersion()
+    {
+        try
+        {
+            // Flush pending edits first, or the snapshot would miss them.
+            if (_dirty) await SaveAsync();
+
+            await Versions.SnapshotAsync(Id, $"Manual save {DateTimeOffset.Now:HH:mm}");
+            Toasts.Success("Version saved.");
+        }
+        catch (Exception e)
+        {
+            Toasts.Error(e);
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _saveDebounce?.Cancel();
+        _saveDebounce?.Dispose();
+
+        // Leaving the page must not drop unsaved edits.
+        if (_dirty && CanEdit)
+        {
+            try
+            {
+                await SaveAsync();
+            }
+            catch (Exception)
+            {
+                // The circuit is going away; nothing useful left to surface.
+            }
+        }
+    }
+}

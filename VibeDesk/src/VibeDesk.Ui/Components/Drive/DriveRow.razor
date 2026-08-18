@@ -1,0 +1,56 @@
+@*
+    List row. Denser than the card and shows owner explicitly, which is what the list view is for —
+    scanning many items by metadata rather than recognising them by shape.
+*@
+<tr class="vd-drive__row @(Item.IsTrashed ? "trashed" : "")">
+    <td>
+        <a class="vd-drive__name" href="@(Mode == DriveMode.Trash ? null : Route)">
+            <span class="vd-drive__icon" style="color:@DriveCard.ColorFor(Item.Type)">
+                <Icon Name="@Item.Icon" Size="17" />
+            </span>
+            <span class="vd-truncate" title="@Item.Name">@Item.Name</span>
+            @if (Item.IsStarred)
+            {
+                <Icon Name="star" Size="12" Class="vd-drive__starred" Title="Starred" />
+            }
+            @if (Item.IsShared)
+            {
+                <Icon Name="share" Size="12" Class="vd-drive__shared" Title="Shared" />
+            }
+        </a>
+    </td>
+
+    <td class="vd-drive__owner">
+        <Avatar Name="@Item.OwnerName" Size="sm" />
+        <span class="vd-truncate">@Item.OwnerName</span>
+    </td>
+
+    <td class="vd-drive__when">
+        <span title="@Item.UpdatedAt.ToLocalTime().ToString("f")">
+            @NotificationBell.Relative(Item.UpdatedAt)
+        </span>
+        @if (!string.IsNullOrEmpty(Item.UpdatedByName))
+        {
+            <span class="vd-drive__by">by @Item.UpdatedByName</span>
+        }
+    </td>
+
+    <td class="vd-drive__size vd-mono">
+        @(Item.Type == DriveItemType.Folder || Item.SizeBytes == 0 ? "—" : SideNav.Format(Item.SizeBytes))
+    </td>
+
+    <td class="vd-drive__actions">
+        <DriveItemMenu Item="Item" Mode="Mode" OnChanged="OnChanged" OnShare="OnShare" />
+    </td>
+</tr>
+
+@code {
+    [Parameter, EditorRequired] public DriveItemDto Item { get; set; } = default!;
+    [Parameter] public DriveMode Mode { get; set; } = DriveMode.Folder;
+    [Parameter] public EventCallback OnChanged { get; set; }
+    [Parameter] public EventCallback OnShare { get; set; }
+
+    private string Route => Item.Type == DriveItemType.Folder
+        ? $"/drive/{Item.Id}"
+        : Item.OpenRoute;
+}

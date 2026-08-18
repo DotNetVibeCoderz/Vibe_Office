@@ -1,0 +1,46 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>VibeDesk.Infrastructure</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\VibeDesk.Application\VibeDesk.Application.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Label="EF Core + all four database providers">
+    <PackageReference Include="Microsoft.EntityFrameworkCore" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+    <PackageReference Include="MySql.EntityFrameworkCore" />
+  </ItemGroup>
+
+  <ItemGroup Label="Identity">
+    <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" />
+  </ItemGroup>
+
+  <!--
+    Identity's token providers (TOTP for 2FA, password reset, email confirmation) live in the
+    ASP.NET Core shared framework, not in a NuGet package. Only the Web and API hosts reference this
+    project; desktop and mobile talk to the API instead, so they never load the shared framework.
+  -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <!-- Caching.Memory ships in the shared framework, so it needs no explicit reference. -->
+  <ItemGroup Label="Cache providers">
+    <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" />
+  </ItemGroup>
+
+  <!-- MinIO speaks the S3 API, so AWSSDK.S3 with ForcePathStyle covers it; no separate client needed. -->
+  <ItemGroup Label="Storage providers">
+    <PackageReference Include="Azure.Storage.Blobs" />
+    <PackageReference Include="AWSSDK.S3" />
+  </ItemGroup>
+
+</Project>

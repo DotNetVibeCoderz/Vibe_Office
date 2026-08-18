@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>VibeDesk.Api</RootNamespace>
+    <UserSecretsId>vibedesk-api-4d71b0c5</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\VibeDesk.Infrastructure\VibeDesk.Infrastructure.csproj" />
+    <ProjectReference Include="..\VibeDesk.Ai\VibeDesk.Ai.csproj" />
+    <ProjectReference Include="..\VibeDesk.Scripting\VibeDesk.Scripting.csproj" />
+  </ItemGroup>
+
+  <!--
+    All four migration assemblies, same reason as the web host: switching Database:Provider stays a
+    configuration change rather than a rebuild.
+  -->
+  <ItemGroup Label="Migrations">
+    <ProjectReference Include="..\Migrations\VibeDesk.Migrations.Sqlite\VibeDesk.Migrations.Sqlite.csproj" />
+    <ProjectReference Include="..\Migrations\VibeDesk.Migrations.SqlServer\VibeDesk.Migrations.SqlServer.csproj" />
+    <ProjectReference Include="..\Migrations\VibeDesk.Migrations.MySql\VibeDesk.Migrations.MySql.csproj" />
+    <ProjectReference Include="..\Migrations\VibeDesk.Migrations.PostgreSql\VibeDesk.Migrations.PostgreSql.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
+    <PackageReference Include="Scalar.AspNetCore" />
+    <PackageReference Include="Grpc.AspNetCore" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Protobuf Include="Protos\vibedesk.proto" GrpcServices="Server" />
+  </ItemGroup>
+
+</Project>

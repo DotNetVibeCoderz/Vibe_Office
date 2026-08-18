@@ -1,0 +1,71 @@
+@*
+    Sign-in for the desktop and mobile hosts. The web host has its own cookie-based flow at
+    /account/login; this one exchanges credentials for a bearer token against the API.
+*@
+@inject ApiSession Session
+@inject ApiClientOptions Options
+
+<div class="vd-signin">
+    <div class="vd-signin__card">
+        <div class="vd-signin__brand">
+            <Icon Name="sparkle" Size="28" />
+            <h1>VibeDesk</h1>
+        </div>
+
+        <p class="vd-signin__lede">Masuk untuk membuka Drive, Docs, Sheets, Slides, dan Calendar Anda.</p>
+
+        <EditForm Model="_form" OnValidSubmit="SubmitAsync" class="vd-signin__form">
+            <label class="vd-field">
+                <span class="vd-label">Email</span>
+                <InputText @bind-Value="_form.Email" class="vd-input" autocomplete="username" />
+            </label>
+
+            <label class="vd-field">
+                <span class="vd-label">Kata sandi</span>
+                <InputText @bind-Value="_form.Password" type="password" class="vd-input"
+                           autocomplete="current-password" />
+            </label>
+
+            @if (_error is not null)
+            {
+                <p class="vd-signin__error" role="alert">@_error</p>
+            }
+
+            <button type="submit" class="vd-btn vd-btn--primary vd-signin__submit" disabled="@_busy">
+                @if (_busy)
+                {
+                    <span class="vd-spinner vd-spinner--sm"></span>
+                }
+                <span>@(_busy ? "Menghubungkan…" : "Masuk")</span>
+            </button>
+        </EditForm>
+
+        @*
+            The server address is shown rather than hidden: when sign-in fails on a desktop app the
+            first question is always "which server am I even pointed at".
+        *@
+        <p class="vd-signin__server">Server: <code>@Options.BaseAddress</code></p>
+    </div>
+</div>
+
+@code {
+    private readonly Credentials _form = new();
+    private string? _error;
+    private bool _busy;
+
+    private async Task SubmitAsync()
+    {
+        _busy = true;
+        _error = null;
+
+        _error = await Session.SignInAsync(_form.Email ?? string.Empty, _form.Password ?? string.Empty);
+
+        _busy = false;
+    }
+
+    private sealed class Credentials
+    {
+        public string? Email { get; set; }
+        public string? Password { get; set; }
+    }
+}

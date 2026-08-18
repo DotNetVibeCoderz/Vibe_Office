@@ -1,0 +1,589 @@
+@page "/calendar"
+@attribute [Authorize]
+
+@implements IDisposable
+@inject ICalendarService Calendars
+@inject IDriveService DriveService
+@inject ToastService Toasts
+@inject UiState Ui
+
+<PageTitle>Calendar · VibeDesk</PageTitle>
+
+<SectionContent SectionName="@AppShell.TitleSection">
+    <h1>@PeriodLabel</h1>
+</SectionContent>
+
+<SectionContent SectionName="@AppShell.ToolbarSection">
+    <div class="vd-toolbar__group">
+        <button type="button" class="vd-btn vd-btn--outline vd-btn--sm" @onclick="GoToday">Today</button>
+        <button type="button" class="vd-btn vd-btn--icon vd-btn--sm" @onclick="() => Shift(-1)"
+                aria-label="Previous period">
+            <Icon Name="chevron-left" Size="16" />
+        </button>
+        <button type="button" class="vd-btn vd-btn--icon vd-btn--sm" @onclick="() => Shift(1)"
+                aria-label="Next period">
+            <Icon Name="chevron-right" Size="16" />
+        </button>
+    </div>
+
+    <span class="vd-toolbar__sep"></span>
+
+    <div class="vd-toolbar__group" role="group" aria-label="View">
+        @foreach (var (key, label) in Views)
+        {
+            var v = key;
+            <button type="button" class="vd-btn vd-btn--ghost vd-btn--sm"
+                    aria-pressed="@((_view == v).ToString().ToLowerInvariant())"
+                    @onclick="() => SetView(v)">
+                @label
+            </button>
+        }
+    </div>
+
+    <span class="vd-toolbar__sep"></span>
+
+    <div class="vd-cal__pickers">
+        @foreach (var calendar in _calendars)
+        {
+            var cal = calendar;
+            <button type="button" class="vd-cal__picker"
+                    aria-pressed="@((!_hidden.Contains(cal.Id)).ToString().ToLowerInvariant())"
+                    @onclick="() => ToggleCalendar(cal.Id)"
+                    title="@cal.Name">
+                <span class="vd-cal__dot" style="background:@cal.Color"></span>
+                <span class="vd-truncate" style="max-width:120px">@cal.Name</span>
+            </button>
+        }
+    </div>
+
+    <div class="vd-spacer"></div>
+
+    <button type="button" class="vd-btn vd-btn--ghost vd-btn--sm" @onclick="OpenImport"
+            title="Create events from a spreadsheet">
+        <Icon Name="table" Size="15" /> Import
+    </button>
+    <button type="button" class="vd-btn vd-btn--primary vd-btn--sm" @onclick="() => OpenEvent(null)">
+        <Icon Name="plus" Size="15" /> Event
+    </button>
+</SectionContent>
+
+<div class="vd-cal">
+    @if (_loading)
+    {
+        <div class="vd-skeleton" style="flex:1 1 auto;margin:var(--vd-3)"></div>
+    }
+    else if (_view == "month")
+    {
+        <div class="vd-cal__weekdays">
+            @foreach (var name in WeekdayNames)
+            {
+                <div class="vd-cal__weekday">@name</div>
+            }
+        </div>
+
+        <div class="vd-cal__month">
+            @foreach (var day in MonthDays)
+            {
+                var d = day;
+                var dayEvents = EventsOn(d);
+                <div class="vd-cal__day"
+                     data-today="@(d.Date == Today).ToString().ToLowerInvariant()"
+                     data-outside="@(d.Month != _anchor.Month).ToString().ToLowerInvariant()"
+                     @onclick="() => NewEventOn(d)">
+                    <span class="vd-cal__daynum">@d.Day</span>
+
+                    @foreach (var occurrence in dayEvents.Take(3))
+                    {
+                        var ev = occurrence;
+                        <button type="button" class="vd-cal__chip"
+                                data-allday="@ev.IsAllDay.ToString().ToLowerInvariant()"
+                                style="@(ev.IsAllDay ? $"background:{ev.Color}" : "")"
+                                @onclick="() => OpenEvent(ev)"
+                                @onclick:stopPropagation="true"
+                                title="@ev.Title">
+                            <span class="vd-cal__dot" style="background:@ev.Color"></span>
+                            @if (!ev.IsAllDay)
+                            {
+                                <span class="vd-cal__time">@Local(ev.StartUtc).ToString("HH:mm")</span>
+                            }
+                            <span class="vd-truncate">@ev.Title</span>
+                        </button>
+                    }
+
+                    @if (dayEvents.Count > 3)
+                    {
+                        <button type="button" class="vd-cal__more"
+                                @onclick="() => ShowDay(d)"
+                                @onclick:stopPropagation="true">
+                            @(dayEvents.Count - 3) more
+                        </button>
+                    }
+                </div>
+            }
+        </div>
+    }
+    else if (_view is "week" or "day")
+    {
+        var days = VisibleDays;
+
+        <div class="vd-cal__daycols" style="--vd-cal-days:@days.Count">
+            <div></div>
+            @foreach (var day in days)
+            {
+                <div class="vd-cal__daycol" data-today="@(day.Date == Today).ToString().ToLowerInvariant()">
+                    <div class="vd-cal__daycol-name">@day.ToString("ddd")</div>
+                    <div class="vd-cal__daycol-num">@day.Day</div>
+                </div>
+            }
+        </div>
+
+        <div class="vd-cal__timegrid">
+            <div class="vd-cal__timerow" style="--vd-cal-days:@days.Count">
+                <div>
+                    @for (var hour = 0; hour < 24; hour++)
+                    {
+                        <div class="vd-cal__hourlabel">@($"{hour:00}:00")</div>
+                    }
+                </div>
+
+                @foreach (var day in days)
+                {
+                    var d = day;
+                    <div class="vd-cal__col" data-today="@(d.Date == Today).ToString().ToLowerInvariant()"
+                         @onclick="() => NewEventOn(d)">
+                        @for (var hour = 0; hour < 24; hour++)
+                        {
+                            <div class="vd-cal__hour"></div>
+                        }
+
+                        @if (d.Date == Today)
+                        {
+                            <div class="vd-cal__now" style="top:@(NowOffset)px"></div>
+                        }
+
+                        @foreach (var occurrence in TimedEventsOn(d))
+                        {
+                            var ev = occurrence;
+                            var layout = Layout(ev, d);
+                            <button type="button" class="vd-cal__event"
+                                    style="top:@(layout.Top)px;height:@(layout.Height)px;background:@Tint(ev.Color);color:@ev.Color"
+                                    @onclick="() => OpenEvent(ev)"
+                                    @onclick:stopPropagation="true">
+                                <strong class="vd-truncate">@ev.Title</strong>
+                                <span class="vd-cal__event-time">
+                                    @Local(ev.StartUtc).ToString("HH:mm")–@Local(ev.EndUtc).ToString("HH:mm")
+                                </span>
+                            </button>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="vd-cal__agenda">
+            @if (_events.Count == 0)
+            {
+                <EmptyState Icon="calendar" Title="Nothing scheduled"
+                            Description="Events in this range will appear here.">
+                    <Action>
+                        <button type="button" class="vd-btn vd-btn--primary" @onclick="() => OpenEvent(null)">
+                            Create an event
+                        </button>
+                    </Action>
+                </EmptyState>
+            }
+            else
+            {
+                @foreach (var group in _events.GroupBy(e => Local(e.StartUtc).Date).OrderBy(g => g.Key))
+                {
+                    <div class="vd-cal__agenda-day">
+                        <div class="vd-cal__agenda-date">
+                            @group.Key.ToString("ddd d MMM")
+                            @if (group.Key == Today)
+                            {
+                                <span class="vd-badge vd-badge--primary" style="margin-top:var(--vd-1)">Today</span>
+                            }
+                        </div>
+                        <div>
+                            @foreach (var occurrence in group.OrderBy(e => e.StartUtc))
+                            {
+                                var ev = occurrence;
+                                <button type="button" class="vd-cal__agenda-item" @onclick="() => OpenEvent(ev)">
+                                    <span class="vd-cal__dot" style="background:@ev.Color"></span>
+                                    <span class="vd-mono" style="font-size:var(--vd-text-xs);min-width:84px">
+                                        @(ev.IsAllDay ? "All day" : $"{Local(ev.StartUtc):HH:mm}–{Local(ev.EndUtc):HH:mm}")
+                                    </span>
+                                    <span class="vd-truncate">@ev.Title</span>
+                                    @if (ev.Attachments.Count > 0)
+                                    {
+                                        <Icon Name="attach" Size="13" />
+                                    }
+                                </button>
+                            }
+                        </div>
+                    </div>
+                }
+            }
+        </div>
+    }
+</div>
+
+<EventDialog @bind-Open="_eventDialog"
+             Event="_editing"
+             Calendars="_calendars"
+             DefaultStart="_defaultStart"
+             OnSaved="OnEventSaved" />
+
+<Modal @bind-Open="_importDialog" Title="Import events from a spreadsheet" Icon="table">
+    <ChildContent>
+        <div class="vd-col" style="gap:var(--vd-3)">
+            <p class="vd-hint">
+                Columns are read in order: <strong>title</strong>, <strong>start</strong>,
+                <strong>end</strong>, and optionally <strong>location</strong>. The first row is
+                treated as a header.
+            </p>
+            <div class="vd-field">
+                <label for="imp-sheet">Spreadsheet</label>
+                <select id="imp-sheet" class="vd-select" @bind="_importSheetId">
+                    <option value="">Choose…</option>
+                    @foreach (var sheet in _spreadsheets)
+                    {
+                        <option value="@sheet.Id">@sheet.Name</option>
+                    }
+                </select>
+            </div>
+            <div class="vd-event__row">
+                <div class="vd-field">
+                    <label for="imp-tab">Sheet name</label>
+                    <input id="imp-tab" class="vd-input" @bind="_importSheetName" placeholder="Timeline" />
+                </div>
+                <div class="vd-field">
+                    <label for="imp-range">Range</label>
+                    <input id="imp-range" class="vd-input vd-mono" @bind="_importRange" placeholder="A1:D20" />
+                </div>
+            </div>
+            <div class="vd-field">
+                <label for="imp-target">Add to calendar</label>
+                <select id="imp-target" class="vd-select" @bind="_importTargetId">
+                    @foreach (var calendar in _calendars.Where(c => c.CanEdit))
+                    {
+                        <option value="@calendar.Id">@calendar.Name</option>
+                    }
+                </select>
+            </div>
+        </div>
+    </ChildContent>
+    <Footer>
+        <button type="button" class="vd-btn vd-btn--ghost" @onclick="() => _importDialog = false">Cancel</button>
+        <button type="button" class="vd-btn vd-btn--primary" @onclick="RunImport" disabled="@_importing">
+            @if (_importing)
+            {
+                <span class="vd-spinner"></span>
+            }
+            Import
+        </button>
+    </Footer>
+</Modal>
+
+@code {
+    private static readonly (string Key, string Label)[] Views =
+    [
+        ("month", "Month"), ("week", "Week"), ("day", "Day"), ("agenda", "Agenda"),
+    ];
+
+    private static readonly string[] WeekdayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+    private string _view = "month";
+    private DateTime _anchor = DateTime.Today;
+
+    private List<CalendarDto> _calendars = [];
+    private List<EventOccurrenceDto> _events = [];
+    private readonly HashSet<Guid> _hidden = [];
+
+    private bool _loading = true;
+
+    private bool _eventDialog;
+    private EventOccurrenceDto? _editing;
+    private DateTimeOffset? _defaultStart;
+
+    private bool _importDialog, _importing;
+    private string _importSheetId = string.Empty;
+    private string _importSheetName = string.Empty;
+    private string _importRange = string.Empty;
+    private string _importTargetId = string.Empty;
+    private List<DriveItemDto> _spreadsheets = [];
+
+    /// <summary>Refreshes the "now" line without reloading events.</summary>
+    private System.Threading.Timer? _clock;
+
+    private static DateTime Today => DateTime.Today;
+
+    /// <summary>
+    /// Events are stored and queried in UTC; the views render in the browser's local zone. Converting
+    /// at the edge keeps every comparison in the middle of the page unambiguous.
+    /// </summary>
+    private static DateTime Local(DateTimeOffset utc) => utc.ToLocalTime().DateTime;
+
+    private const int HourHeight = 48;
+
+    private int NowOffset => (int)(DateTime.Now.TimeOfDay.TotalMinutes / 60 * HourHeight);
+
+    private string PeriodLabel => _view switch
+    {
+        "day" => _anchor.ToString("dddd, d MMMM yyyy"),
+        "week" => $"{WeekStart:d MMM} – {WeekStart.AddDays(6):d MMM yyyy}",
+        "agenda" => $"{_anchor:MMMM yyyy}",
+        _ => _anchor.ToString("MMMM yyyy"),
+    };
+
+    /// <summary>Weeks start on Monday, which is the convention in the app's primary locale.</summary>
+    private DateTime WeekStart => _anchor.AddDays(-(((int)_anchor.DayOfWeek + 6) % 7));
+
+    private List<DateTime> VisibleDays => _view == "day"
+        ? [_anchor.Date]
+        : [.. Enumerable.Range(0, 7).Select(i => WeekStart.AddDays(i))];
+
+    private List<DateTime> MonthDays
+    {
+        get
+        {
+            var first = new DateTime(_anchor.Year, _anchor.Month, 1);
+            var start = first.AddDays(-(((int)first.DayOfWeek + 6) % 7));
+
+            // Always six rows: a month grid that changes height as you page through is disorienting.
+            return [.. Enumerable.Range(0, 42).Select(i => start.AddDays(i))];
+        }
+    }
+
+    private (DateTimeOffset From, DateTimeOffset To) Range
+    {
+        get
+        {
+            var (start, end) = _view switch
+            {
+                "day" => (_anchor.Date, _anchor.Date.AddDays(1)),
+                "week" => (WeekStart, WeekStart.AddDays(7)),
+                "agenda" => (_anchor.Date, _anchor.Date.AddDays(30)),
+                _ => (MonthDays[0], MonthDays[^1].AddDays(1)),
+            };
+
+            // The service takes UTC; the boundaries are local midnights.
+            return (new DateTimeOffset(start, TimeZoneInfo.Local.GetUtcOffset(start)).ToUniversalTime(),
+                    new DateTimeOffset(end, TimeZoneInfo.Local.GetUtcOffset(end)).ToUniversalTime());
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        Ui.SetContext("calendar");
+        await LoadAsync();
+
+        _clock = new System.Threading.Timer(
+            _ => InvokeAsync(StateHasChanged), null, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+
+        try
+        {
+            if (_calendars.Count == 0)
+            {
+                _calendars = [.. await Calendars.ListCalendarsAsync()];
+
+                var editable = _calendars.FirstOrDefault(c => c.CanEdit);
+                if (editable is not null) _importTargetId = editable.Id.ToString();
+            }
+
+            var visible = _calendars.Where(c => !_hidden.Contains(c.Id)).Select(c => c.Id).ToList();
+
+            var (from, to) = Range;
+            _events = visible.Count == 0
+                ? []
+                : [.. await Calendars.GetOccurrencesAsync(from, to, visible)];
+        }
+        catch (Exception e)
+        {
+            Toasts.Error(e);
+            _events = [];
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task SetView(string view)
+    {
+        _view = view;
+        await LoadAsync();
+    }
+
+    private async Task Shift(int direction)
+    {
+        _anchor = _view switch
+        {
+            "day" => _anchor.AddDays(direction),
+            "week" => _anchor.AddDays(7 * direction),
+            "agenda" => _anchor.AddDays(30 * direction),
+            _ => _anchor.AddMonths(direction),
+        };
+
+        await LoadAsync();
+    }
+
+    private async Task GoToday()
+    {
+        _anchor = DateTime.Today;
+        await LoadAsync();
+    }
+
+    private async Task ToggleCalendar(Guid id)
+    {
+        if (!_hidden.Remove(id)) _hidden.Add(id);
+        await LoadAsync();
+    }
+
+    private async Task ShowDay(DateTime day)
+    {
+        _anchor = day;
+        _view = "day";
+        await LoadAsync();
+    }
+
+    // ── layout ──────────────────────────────────────────────────────────────
+
+    private List<EventOccurrenceDto> EventsOn(DateTime day) =>
+        [.. _events
+            .Where(e => Local(e.StartUtc).Date <= day.Date && Local(e.EndUtc).Date >= day.Date)
+            .OrderByDescending(e => e.IsAllDay)
+            .ThenBy(e => e.StartUtc)];
+
+    private List<EventOccurrenceDto> TimedEventsOn(DateTime day) =>
+        [.. _events
+            .Where(e => !e.IsAllDay && Local(e.StartUtc).Date == day.Date)
+            .OrderBy(e => e.StartUtc)];
+
+    /// <summary>Vertical placement in the time grid, with a floor so a five-minute event stays legible.</summary>
+    private (int Top, int Height) Layout(EventOccurrenceDto occurrence, DateTime day)
+    {
+        var start = Local(occurrence.StartUtc);
+        var end = Local(occurrence.EndUtc);
+
+        // An event running past midnight is clipped to the day it is drawn in.
+        if (end.Date > day.Date) end = day.Date.AddDays(1);
+
+        var top = (int)(start.TimeOfDay.TotalMinutes / 60 * HourHeight);
+        var height = Math.Max(20, (int)((end - start).TotalMinutes / 60 * HourHeight));
+
+        return (top, height);
+    }
+
+    /// <summary>
+    /// A translucent wash of the calendar's colour for the event body, with the full colour kept for
+    /// the left rule and the text — so identity survives at any tint.
+    /// </summary>
+    private static string Tint(string color) =>
+        $"color-mix(in srgb, {color} 16%, var(--vd-surface))";
+
+    // ── events ──────────────────────────────────────────────────────────────
+
+    private void NewEventOn(DateTime day)
+    {
+        // Clicking an empty slot opens a new event at a sensible hour rather than at midnight.
+        var start = day.Date == Today
+            ? DateTime.Now.Date.AddHours(DateTime.Now.Hour + 1)
+            : day.Date.AddHours(9);
+
+        _defaultStart = new DateTimeOffset(start, TimeZoneInfo.Local.GetUtcOffset(start));
+        _editing = null;
+        _eventDialog = true;
+    }
+
+    private void OpenEvent(EventOccurrenceDto? occurrence)
+    {
+        _editing = occurrence;
+        _defaultStart = occurrence is null
+            ? new DateTimeOffset(DateTime.Now.Date.AddHours(DateTime.Now.Hour + 1),
+                TimeZoneInfo.Local.GetUtcOffset(DateTime.Now))
+            : null;
+
+        _eventDialog = true;
+    }
+
+    private async Task OnEventSaved()
+    {
+        _eventDialog = false;
+        await LoadAsync();
+    }
+
+    // ── import ──────────────────────────────────────────────────────────────
+
+    private async Task OpenImport()
+    {
+        _importDialog = true;
+
+        if (_spreadsheets.Count > 0) return;
+
+        try
+        {
+            var page = await DriveService.QueryAsync(new DriveQuery
+            {
+                Types = [DriveItemType.Spreadsheet],
+                Recursive = true,
+                Take = 50,
+            });
+
+            _spreadsheets = [.. page.Items];
+        }
+        catch (Exception e)
+        {
+            Toasts.Error(e);
+        }
+    }
+
+    private async Task RunImport()
+    {
+        if (!Guid.TryParse(_importSheetId, out var sheetId)
+            || !Guid.TryParse(_importTargetId, out var targetId))
+        {
+            Toasts.Warn("Choose a spreadsheet and a target calendar.");
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_importRange))
+        {
+            Toasts.Warn("Enter the range to import, for example A1:D20.");
+            return;
+        }
+
+        _importing = true;
+
+        try
+        {
+            var created = await Calendars.ImportFromSpreadsheetAsync(
+                sheetId, _importSheetName.Trim(), _importRange.Trim(), targetId);
+
+            _importDialog = false;
+
+            Toasts.Success(created == 0
+                ? "No rows produced an event — check the range and the date columns."
+                : $"Created {created} event{(created == 1 ? "" : "s")}.");
+
+            await LoadAsync();
+        }
+        catch (Exception e)
+        {
+            Toasts.Error(e);
+        }
+        finally
+        {
+            _importing = false;
+        }
+    }
+
+    public void Dispose() => _clock?.Dispose();
+}

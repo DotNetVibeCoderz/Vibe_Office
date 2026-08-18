@@ -1,0 +1,1206 @@
+@page "/slides/{Id:guid}"
+@attribute [Authorize]
+
+@implements IAsyncDisposable
+@inject IDocumentContentService Content
+@inject IDriveService DriveService
+@inject IVersionService Versions
+@inject ToastService Toasts
+@inject UiState Ui
+@inject IJSRuntime Js
+
+<PageTitle>@(_item?.Name ?? "Presentation") · VibeDesk</PageTitle>
+
+<SectionContent SectionName="@AppShell.TitleSection">
+    <span class="vd-doctitle">
+        <span style="color:var(--vd-app-slides)"><Icon Name="slideshow" Size="17" /></span>
+        <input class="vd-doctitle__input"
+               value="@(_item?.Name ?? "")"
+               aria-label="Presentation name"
+               disabled="@(!CanEdit)"
+               @onchange="OnRename" />
+        <span class="vd-doctitle__state">@SaveLabel</span>
+    </span>
+</SectionContent>
+
+<SectionContent SectionName="@AppShell.ActionsSection">
+    @if (_item is not null)
+    {
+        <span class="vd-badge @(CanEdit ? "vd-badge--jade" : "vd-badge--warn")">@_item.MyRole</span>
+    }
+</SectionContent>
+
+<SectionContent SectionName="@AppShell.ToolbarSection">
+    @if (_model is not null)
+    {
+        <div class="vd-toolbar__group">
+            <button type="button" class="vd-btn vd-btn--ghost vd-btn--sm" disabled="@(!CanEdit)"
+                    @onclick="AddSlide" title="Add a slide">
+                <Icon Name="plus" Size="15" /> Slide
+            </button>
+            <button type="button" class="vd-btn vd-btn--icon vd-btn--sm" disabled="@(!CanEdit)"
+                    @onclick="DuplicateSlide" title="Duplicate slide" aria-label="Duplicate slide">
+                <Icon Name="copy" Size="15" />
+            </button>
+            <button type="button" class="vd-btn vd-btn--icon vd-btn--sm"
+                    disabled="@(!CanEdit || _model.Slides.Count <= 1)"
+                    @onclick="DeleteSlide" title="Delete slide" aria-label="Delete slide">
+                <Icon Name="trash" Size="15" />
+            </button>
+        </div>
+
+        <span class="vd-toolbar__sep"></span>
+
+        <div class="vd-toolbar__group">
+            <button type="button" class="vd-btn vd-btn--ghost vd-btn--sm" disabled="@(!CanEdit)"
+                    @onclick='() => AddElement("text")' title="Add a text box">
+                <Icon Name="text-box" Size="15" /> Text
+            </button>
+            <button type="button" class="vd-btn vd-btn--ghost vd-btn--sm" disabled="@(!CanEdit)"
+                    @onclick="() => _mediaDialog = true" title="Add an image, video or audio">
+                <Icon Name="image" Size="15" /> Media
+            </button>
+            <button type="button" class="vd-btn vd-btn--ghost vd-btn--sm" disabled="@(!CanEdit)"
+                    @onclick='() => AddElement("shape")' title="Add a shape">
+                <Icon Name="shape" Size="15" /> Shape
+            </button>
+            <button type="button" class="vd-btn vd-btn--ghost vd-btn--sm" disabled="@(!CanEdit)"
+                    @onclick="() => _chartDialog = true" title="Embed a chart from a spreadsheet">
+                <Icon Name="chart-column" Size="15" /> Chart
+            </button>
+        </div>
+
+        <span class="vd-toolbar__sep"></span>
+
+        <select class="vd-select vd-select--inline" disabled="@(!CanEdit)"
+                value="@_model.Theme" @onchange="OnThemeChanged" aria-label="Deck theme">
+            @foreach (var theme in SlideThemes.All)
+            {
+                <option value="@theme.Key">@theme.Name</option>
+            }
+        </select>
+
+        <div class="vd-spacer"></div>
+
+        <button type="button" class="vd-btn vd-btn--ghost vd-btn--sm" @onclick="StartPresenter"
+                title="Presenter view — notes, next slide and a timer">
+            <Icon Name="notes" Size="15" /> Presenter
+        </button>
+        <button type="button" class="vd-btn vd-btn--primary vd-btn--sm" @onclick="StartPresent">
+            <Icon Name="play" Size="15" /> Present
+        </button>
+        <button type="button" class="vd-btn vd-btn--icon vd-btn--sm" disabled="@(!CanEdit)"
+                @onclick="SaveVersion" title="Save a version" aria-label="Save a version">
+            <Icon Name="history" Size="15" />
+        </button>
+    }
+</SectionContent>
+
+@if (_loading)
+{
+    <div class="vd-slides"><div class="vd-stage"><div class="vd-stage__area"><div class="vd-skeleton" style="width:min(100%,960px);aspect-ratio:16/9"></div></div></div></div>
+}
+else if (_item is null || _model is null || Current is null)
+{
+    <EmptyState Icon="slideshow" Title="We couldn't open this presentation"
+                Description="It may have been moved to trash, or you may no longer have access." />
+}
+else
+{
+    <div class="vd-slides">
+        <aside class="vd-rail" aria-label="Slides">
+            <div class="vd-rail__list">
+                @for (var i = 0; i < _model.Slides.Count; i++)
+                {
+                    var index = i;
+                    var slide = _model.Slides[index];
+                    <button type="button" class="vd-rail__item"
+                            aria-current="@((index == _index).ToString().ToLowerInvariant())"
+                            @onclick="() => Select(index)"
+                            @key="slide.Id">
+                        <span class="vd-rail__num">@(index + 1)</span>
+                        <span class="vd-rail__frame">
+                            <SlideView Slide="slide" Theme="@_model.Theme"
+                                       AspectRatio="_model.AspectRatio" Thumbnail="true"
+                                       ChartFor="ChartFor" />
+                            @if (slide.Hidden)
+                            {
+                                <span class="vd-rail__hidden" title="Hidden in presentation">
+                                    <Icon Name="close" Size="11" />
+                                </span>
+                            }
+                        </span>
+                    </button>
+                }
+            </div>
+        </aside>
+
+        <div class="vd-stage">
+            <div class="vd-stage__area" @onclick="() => _selectedElementId = null">
+                <SlideView Slide="Current" Theme="@_model.Theme"
+                           AspectRatio="_model.AspectRatio"
+                           Editable="CanEdit"
+                           SelectedElementId="@_selectedElementId"
+                           OnElementClick="id => _selectedElementId = id"
+                           ChartFor="ChartFor" />
+            </div>
+
+            <div class="vd-notes">
+                <span class="vd-label">Speaker notes</span>
+                <textarea class="vd-notes__input"
+                          placeholder="Only you see these while presenting."
+                          disabled="@(!CanEdit)"
+                          value="@Current.Notes"
+                          @onchange="OnNotesChanged"></textarea>
+            </div>
+        </div>
+
+        <aside class="vd-inspector" aria-label="Slide settings">
+            <div class="vd-inspector__body">
+                @if (Selected is not null)
+                {
+                    <span class="vd-label">Element</span>
+
+                    @if (Selected.Type == "text")
+                    {
+                        <div class="vd-field">
+                            <label for="el-text">Text</label>
+                            <textarea id="el-text" class="vd-textarea" rows="4"
+                                      disabled="@(!CanEdit)"
+                                      value="@StripTags(Selected.Text)"
+                                      @onchange="OnElementTextChanged"></textarea>
+                            <span class="vd-hint">Use the style below for size and weight.</span>
+                        </div>
+
+                        <div class="vd-field">
+                            <label for="el-level">Style</label>
+                            <select id="el-level" class="vd-select" disabled="@(!CanEdit)"
+                                    value="@TextLevel(Selected)" @onchange="OnTextLevelChanged">
+                                <option value="h1">Title</option>
+                                <option value="h2">Heading</option>
+                                <option value="h3">Subheading</option>
+                                <option value="p">Body</option>
+                            </select>
+                        </div>
+                    }
+                    else if (Selected.Type is "image" or "video" or "audio")
+                    {
+                        <div class="vd-field">
+                            <label for="el-src">Source</label>
+                            <input id="el-src" class="vd-input" disabled="@(!CanEdit)"
+                                   value="@Selected.Src" @onchange="OnElementSrcChanged" />
+                        </div>
+                        <div class="vd-field">
+                            <label for="el-alt">Description</label>
+                            <input id="el-alt" class="vd-input" disabled="@(!CanEdit)"
+                                   value="@Selected.Alt" @onchange="OnElementAltChanged" />
+                        </div>
+                    }
+                    else if (Selected.Type == "shape")
+                    {
+                        <div class="vd-field">
+                            <label for="el-shape">Shape</label>
+                            <select id="el-shape" class="vd-select" disabled="@(!CanEdit)"
+                                    value="@(Selected.Style.Shape ?? "rect")" @onchange="OnShapeChanged">
+                                <option value="rect">Rectangle</option>
+                                <option value="ellipse">Ellipse</option>
+                                <option value="triangle">Triangle</option>
+                                <option value="arrow">Arrow</option>
+                                <option value="line">Line</option>
+                            </select>
+                        </div>
+                    }
+
+                    <span class="vd-label">Position &amp; size</span>
+                    <div class="vd-inspector__grid">
+                        @foreach (var field in GeometryFields)
+                        {
+                            var f = field;
+                            <div class="vd-field">
+                                <label for="geo-@f.Key">@f.Label</label>
+                                <input id="geo-@f.Key" class="vd-input vd-mono" type="number"
+                                       step="0.5" disabled="@(!CanEdit)"
+                                       value="@f.Get(Selected)"
+                                       @onchange="e => OnGeometryChanged(f.Key, e)" />
+                            </div>
+                        }
+                    </div>
+                    <span class="vd-hint">Values are percentages of the slide.</span>
+
+                    <span class="vd-label">Animation</span>
+                    <div class="vd-field">
+                        <select class="vd-select" disabled="@(!CanEdit)"
+                                value="@(Selected.Animation?.Type ?? "none")"
+                                @onchange="OnAnimationChanged">
+                            <option value="none">None</option>
+                            <option value="fadeIn">Fade in</option>
+                            <option value="fadeInUp">Fade in up</option>
+                            <option value="slideInLeft">Slide in from left</option>
+                            <option value="slideInRight">Slide in from right</option>
+                            <option value="zoomIn">Zoom in</option>
+                            <option value="bounceIn">Bounce in</option>
+                        </select>
+                    </div>
+
+                    <div class="vd-row">
+                        <button type="button" class="vd-btn vd-btn--outline vd-btn--sm"
+                                disabled="@(!CanEdit)" @onclick="BringForward">
+                            <Icon Name="layers" Size="14" /> Forward
+                        </button>
+                        <button type="button" class="vd-btn vd-btn--ghost vd-btn--sm"
+                                disabled="@(!CanEdit)" @onclick="DeleteElement">
+                            <Icon Name="trash" Size="14" /> Delete
+                        </button>
+                    </div>
+                }
+                else
+                {
+                    <span class="vd-label">Slide</span>
+
+                    <div class="vd-field">
+                        <label for="slide-layout">Layout</label>
+                        <select id="slide-layout" class="vd-select" disabled="@(!CanEdit)"
+                                value="@Current.Layout" @onchange="OnLayoutChanged">
+                            <option value="title">Title</option>
+                            <option value="titleContent">Title and content</option>
+                            <option value="twoColumn">Two columns</option>
+                            <option value="sectionHeader">Section header</option>
+                            <option value="imageFull">Full-bleed image</option>
+                            <option value="quote">Quote</option>
+                            <option value="blank">Blank</option>
+                        </select>
+                    </div>
+
+                    <div class="vd-field">
+                        <label for="slide-transition">Transition</label>
+                        <select id="slide-transition" class="vd-select" disabled="@(!CanEdit)"
+                                value="@Current.Transition" @onchange="OnTransitionChanged">
+                            <option value="none">None</option>
+                            <option value="fade">Fade</option>
+                            <option value="slideLeft">Slide left</option>
+                            <option value="slideUp">Slide up</option>
+                            <option value="zoom">Zoom</option>
+                            <option value="flip">Flip</option>
+                        </select>
+                    </div>
+
+                    <label class="vd-auth__check">
+                        <input type="checkbox" disabled="@(!CanEdit)"
+                               checked="@Current.Hidden" @onchange="OnHiddenChanged" />
+                        <span>Skip this slide when presenting</span>
+                    </label>
+
+                    <span class="vd-hint">
+                        Select an element on the slide to edit it.
+                    </span>
+                }
+            </div>
+        </aside>
+    </div>
+}
+
+@if (_presenting && _model is not null && Current is not null)
+{
+    <div class="vd-present" tabindex="0" @onkeydown="OnPresentKey" @ref="_presentRoot">
+        <SlideView Slide="Current" Theme="@_model.Theme" AspectRatio="_model.AspectRatio" Animate="true"
+                   ChartFor="ChartFor" />
+
+        <div class="vd-present__bar">
+            <button type="button" class="vd-btn vd-btn--icon" style="color:#fff"
+                    @onclick="Previous" aria-label="Previous slide">
+                <Icon Name="chevron-left" Size="18" />
+            </button>
+            <span class="vd-present__count">@(_index + 1) / @_model.Slides.Count</span>
+            <button type="button" class="vd-btn vd-btn--icon" style="color:#fff"
+                    @onclick="Next" aria-label="Next slide">
+                <Icon Name="chevron-right" Size="18" />
+            </button>
+            <div class="vd-spacer"></div>
+            <button type="button" class="vd-btn vd-btn--icon" style="color:#fff"
+                    @onclick="StopPresent" aria-label="Exit presentation">
+                <Icon Name="close" Size="18" />
+            </button>
+        </div>
+    </div>
+}
+
+@if (_presenterView && _model is not null && Current is not null)
+{
+    <div class="vd-presenter" tabindex="0" @onkeydown="OnPresentKey" @ref="_presentRoot">
+        <div class="vd-presenter__current">
+            <SlideView Slide="Current" Theme="@_model.Theme" AspectRatio="_model.AspectRatio"
+                       ChartFor="ChartFor" />
+        </div>
+
+        <div class="vd-presenter__side">
+            <div class="vd-presenter__next">
+                <div class="vd-presenter__label">Next</div>
+                @if (NextSlide is not null)
+                {
+                    <SlideView Slide="NextSlide" Theme="@_model.Theme"
+                               AspectRatio="_model.AspectRatio" Thumbnail="true" ChartFor="ChartFor" />
+                }
+                else
+                {
+                    <p style="opacity:.6;font-size:var(--vd-text-sm)">End of deck</p>
+                }
+            </div>
+
+            <div class="vd-presenter__notes">
+                <div class="vd-presenter__label">Notes</div>
+                @(string.IsNullOrWhiteSpace(Current.Notes) ? "No notes for this slide." : Current.Notes)
+            </div>
+        </div>
+
+        <div class="vd-presenter__bar">
+            <span class="vd-presenter__timer">@Elapsed</span>
+            <span class="vd-present__count">@(_index + 1) / @_model.Slides.Count</span>
+            <div class="vd-spacer"></div>
+            <button type="button" class="vd-btn vd-btn--outline" @onclick="Previous">
+                <Icon Name="chevron-left" Size="16" /> Back
+            </button>
+            <button type="button" class="vd-btn vd-btn--primary" @onclick="Next">
+                Next <Icon Name="chevron-right" Size="16" />
+            </button>
+            <button type="button" class="vd-btn vd-btn--ghost" style="color:#fff" @onclick="StopPresent">
+                Exit
+            </button>
+        </div>
+    </div>
+}
+
+<Modal @bind-Open="_mediaDialog" Title="Add media" Icon="image">
+    <ChildContent>
+        <div class="vd-col" style="gap:var(--vd-3)">
+            <div class="vd-field">
+                <label for="media-kind">Type</label>
+                <select id="media-kind" class="vd-select" @bind="_mediaKind">
+                    <option value="image">Image</option>
+                    <option value="video">Video</option>
+                    <option value="audio">Audio</option>
+                </select>
+            </div>
+            <div class="vd-field">
+                <label for="media-url">Address</label>
+                <input id="media-url" class="vd-input" @bind="_mediaUrl" placeholder="https://…" />
+            </div>
+            <div class="vd-field">
+                <label for="media-alt">Description</label>
+                <input id="media-alt" class="vd-input" @bind="_mediaAlt" placeholder="What this shows" />
+            </div>
+            <div class="vd-field">
+                <label>Or upload</label>
+                <label class="vd-btn vd-btn--outline" style="align-self:flex-start">
+                    <Icon Name="upload" Size="15" /> Choose a file
+                    <InputFile OnChange="OnMediaUpload" class="vd-sr-only" />
+                </label>
+            </div>
+        </div>
+    </ChildContent>
+    <Footer>
+        <button type="button" class="vd-btn vd-btn--ghost" @onclick="() => _mediaDialog = false">Cancel</button>
+        <button type="button" class="vd-btn vd-btn--primary" @onclick="AddMedia">Add</button>
+    </Footer>
+</Modal>
+
+<Modal @bind-Open="_chartDialog" Title="Embed a chart" Icon="chart-column">
+    <ChildContent>
+        <div class="vd-col" style="gap:var(--vd-3)">
+            <p class="vd-hint">
+                The chart stays linked to its spreadsheet — change the numbers there and the slide
+                follows.
+            </p>
+            <div class="vd-field">
+                <label for="chart-sheet">Spreadsheet</label>
+                <select id="chart-sheet" class="vd-select" @bind="_chartSourceId">
+                    <option value="">Choose a spreadsheet…</option>
+                    @foreach (var sheet in _spreadsheets)
+                    {
+                        <option value="@sheet.Id">@sheet.Name</option>
+                    }
+                </select>
+            </div>
+            @if (_availableCharts.Count > 0)
+            {
+                <div class="vd-field">
+                    <label for="chart-pick">Chart</label>
+                    <select id="chart-pick" class="vd-select" @bind="_chartSourceChartId">
+                        @foreach (var (chartId, title) in _availableCharts)
+                        {
+                            <option value="@chartId">@title</option>
+                        }
+                    </select>
+                </div>
+            }
+            else if (!string.IsNullOrEmpty(_chartSourceId))
+            {
+                <p class="vd-hint">That spreadsheet has no charts yet.</p>
+            }
+        </div>
+    </ChildContent>
+    <Footer>
+        <button type="button" class="vd-btn vd-btn--ghost" @onclick="() => _chartDialog = false">Cancel</button>
+        <button type="button" class="vd-btn vd-btn--outline" @onclick="LoadChartsForSource">Load charts</button>
+        <button type="button" class="vd-btn vd-btn--primary" @onclick="AddChartElement"
+                disabled="@(_availableCharts.Count == 0)">Embed</button>
+    </Footer>
+</Modal>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private DriveItemDto? _item;
+    private PresentationModel? _model;
+
+    private int _index;
+    private string? _selectedElementId;
+
+    private bool _loading = true;
+    private long _revision;
+    private bool _dirty;
+    private bool _saving;
+
+    private bool _presenting;
+    private bool _presenterView;
+    private DateTimeOffset _presentStarted;
+    private ElementReference _presentRoot;
+    private bool _focusPresent;
+
+    private System.Threading.Timer? _timer;
+    private string Elapsed
+    {
+        get
+        {
+            var span = DateTimeOffset.UtcNow - _presentStarted;
+            return $"{(int)span.TotalMinutes:00}:{span.Seconds:00}";
+        }
+    }
+
+    private bool _mediaDialog, _chartDialog;
+    private string _mediaKind = "image";
+    private string _mediaUrl = string.Empty;
+    private string _mediaAlt = string.Empty;
+
+    private string _chartSourceId = string.Empty;
+    private string _chartSourceChartId = string.Empty;
+    private List<DriveItemDto> _spreadsheets = [];
+    private List<(string Id, string Title)> _availableCharts = [];
+
+    /// <summary>Cache of linked spreadsheet models, so a deck with charts doesn't refetch per render.</summary>
+    private readonly Dictionary<Guid, SpreadsheetModel> _linkedSheets = [];
+
+    private CancellationTokenSource? _saveDebounce;
+    private static readonly TimeSpan SaveDelay = TimeSpan.FromMilliseconds(900);
+
+    private bool CanEdit => _item?.CanEdit == true;
+    private string SaveLabel => _saving ? "Saving…" : _dirty ? "Unsaved changes" : "All changes saved";
+
+    private Slide? Current =>
+        _model is not null && _index >= 0 && _index < _model.Slides.Count ? _model.Slides[_index] : null;
+
+    private Slide? NextSlide =>
+        _model is not null && _index + 1 < _model.Slides.Count ? _model.Slides[_index + 1] : null;
+
+    private SlideElement? Selected =>
+        Current?.Elements.FirstOrDefault(e => e.Id == _selectedElementId);
+
+    private static readonly (string Key, string Label, Func<SlideElement, string> Get)[] GeometryFields =
+    [
+        ("x", "X", e => Fmt(e.X)),
+        ("y", "Y", e => Fmt(e.Y)),
+        ("w", "Width", e => Fmt(e.W)),
+        ("h", "Height", e => Fmt(e.H)),
+    ];
+
+    private static string Fmt(double v) =>
+        v.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+
+    protected override async Task OnParametersSetAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+
+        try
+        {
+            _item = await DriveService.GetAsync(Id);
+            if (_item is null) return;
+
+            Ui.SetContext("slides", Id, _item.Name, DriveItemType.Presentation);
+            await DriveService.TouchAsync(Id);
+
+            var content = await Content.GetAsync(Id);
+            if (content is null) return;
+
+            _revision = content.Revision;
+            _model = ContentJson.Deserialize<PresentationModel>(content.Data);
+
+            if (_model.Slides.Count == 0) _model.Slides.Add(new Slide());
+            _index = Math.Clamp(_index, 0, _model.Slides.Count - 1);
+
+            await LoadLinkedSheetsAsync();
+        }
+        catch (Exception e)
+        {
+            Toasts.Error(e);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focusPresent)
+        {
+            _focusPresent = false;
+            try
+            {
+                // The overlay handles arrow keys, so it has to hold focus to receive them.
+                await Js.InvokeVoidAsync("vibedesk.focus", _presentRoot);
+            }
+            catch (JSException)
+            {
+                // Overlay already closed.
+            }
+        }
+    }
+
+    // ── linked charts ───────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Pre-loads every spreadsheet a chart element points at. Done once per document load rather than
+    /// on demand, because <c>ChartFor</c> is called during render and cannot await.
+    /// </summary>
+    private async Task LoadLinkedSheetsAsync()
+    {
+        if (_model is null) return;
+
+        var ids = _model.Slides
+            .SelectMany(s => s.Elements)
+            .Where(e => e.Type == "chart" && e.SourceSpreadsheetId is not null)
+            .Select(e => e.SourceSpreadsheetId!.Value)
+            .Distinct();
+
+        foreach (var sheetId in ids)
+        {
+            if (_linkedSheets.ContainsKey(sheetId)) continue;
+
+            try
+            {
+                var model = await Content.GetTypedAsync<SpreadsheetModel>(sheetId);
+                if (model is not null) _linkedSheets[sheetId] = model;
+            }
+            catch (Exception)
+            {
+                // A chart whose source was deleted or unshared simply renders as empty.
+            }
+        }
+    }
+
+    private ChartData? ChartFor(SlideElement element)
+    {
+        if (element.SourceSpreadsheetId is not { } sheetId) return null;
+        if (!_linkedSheets.TryGetValue(sheetId, out var model)) return null;
+
+        foreach (var sheet in model.Sheets)
+        {
+            var spec = sheet.Charts.FirstOrDefault(c => c.Id == element.SourceChartId);
+            if (spec is null) continue;
+
+            // A fresh engine each time: it memoises, so a cached one would serve stale results after
+            // the source spreadsheet changes.
+            var engine = new FormulaEngine(model);
+            engine.RecalculateAll();
+            return engine.BuildChartData(spec, sheet.Name);
+        }
+
+        return null;
+    }
+
+    // ── slides ──────────────────────────────────────────────────────────────
+
+    private void Select(int index)
+    {
+        _index = index;
+        _selectedElementId = null;
+    }
+
+    private async Task AddSlide()
+    {
+        if (_model is null || !CanEdit) return;
+
+        var slide = new Slide { Layout = "titleContent", Transition = "fade" };
+        slide.Elements.Add(new SlideElement
+        {
+            Type = "text", X = 8, Y = 10, W = 84, H = 14,
+            Text = "<h2>New slide</h2>",
+            Animation = new SlideAnimation { Type = "fadeInUp" },
+        });
+
+        _model.Slides.Insert(_index + 1, slide);
+        _index++;
+        _selectedElementId = null;
+
+        await ScheduleSaveAsync();
+    }
+
+    private async Task DuplicateSlide()
+    {
+        if (_model is null || Current is null || !CanEdit) return;
+
+        var json = ContentJson.Serialize(Current);
+        var copy = ContentJson.Deserialize<Slide>(json);
+
+        // Ids must be unique across the deck, or selection and keying break.
+        copy.Id = Guid.NewGuid().ToString("N")[..8];
+        foreach (var element in copy.Elements) element.Id = Guid.NewGuid().ToString("N")[..8];
+
+        _model.Slides.Insert(_index + 1, copy);
+        _index++;
+
+        await ScheduleSaveAsync();
+    }
+
+    private async Task DeleteSlide()
+    {
+        if (_model is null || Current is null || _model.Slides.Count <= 1 || !CanEdit) return;
+
+        _model.Slides.RemoveAt(_index);
+        _index = Math.Clamp(_index, 0, _model.Slides.Count - 1);
+        _selectedElementId = null;
+
+        await ScheduleSaveAsync();
+    }
+
+    private async Task OnLayoutChanged(ChangeEventArgs e)
+    {
+        if (Current is null) return;
+        Current.Layout = e.Value?.ToString() ?? Current.Layout;
+        await ScheduleSaveAsync();
+    }
+
+    private async Task OnTransitionChanged(ChangeEventArgs e)
+    {
+        if (Current is null) return;
+        Current.Transition = e.Value?.ToString() ?? Current.Transition;
+        await ScheduleSaveAsync();
+    }
+
+    private async Task OnHiddenChanged(ChangeEventArgs e)
+    {
+        if (Current is null) return;
+        Current.Hidden = e.Value is bool b && b;
+        await ScheduleSaveAsync();
+    }
+
+    private async Task OnNotesChanged(ChangeEventArgs e)
+    {
+        if (Current is null) return;
+        Current.Notes = e.Value?.ToString();
+        await ScheduleSaveAsync();
+    }
+
+    private async Task OnThemeChanged(ChangeEventArgs e)
+    {
+        if (_model is null) return;
+        _model.Theme = e.Value?.ToString() ?? _model.Theme;
+        await ScheduleSaveAsync();
+    }
+
+    // ── elements ────────────────────────────────────────────────────────────
+
+    private async Task AddElement(string type)
+    {
+        if (Current is null || !CanEdit) return;
+
+        var element = new SlideElement
+        {
+            Type = type,
+            X = 12, Y = 32, W = 46, H = type == "shape" ? 26 : 16,
+            Z = Current.Elements.Count,
+        };
+
+        if (type == "text") element.Text = "New text";
+        if (type == "shape") element.Style.Shape = "rect";
+        if (type == "shape") element.Style.Background = "rgba(255,255,255,0.16)";
+
+        Current.Elements.Add(element);
+        _selectedElementId = element.Id;
+
+        await ScheduleSaveAsync();
+    }
+
+    private async Task AddMedia()
+    {
+        _mediaDialog = false;
+
+        if (Current is null || !CanEdit || string.IsNullOrWhiteSpace(_mediaUrl)) return;
+
+        Current.Elements.Add(new SlideElement
+        {
+            Type = _mediaKind,
+            Src = _mediaUrl.Trim(),
+            Alt = _mediaAlt.Trim(),
+            X = 14, Y = 22, W = 72, H = _mediaKind == "audio" ? 10 : 56,
+            Z = Current.Elements.Count,
+        });
+
+        _mediaUrl = string.Empty;
+        _mediaAlt = string.Empty;
+
+        await ScheduleSaveAsync();
+    }
+
+    private async Task OnMediaUpload(InputFileChangeEventArgs e)
+    {
+        const long maxBytes = 64L * 1024 * 1024;
+        var file = e.File;
+
+        if (file.Size > maxBytes)
+        {
+            Toasts.Warn("Media must be under 64 MB.");
+            return;
+        }
+
+        try
+        {
+            await using var stream = file.OpenReadStream(maxBytes);
+            var uploaded = await DriveService.UploadAsync(
+                file.Name, file.ContentType, stream, _item?.ParentId);
+
+            _mediaUrl = $"/drive/download/{uploaded.Id}?inline=true";
+            if (string.IsNullOrWhiteSpace(_mediaAlt)) _mediaAlt = file.Name;
+
+            _mediaKind = file.ContentType switch
+            {
+                var t when t.StartsWith("video/", StringComparison.OrdinalIgnoreCase) => "video",
+                var t when t.StartsWith("audio/", StringComparison.OrdinalIgnoreCase) => "audio",
+                _ => "image",
+            };
+
+            Toasts.Success("Uploaded. Press Add to place it.");
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+    }
+
+    private async Task LoadChartsForSource()
+    {
+        _availableCharts.Clear();
+
+        if (!Guid.TryParse(_chartSourceId, out var sheetId)) return;
+
+        try
+        {
+            var model = await Content.GetTypedAsync<SpreadsheetModel>(sheetId);
+            if (model is null) return;
+
+            _linkedSheets[sheetId] = model;
+
+            foreach (var sheet in model.Sheets)
+            {
+                foreach (var chart in sheet.Charts)
+                {
+                    _availableCharts.Add((chart.Id, $"{chart.Title} ({sheet.Name})"));
+                }
+            }
+
+            _chartSourceChartId = _availableCharts.FirstOrDefault().Id ?? string.Empty;
+        }
+        catch (Exception e)
+        {
+            Toasts.Error(e);
+        }
+    }
+
+    private async Task AddChartElement()
+    {
+        _chartDialog = false;
+
+        if (Current is null || !CanEdit) return;
+        if (!Guid.TryParse(_chartSourceId, out var sheetId)) return;
+        if (string.IsNullOrEmpty(_chartSourceChartId)) return;
+
+        Current.Elements.Add(new SlideElement
+        {
+            Type = "chart",
+            SourceSpreadsheetId = sheetId,
+            SourceChartId = _chartSourceChartId,
+            X = 10, Y = 24, W = 80, H = 58,
+            Z = Current.Elements.Count,
+        });
+
+        await ScheduleSaveAsync();
+    }
+
+    private async Task OnElementTextChanged(ChangeEventArgs e)
+    {
+        if (Selected is null) return;
+
+        var text = e.Value?.ToString() ?? string.Empty;
+        var level = TextLevel(Selected);
+
+        Selected.Text = WrapText(text, level);
+        await ScheduleSaveAsync();
+    }
+
+    private async Task OnTextLevelChanged(ChangeEventArgs e)
+    {
+        if (Selected is null) return;
+
+        var level = e.Value?.ToString() ?? "p";
+        Selected.Text = WrapText(StripTags(Selected.Text), level);
+
+        // Clear an explicit size so the level's default takes effect.
+        Selected.Style.FontSize = null;
+
+        await ScheduleSaveAsync();
+    }
+
+    /// <summary>
+    /// Wraps plain text in its heading tag, HTML-encoding the content. The text goes into the slide
+    /// through <c>MarkupString</c>, so unencoded user input would be an injection path.
+    /// </summary>
+    private static string WrapText(string text, string level)
+    {
+        var encoded = System.Net.WebUtility.HtmlEncode(text).Replace("\n", "<br />");
+        return level == "p" ? encoded : $"<{level}>{encoded}</{level}>";
+    }
+
+    private static string StripTags(string? html)
+    {
+        if (string.IsNullOrEmpty(html)) return string.Empty;
+
+        var text = html.Replace("<br />", "\n", StringComparison.OrdinalIgnoreCase)
+            .Replace("<br>", "\n", StringComparison.OrdinalIgnoreCase);
+
+        text = System.Text.RegularExpressions.Regex.Replace(text, "<[^>]*>", string.Empty);
+        return System.Net.WebUtility.HtmlDecode(text);
+    }
+
+    private static string TextLevel(SlideElement element)
+    {
+        var text = element.Text ?? string.Empty;
+
+        if (text.Contains("<h1", StringComparison.OrdinalIgnoreCase)) return "h1";
+        if (text.Contains("<h2", StringComparison.OrdinalIgnoreCase)) return "h2";
+        if (text.Contains("<h3", StringComparison.OrdinalIgnoreCase)) return "h3";
+
+        return "p";
+    }
+
+    private async Task OnElementSrcChanged(ChangeEventArgs e)
+    {
+        if (Selected is null) return;
+        Selected.Src = e.Value?.ToString();
+        await ScheduleSaveAsync();
+    }
+
+    private async Task OnElementAltChanged(ChangeEventArgs e)
+    {
+        if (Selected is null) return;
+        Selected.Alt = e.Value?.ToString();
+        await ScheduleSaveAsync();
+    }
+
+    private async Task OnShapeChanged(ChangeEventArgs e)
+    {
+        if (Selected is null) return;
+        Selected.Style.Shape = e.Value?.ToString();
+        await ScheduleSaveAsync();
+    }
+
+    private async Task OnGeometryChanged(string key, ChangeEventArgs e)
+    {
+        if (Selected is null) return;
+
+        if (!double.TryParse(e.Value?.ToString(),
+                System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out var value))
+        {
+            return;
+        }
+
+        // Clamped so an element can never be positioned entirely off the slide.
+        value = Math.Clamp(value, -20, 120);
+
+        switch (key)
+        {
+            case "x": Selected.X = value; break;
+            case "y": Selected.Y = value; break;
+            case "w": Selected.W = Math.Max(1, value); break;
+            case "h": Selected.H = Math.Max(1, value); break;
+        }
+
+        await ScheduleSaveAsync();
+    }
+
+    private async Task OnAnimationChanged(ChangeEventArgs e)
+    {
+        if (Selected is null) return;
+
+        var type = e.Value?.ToString() ?? "none";
+
+        Selected.Animation = type == "none"
+            ? null
+            : new SlideAnimation { Type = type, Order = Selected.Z };
+
+        await ScheduleSaveAsync();
+    }
+
+    private async Task BringForward()
+    {
+        if (Current is null || Selected is null) return;
+
+        Selected.Z = Current.Elements.Max(el => el.Z) + 1;
+        await ScheduleSaveAsync();
+    }
+
+    private async Task DeleteElement()
+    {
+        if (Current is null || Selected is null) return;
+
+        Current.Elements.Remove(Selected);
+        _selectedElementId = null;
+
+        await ScheduleSaveAsync();
+    }
+
+    // ── presenting ──────────────────────────────────────────────────────────
+
+    private async Task StartPresent()
+    {
+        SkipHiddenForward();
+        _presenting = true;
+        _presenterView = false;
+        _focusPresent = true;
+
+        await Js.InvokeVoidAsync("vibedesk.requestFullscreen", null);
+    }
+
+    private void StartPresenter()
+    {
+        SkipHiddenForward();
+        _presenterView = true;
+        _presenting = false;
+        _focusPresent = true;
+        _presentStarted = DateTimeOffset.UtcNow;
+
+        // The timer only needs to refresh the clock, so a one-second tick is enough.
+        _timer?.Dispose();
+        _timer = new System.Threading.Timer(
+            _ => InvokeAsync(StateHasChanged), null, TimeSpan.Zero, TimeSpan.FromSeconds(1));
+    }
+
+    private async Task StopPresent()
+    {
+        _presenting = false;
+        _presenterView = false;
+
+        _timer?.Dispose();
+        _timer = null;
+
+        await Js.InvokeVoidAsync("vibedesk.exitFullscreen");
+    }
+
+    private void Next()
+    {
+        if (_model is null) return;
+
+        var next = _index + 1;
+        while (next < _model.Slides.Count && _model.Slides[next].Hidden) next++;
+
+        if (next < _model.Slides.Count) _index = next;
+        _selectedElementId = null;
+    }
+
+    private void Previous()
+    {
+        if (_model is null) return;
+
+        var previous = _index - 1;
+        while (previous >= 0 && _model.Slides[previous].Hidden) previous--;
+
+        if (previous >= 0) _index = previous;
+        _selectedElementId = null;
+    }
+
+    /// <summary>Starting on a hidden slide would show something the author chose to skip.</summary>
+    private void SkipHiddenForward()
+    {
+        if (_model is null) return;
+
+        while (_index < _model.Slides.Count && _model.Slides[_index].Hidden) _index++;
+        if (_index >= _model.Slides.Count) _index = 0;
+    }
+
+    private async Task OnPresentKey(KeyboardEventArgs e)
+    {
+        switch (e.Key)
+        {
+            case "ArrowRight":
+            case "ArrowDown":
+            case " ":
+            case "PageDown":
+                Next();
+                break;
+
+            case "ArrowLeft":
+            case "ArrowUp":
+            case "PageUp":
+                Previous();
+                break;
+
+            case "Escape":
+                await StopPresent();
+                break;
+
+            case "Home":
+                _index = 0;
+                SkipHiddenForward();
+                break;
+
+            case "End":
+                if (_model is not null) _index = _model.Slides.Count - 1;
+                break;
+        }
+    }
+
+    // ── persistence ─────────────────────────────────────────────────────────
+
+    private async Task ScheduleSaveAsync()
+    {
+        _dirty = true;
+
+        _saveDebounce?.Cancel();
+        _saveDebounce?.Dispose();
+        _saveDebounce = new CancellationTokenSource();
+        var token = _saveDebounce.Token;
+
+        try
+        {
+            await Task.Delay(SaveDelay, token);
+            await SaveAsync();
+        }
+        catch (OperationCanceledException)
+        {
+            // Superseded by a newer edit.
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_model is null || !CanEdit || _saving) return;
+
+        _saving = true;
+        StateHasChanged();
+
+        try
+        {
+            var result = await Content.SaveAsync(Id, ContentJson.Serialize(_model), _revision);
+
+            if (result.Accepted)
+            {
+                _revision = result.Revision;
+                _dirty = false;
+            }
+            else
+            {
+                _revision = result.Revision;
+
+                if (result.ServerData is not null)
+                {
+                    _model = ContentJson.Deserialize<PresentationModel>(result.ServerData);
+                    _index = Math.Clamp(_index, 0, Math.Max(0, _model.Slides.Count - 1));
+                    _selectedElementId = null;
+                    await LoadLinkedSheetsAsync();
+                }
+
+                _dirty = false;
+                Toasts.Warn("Someone else saved first — this deck has been refreshed with their changes.");
+            }
+        }
+        catch (Exception e)
+        {
+            Toasts.Error(e);
+        }
+        finally
+        {
+            _saving = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnRename(ChangeEventArgs e)
+    {
+        var name = e.Value?.ToString()?.Trim();
+        if (string.IsNullOrEmpty(name) || name == _item?.Name) return;
+
+        try
+        {
+            _item = await DriveService.RenameAsync(Id, name);
+            Ui.SetContext("slides", Id, _item.Name, DriveItemType.Presentation);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+    }
+
+    private async Task SaveVersion()
+    {
+        try
+        {
+            if (_dirty) await SaveAsync();
+            await Versions.SnapshotAsync(Id, $"Manual save {DateTimeOffset.Now:HH:mm}");
+            Toasts.Success("Version saved.");
+        }
+        catch (Exception e)
+        {
+            Toasts.Error(e);
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        // The chart dialog needs a list to choose from; loaded once, not per open.
+        try
+        {
+            var page = await DriveService.QueryAsync(new DriveQuery
+            {
+                Types = [DriveItemType.Spreadsheet],
+                Recursive = true,
+                Take = 50,
+            });
+
+            _spreadsheets = [.. page.Items];
+        }
+        catch (Exception)
+        {
+            _spreadsheets = [];
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _saveDebounce?.Cancel();
+        _saveDebounce?.Dispose();
+        _timer?.Dispose();
+
+        if (_dirty && CanEdit)
+        {
+            try
+            {
+                await SaveAsync();
+            }
+            catch (Exception)
+            {
+                // Circuit going away.
+            }
+        }
+    }
+}

@@ -1,0 +1,705 @@
+@page "/docs/{Id:guid}"
+@attribute [Authorize]
+
+@implements IAsyncDisposable
+@inject IDocumentContentService Content
+@inject IDriveService DriveService
+@inject IVersionService Versions
+@inject ICommentService Comments
+@inject ToastService Toasts
+@inject UiState Ui
+
+<PageTitle>@(_item?.Name ?? "Document") · VibeDesk</PageTitle>
+
+<SectionContent SectionName="@AppShell.TitleSection">
+    <span class="vd-doctitle">
+        <span style="color:var(--vd-app-docs)"><Icon Name="description" Size="17" /></span>
+        <input class="vd-doctitle__input"
+               value="@(_item?.Name ?? "")"
+               aria-label="Document name"
+               disabled="@(!CanEdit)"
+               @onchange="OnRename" />
+        <span class="vd-doctitle__state">@SaveLabel</span>
+    </span>
+</SectionContent>
+
+<SectionContent SectionName="@AppShell.ActionsSection">
+    @if (_item is not null)
+    {
+        <span class="vd-badge @(CanEdit ? "vd-badge--jade" : "vd-badge--warn")">@_item.MyRole</span>
+    }
+</SectionContent>
+
+<SectionContent SectionName="@AppShell.ToolbarSection">
+    <select class="vd-select vd-select--inline" disabled="@(!CanEdit)"
+            @onchange="OnBlockChanged" aria-label="Paragraph style">
+        <option value="">Paragraph style</option>
+        <option value="p">Body text</option>
+        <option value="h1">Heading 1</option>
+        <option value="h2">Heading 2</option>
+        <option value="h3">Heading 3</option>
+        <option value="blockquote">Quote</option>
+        <option value="pre">Code block</option>
+    </select>
+
+    <span class="vd-toolbar__sep"></span>
+
+    <div class="vd-toolbar__group">
+        @foreach (var (command, icon, label) in InlineCommands)
+        {
+            var cmd = command;
+            <button type="button" class="vd-btn vd-btn--icon vd-btn--sm"
+                    disabled="@(!CanEdit)"
+                    aria-pressed="@(_active.Contains(cmd).ToString().ToLowerInvariant())"
+                    @onclick="() => Exec(cmd)"
+                    title="@label" aria-label="@label">
+                <Icon Name="@icon" Size="15" />
+            </button>
+        }
+    </div>
+
+    <span class="vd-toolbar__sep"></span>
+
+    <div class="vd-toolbar__group">
+        <button type="button" class="vd-btn vd-btn--icon vd-btn--sm" disabled="@(!CanEdit)"
+                @onclick='() => Exec("insertUnorderedList")' title="Bulleted list" aria-label="Bulleted list">
+            <Icon Name="bullet-list" Size="15" />
+        </button>
+        <button type="button" class="vd-btn vd-btn--icon vd-btn--sm" disabled="@(!CanEdit)"
+                @onclick='() => Exec("insertOrderedList")' title="Numbered list" aria-label="Numbered list">
+            <Icon Name="number-list" Size="15" />
+        </button>
+    </div>
+
+    <span class="vd-toolbar__sep"></span>
+
+    <div class="vd-toolbar__group">
+        <button type="button" class="vd-btn vd-btn--icon vd-btn--sm" disabled="@(!CanEdit)"
+                @onclick='() => Exec("justifyLeft")' title="Align left" aria-label="Align left">
+            <Icon Name="align-left" Size="15" />
+        </button>
+        <button type="button" class="vd-btn vd-btn--icon vd-btn--sm" disabled="@(!CanEdit)"
+                @onclick='() => Exec("justifyCenter")' title="Align centre" aria-label="Align centre">
+            <Icon Name="align-center" Size="15" />
+        </button>
+        <button type="button" class="vd-btn vd-btn--icon vd-btn--sm" disabled="@(!CanEdit)"
+                @onclick='() => Exec("justifyRight")' title="Align right" aria-label="Align right">
+            <Icon Name="align-right" Size="15" />
+        </button>
+    </div>
+
+    <span class="vd-toolbar__sep"></span>
+
+    <div class="vd-toolbar__group">
+        <button type="button" class="vd-btn vd-btn--icon vd-btn--sm" disabled="@(!CanEdit)"
+                @onclick="OpenLinkDialog" title="Insert link" aria-label="Insert link">
+            <Icon Name="link-add" Size="15" />
+        </button>
+        <button type="button" class="vd-btn vd-btn--icon vd-btn--sm" disabled="@(!CanEdit)"
+                @onclick="OpenImageDialog" title="Insert image" aria-label="Insert image">
+            <Icon Name="image" Size="15" />
+        </button>
+        <button type="button" class="vd-btn vd-btn--icon vd-btn--sm" disabled="@(!CanEdit)"
+                @onclick='() => Exec("removeFormat")' title="Clear formatting" aria-label="Clear formatting">
+            <Icon Name="close" Size="15" />
+        </button>
+    </div>
+
+    <div class="vd-spacer"></div>
+
+    @if (CanComment)
+    {
+        <button type="button" class="vd-btn vd-btn--ghost vd-btn--sm" @onclick="AddCommentOnSelection"
+                title="Comment on the selected text">
+            <Icon Name="comment" Size="15" /> Comment
+        </button>
+
+        @if (!CanEdit)
+        {
+            @* A commenter cannot edit, so suggesting is the only way they can propose a change. *@
+            <button type="button" class="vd-btn vd-btn--ghost vd-btn--sm" @onclick="OpenSuggestDialog"
+                    title="Suggest a replacement for the selected text">
+                <Icon Name="edit" Size="15" /> Suggest
+            </button>
+        }
+    }
+
+    <button type="button" class="vd-btn vd-btn--icon vd-btn--sm"
+            aria-pressed="@_commentsOpen.ToString().ToLowerInvariant()"
+            @onclick="() => _commentsOpen = !_commentsOpen"
+            title="Comments" aria-label="Comments">
+        <Icon Name="comment" Size="15" />
+        @if (_openComments > 0)
+        {
+            <span class="vd-bell__dot" style="background:var(--vd-gold)"></span>
+        }
+    </button>
+
+    <button type="button" class="vd-btn vd-btn--icon vd-btn--sm" disabled="@(!CanEdit)"
+            @onclick="SaveVersion" title="Save a version" aria-label="Save a version">
+        <Icon Name="history" Size="15" />
+    </button>
+</SectionContent>
+
+@if (_loading)
+{
+    <div class="vd-docs"><div class="vd-docs__scroll"><div class="vd-skeleton" style="height:60vh;max-width:820px;margin-inline:auto"></div></div></div>
+}
+else if (_item is null || _doc is null)
+{
+    <EmptyState Icon="description" Title="We couldn't open this document"
+                Description="It may have been moved to trash, or you may no longer have access." />
+}
+else
+{
+    <div class="vd-docs">
+        <div class="vd-docs__main">
+            <div class="vd-docs__scroll">
+                <RichTextEditor @ref="_editor"
+                                Html="@_doc.Html"
+                                Revision="_editorRevision"
+                                ReadOnly="@(!CanEdit)"
+                                Page="_doc.Page"
+                                OnChanged="OnBodyChanged"
+                                OnSelectionChanged="RefreshActiveFormats" />
+            </div>
+
+            <div class="vd-docs__status">
+                <span>@_wordCount words</span>
+                <span>@_charCount characters</span>
+                <div class="vd-spacer"></div>
+                <span class="vd-mono">rev @_revision</span>
+            </div>
+        </div>
+
+        @if (_commentsOpen)
+        {
+            <CommentSidebar @ref="_sidebar"
+                            ItemId="Id"
+                            PendingAnchor="@_pendingAnchor"
+                            PendingAnchorLabel="@_pendingAnchorLabel"
+                            CanComment="CanComment"
+                            CanEdit="CanEdit"
+                            OnClose="() => _commentsOpen = false"
+                            OnDocumentChanged="OnSuggestionApplied" />
+        }
+    </div>
+}
+
+<Modal @bind-Open="_linkDialog" Title="Insert link" Icon="link-add">
+    <ChildContent>
+        <div class="vd-field">
+            <label for="link-url">Address</label>
+            <input id="link-url" class="vd-input" @bind="_linkUrl" placeholder="https://example.com" />
+            <span class="vd-hint">The selected text becomes the link.</span>
+        </div>
+    </ChildContent>
+    <Footer>
+        <button type="button" class="vd-btn vd-btn--ghost" @onclick="() => _linkDialog = false">Cancel</button>
+        <button type="button" class="vd-btn vd-btn--primary" @onclick="InsertLink">Insert</button>
+    </Footer>
+</Modal>
+
+<Modal @bind-Open="_imageDialog" Title="Insert image" Icon="image">
+    <ChildContent>
+        <div class="vd-col" style="gap:var(--vd-3)">
+            <div class="vd-field">
+                <label for="img-url">Image address</label>
+                <input id="img-url" class="vd-input" @bind="_imageUrl" placeholder="https://…/photo.jpg" />
+            </div>
+            <div class="vd-field">
+                <label for="img-alt">Description</label>
+                <input id="img-alt" class="vd-input" @bind="_imageAlt" placeholder="What the image shows" />
+                <span class="vd-hint">Read aloud by screen readers, and shown if the image fails to load.</span>
+            </div>
+            <div class="vd-field">
+                <label>Or upload from your computer</label>
+                <label class="vd-btn vd-btn--outline" style="align-self:flex-start">
+                    <Icon Name="upload" Size="15" /> Choose a file
+                    <InputFile OnChange="OnImageUpload" accept="image/*" class="vd-sr-only" />
+                </label>
+            </div>
+        </div>
+    </ChildContent>
+    <Footer>
+        <button type="button" class="vd-btn vd-btn--ghost" @onclick="() => _imageDialog = false">Cancel</button>
+        <button type="button" class="vd-btn vd-btn--primary" @onclick="InsertImage">Insert</button>
+    </Footer>
+</Modal>
+
+<Modal @bind-Open="_suggestDialog" Title="Suggest an edit" Icon="edit">
+    <ChildContent>
+        <div class="vd-col" style="gap:var(--vd-3)">
+            <div class="vd-field">
+                <label>Replacing</label>
+                <p class="vd-thread__del" style="align-self:flex-start">@_suggestOriginal</p>
+            </div>
+            <div class="vd-field">
+                <label for="suggest-text">Your replacement</label>
+                <textarea id="suggest-text" class="vd-textarea" rows="3" @bind="_suggestReplacement"></textarea>
+            </div>
+            <div class="vd-field">
+                <label for="suggest-note">Note (optional)</label>
+                <input id="suggest-note" class="vd-input" @bind="_suggestNote" placeholder="Why this reads better" />
+            </div>
+        </div>
+    </ChildContent>
+    <Footer>
+        <button type="button" class="vd-btn vd-btn--ghost" @onclick="() => _suggestDialog = false">Cancel</button>
+        <button type="button" class="vd-btn vd-btn--primary" @onclick="SendSuggestion">Suggest</button>
+    </Footer>
+</Modal>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private DriveItemDto? _item;
+    private DocumentModel? _doc;
+    private RichTextEditor? _editor;
+    private CommentSidebar? _sidebar;
+
+    private bool _loading = true;
+    private long _revision;
+
+    /// <summary>
+    /// Drives the editor's reload. Bumped only when the body must be replaced wholesale — a restore,
+    /// a rebase after a conflict, or an applied suggestion. Never on an ordinary save, because that
+    /// would reset the caret while the user is typing.
+    /// </summary>
+    private long _editorRevision;
+
+    private bool _dirty;
+    private bool _saving;
+
+    private int _wordCount;
+    private int _charCount;
+
+    private bool _commentsOpen;
+    private int _openComments;
+
+    private readonly HashSet<string> _active = [];
+
+    private string? _pendingAnchor;
+    private string? _pendingAnchorLabel;
+
+    private bool _linkDialog, _imageDialog, _suggestDialog;
+    private string _linkUrl = string.Empty;
+    private string _imageUrl = string.Empty;
+    private string _imageAlt = string.Empty;
+    private string _suggestOriginal = string.Empty;
+    private string _suggestReplacement = string.Empty;
+    private string _suggestNote = string.Empty;
+
+    private CancellationTokenSource? _saveDebounce;
+    private static readonly TimeSpan SaveDelay = TimeSpan.FromMilliseconds(900);
+
+    private bool CanEdit => _item?.CanEdit == true;
+    private bool CanComment => _item?.CanComment == true;
+
+    private string SaveLabel => _saving ? "Saving…" : _dirty ? "Unsaved changes" : "All changes saved";
+
+    private static readonly (string Command, string Icon, string Label)[] InlineCommands =
+    [
+        ("bold", "bold", "Bold"),
+        ("italic", "italic", "Italic"),
+        ("underline", "underline", "Underline"),
+        ("strikeThrough", "strike", "Strikethrough"),
+    ];
+
+    protected override async Task OnParametersSetAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+
+        try
+        {
+            _item = await DriveService.GetAsync(Id);
+            if (_item is null) return;
+
+            Ui.SetContext("docs", Id, _item.Name, DriveItemType.Document);
+            await DriveService.TouchAsync(Id);
+
+            var content = await Content.GetAsync(Id);
+            if (content is null) return;
+
+            _revision = content.Revision;
+            _editorRevision = content.Revision;
+            _doc = ContentJson.Deserialize<DocumentModel>(content.Data);
+
+            UpdateCounts(_doc.Html);
+            _openComments = await Comments.CountOpenAsync(Id);
+        }
+        catch (Exception e)
+        {
+            Toasts.Error(e);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    // ── editing ─────────────────────────────────────────────────────────────
+
+    private async Task OnBodyChanged(string html)
+    {
+        if (_doc is null || !CanEdit) return;
+
+        _doc.Html = html;
+        UpdateCounts(html);
+        _doc.WordCount = _wordCount;
+
+        await ScheduleSaveAsync();
+    }
+
+    /// <summary>
+    /// Counts words and characters from the text content, not the markup — otherwise every tag name
+    /// would be counted as a word.
+    /// </summary>
+    private void UpdateCounts(string? html)
+    {
+        var text = StripHtml(html);
+
+        _charCount = text.Length;
+        _wordCount = text.Split(
+            [' ', '\t', '\n', '\r'],
+            StringSplitOptions.RemoveEmptyEntries).Length;
+    }
+
+    private static string StripHtml(string? html)
+    {
+        if (string.IsNullOrWhiteSpace(html)) return string.Empty;
+
+        // Tags become spaces so "<p>a</p><p>b</p>" counts as two words, not one.
+        var text = System.Text.RegularExpressions.Regex.Replace(html, "<[^>]*>", " ");
+        text = System.Net.WebUtility.HtmlDecode(text).Replace(' ', ' ');
+
+        return System.Text.RegularExpressions.Regex.Replace(text, @"\s+", " ").Trim();
+    }
+
+    private async Task Exec(string command)
+    {
+        if (_editor is null) return;
+        await _editor.ExecAsync(command);
+    }
+
+    private async Task OnBlockChanged(ChangeEventArgs e)
+    {
+        var block = e.Value?.ToString();
+        if (string.IsNullOrEmpty(block) || _editor is null) return;
+
+        // formatBlock wants the tag in angle brackets on every engine that still implements it.
+        await _editor.ExecAsync("formatBlock", $"<{block}>");
+    }
+
+    /// <summary>Refreshes the toolbar's pressed state from the browser's own command state.</summary>
+    private async Task RefreshActiveFormats()
+    {
+        if (_editor is null) return;
+
+        _active.Clear();
+
+        foreach (var (command, _, _) in InlineCommands)
+        {
+            if (await _editor.IsActiveAsync(command)) _active.Add(command);
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task OpenLinkDialog()
+    {
+        _linkUrl = string.Empty;
+        _linkDialog = true;
+        await Task.CompletedTask;
+    }
+
+    private async Task InsertLink()
+    {
+        _linkDialog = false;
+
+        var url = _linkUrl.Trim();
+        if (url.Length == 0 || _editor is null) return;
+
+        // Only http(s) and mailto: a javascript: href here would be stored XSS in the document body.
+        if (!IsSafeUrl(url))
+        {
+            Toasts.Warn("Links must start with http://, https:// or mailto:.");
+            return;
+        }
+
+        await _editor.ExecAsync("createLink", url);
+    }
+
+    private static bool IsSafeUrl(string url) =>
+        Uri.TryCreate(url, UriKind.Absolute, out var uri)
+        && uri.Scheme is "http" or "https" or "mailto";
+
+    private void OpenImageDialog()
+    {
+        _imageUrl = string.Empty;
+        _imageAlt = string.Empty;
+        _imageDialog = true;
+    }
+
+    private async Task OnImageUpload(InputFileChangeEventArgs e)
+    {
+        const long maxBytes = 12L * 1024 * 1024;
+        var file = e.File;
+
+        if (file.Size > maxBytes)
+        {
+            Toasts.Warn("Images must be under 12 MB.");
+            return;
+        }
+
+        try
+        {
+            await using var stream = file.OpenReadStream(maxBytes);
+
+            // Uploaded into the same folder as the document, so it travels with it when shared.
+            var uploaded = await DriveService.UploadAsync(
+                file.Name, file.ContentType, stream, _item?.ParentId);
+
+            _imageUrl = $"/drive/download/{uploaded.Id}?inline=true";
+            if (string.IsNullOrWhiteSpace(_imageAlt)) _imageAlt = file.Name;
+
+            Toasts.Success("Image uploaded. Press Insert to place it.");
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+    }
+
+    private async Task InsertImage()
+    {
+        _imageDialog = false;
+
+        var url = _imageUrl.Trim();
+        if (url.Length == 0 || _editor is null) return;
+
+        if (!url.StartsWith('/') && !IsSafeUrl(url))
+        {
+            Toasts.Warn("Image addresses must start with http://, https:// or /.");
+            return;
+        }
+
+        var alt = System.Net.WebUtility.HtmlEncode(_imageAlt.Trim());
+        var src = System.Net.WebUtility.HtmlEncode(url);
+
+        await _editor.InsertHtmlAsync($"<img src=\"{src}\" alt=\"{alt}\" />");
+    }
+
+    // ── comments & suggestions ──────────────────────────────────────────────
+
+    private async Task AddCommentOnSelection()
+    {
+        if (_editor is null) return;
+
+        var selected = (await _editor.GetSelectedTextAsync()).Trim();
+
+        // The anchor records the quoted text rather than a character offset: offsets shift on every
+        // edit, but the quote still tells a reader what the comment was about.
+        _pendingAnchor = string.IsNullOrEmpty(selected)
+            ? null
+            : System.Text.Json.JsonSerializer.Serialize(new { quote = Excerpt(selected, 160) });
+
+        _pendingAnchorLabel = string.IsNullOrEmpty(selected) ? null : $"“{Excerpt(selected, 40)}”";
+        _commentsOpen = true;
+    }
+
+    private async Task OpenSuggestDialog()
+    {
+        if (_editor is null) return;
+
+        var selected = (await _editor.GetSelectedTextAsync()).Trim();
+
+        if (string.IsNullOrEmpty(selected))
+        {
+            Toasts.Warn("Select the text you want to replace first.");
+            return;
+        }
+
+        _suggestOriginal = selected;
+        _suggestReplacement = selected;
+        _suggestNote = string.Empty;
+        _suggestDialog = true;
+    }
+
+    private async Task SendSuggestion()
+    {
+        _suggestDialog = false;
+
+        var replacement = _suggestReplacement.Trim();
+        if (replacement.Length == 0 || replacement == _suggestOriginal) return;
+
+        try
+        {
+            await Comments.AddAsync(
+                Id,
+                string.IsNullOrWhiteSpace(_suggestNote) ? "Suggested an edit." : _suggestNote.Trim(),
+                System.Text.Json.JsonSerializer.Serialize(new { quote = Excerpt(_suggestOriginal, 160) }),
+                CommentKind.Suggestion,
+                replacement,
+                _suggestOriginal);
+
+            _commentsOpen = true;
+            _openComments = await Comments.CountOpenAsync(Id);
+
+            if (_sidebar is not null) await _sidebar.ReloadAsync();
+
+            Toasts.Success("Suggestion sent.");
+        }
+        catch (Exception e)
+        {
+            Toasts.Error(e);
+        }
+    }
+
+    /// <summary>
+    /// Reloads after a suggestion is applied server-side. Without this the editor would still hold the
+    /// pre-suggestion body and the next autosave would silently undo the change.
+    /// </summary>
+    private async Task OnSuggestionApplied(long revision)
+    {
+        try
+        {
+            var content = await Content.GetAsync(Id);
+            if (content is null) return;
+
+            _revision = content.Revision;
+            _doc = ContentJson.Deserialize<DocumentModel>(content.Data);
+            _editorRevision = content.Revision;
+
+            UpdateCounts(_doc.Html);
+            _dirty = false;
+            _openComments = await Comments.CountOpenAsync(Id);
+        }
+        catch (Exception e)
+        {
+            Toasts.Error(e);
+        }
+    }
+
+    private static string Excerpt(string text, int max) =>
+        text.Length <= max ? text : text[..max] + "…";
+
+    // ── persistence ─────────────────────────────────────────────────────────
+
+    private async Task ScheduleSaveAsync()
+    {
+        _dirty = true;
+
+        _saveDebounce?.Cancel();
+        _saveDebounce?.Dispose();
+        _saveDebounce = new CancellationTokenSource();
+        var token = _saveDebounce.Token;
+
+        try
+        {
+            await Task.Delay(SaveDelay, token);
+            await SaveAsync();
+        }
+        catch (OperationCanceledException)
+        {
+            // A newer edit arrived; that one will save.
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_doc is null || !CanEdit || _saving) return;
+
+        _saving = true;
+        StateHasChanged();
+
+        try
+        {
+            var result = await Content.SaveAsync(Id, ContentJson.Serialize(_doc), _revision);
+
+            if (result.Accepted)
+            {
+                _revision = result.Revision;
+                _dirty = false;
+            }
+            else
+            {
+                // Someone saved first. Take their copy and reload the surface rather than overwriting
+                // their work; losing one side silently is the one outcome collaboration must avoid.
+                _revision = result.Revision;
+
+                if (result.ServerData is not null)
+                {
+                    _doc = ContentJson.Deserialize<DocumentModel>(result.ServerData);
+                    _editorRevision = result.Revision;
+                    UpdateCounts(_doc.Html);
+                }
+
+                _dirty = false;
+                Toasts.Warn("Someone else saved first — this document has been refreshed with their changes.");
+            }
+        }
+        catch (Exception e)
+        {
+            Toasts.Error(e);
+        }
+        finally
+        {
+            _saving = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnRename(ChangeEventArgs e)
+    {
+        var name = e.Value?.ToString()?.Trim();
+        if (string.IsNullOrEmpty(name) || name == _item?.Name) return;
+
+        try
+        {
+            _item = await DriveService.RenameAsync(Id, name);
+            Ui.SetContext("docs", Id, _item.Name, DriveItemType.Document);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+    }
+
+    private async Task SaveVersion()
+    {
+        try
+        {
+            // Flush the editor first: its latest keystrokes may not have debounced through yet.
+            if (_editor is not null) await _editor.FlushAsync();
+            if (_dirty) await SaveAsync();
+
+            await Versions.SnapshotAsync(Id, $"Manual save {DateTimeOffset.Now:HH:mm}");
+            Toasts.Success("Version saved.");
+        }
+        catch (Exception e)
+        {
+            Toasts.Error(e);
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _saveDebounce?.Cancel();
+        _saveDebounce?.Dispose();
+
+        if (_dirty && CanEdit)
+        {
+            try
+            {
+                await SaveAsync();
+            }
+            catch (Exception)
+            {
+                // The circuit is going away; nothing useful left to surface.
+            }
+        }
+    }
+}

@@ -1,0 +1,17 @@
+@inject NavigationManager Nav
+
+@code {
+    /// <summary>
+    /// Sends an unauthenticated visitor to sign-in, preserving where they were headed.
+    /// Uses forceLoad so the auth cookie set by the endpoint is picked up by a fresh circuit.
+    /// </summary>
+    protected override void OnInitialized()
+    {
+        var returnUrl = Nav.ToBaseRelativePath(Nav.Uri);
+        var target = string.IsNullOrEmpty(returnUrl) ? "/drive" : "/" + returnUrl;
+
+        Nav.NavigateTo(
+            $"/account/login?returnUrl={Uri.EscapeDataString(target)}",
+            forceLoad: true);
+    }
+}

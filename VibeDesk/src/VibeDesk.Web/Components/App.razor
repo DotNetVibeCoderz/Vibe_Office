@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base href="/" />
+
+    <title>VibeDesk</title>
+    <meta name="description" content="Documents, spreadsheets, presentations, storage and calendars in one workspace." />
+    <meta name="color-scheme" content="light dark" />
+
+    <link rel="stylesheet" href="_content/VibeDesk.Ui/css/tokens.css" />
+    <link rel="stylesheet" href="_content/VibeDesk.Ui/css/base.css" />
+    <link rel="stylesheet" href="_content/VibeDesk.Ui/css/shell.css" />
+    <link rel="stylesheet" href="_content/VibeDesk.Ui/css/chat.css" />
+    <link rel="stylesheet" href="_content/VibeDesk.Ui/css/apps.css" />
+    <link rel="stylesheet" href="_content/VibeDesk.Ui/css/sheets.css" />
+    <link rel="stylesheet" href="_content/VibeDesk.Ui/css/docs.css" />
+    <link rel="stylesheet" href="_content/VibeDesk.Ui/css/slides.css" />
+    <link rel="stylesheet" href="_content/VibeDesk.Ui/css/calendar.css" />
+    <link rel="stylesheet" href="_content/VibeDesk.Ui/css/scripts.css" />
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+
+    @*
+        Theme is applied before first paint. Deferring this to Blazor would show the light theme for a
+        few hundred milliseconds to a dark-theme user on every load, which reads as a bug.
+    *@
+    <script>
+        (function () {
+            try {
+                var t = localStorage.getItem('vibedesk.theme');
+                if (t === 'light' || t === 'dark') {
+                    document.documentElement.setAttribute('data-theme', t);
+                }
+            } catch (e) { /* storage blocked; prefers-color-scheme still applies */ }
+        })();
+    </script>
+
+    <HeadOutlet @rendermode="InteractiveServer" />
+</head>
+<body>
+    <Routes @rendermode="RenderModeForPage" />
+
+    <script src="_content/VibeDesk.Ui/js/vibedesk.js"></script>
+    <script src="_framework/blazor.web.js"></script>
+</body>
+</html>
+
+@code {
+    [CascadingParameter] private HttpContext HttpContext { get; set; } = default!;
+
+    /// <summary>
+    /// Interactive for the app, static SSR for pages marked [ExcludeFromInteractiveRouting].
+    /// Sign-in has to write a cookie, and a component running in a circuit cannot touch response
+    /// headers — the response was finished long before the circuit started.
+    /// </summary>
+    private IComponentRenderMode? RenderModeForPage =>
+        HttpContext.AcceptsInteractiveRouting() ? InteractiveServer : null;
+}

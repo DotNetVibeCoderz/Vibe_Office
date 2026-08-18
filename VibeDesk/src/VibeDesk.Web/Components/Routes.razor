@@ -1,0 +1,26 @@
+@*
+    Router. Everything requires authentication except the account pages, which opt out with
+    [AllowAnonymous]; defaulting to "authorised" means a new page cannot leak by forgetting an attribute.
+*@
+<Router AppAssembly="typeof(Program).Assembly"
+        AdditionalAssemblies="new[] { typeof(VibeDesk.Ui.Components.Layout.AppShell).Assembly }">
+    <Found Context="routeData">
+        <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)">
+            <NotAuthorized>
+                <RedirectToLogin />
+            </NotAuthorized>
+            <Authorizing>
+                <div class="vd-boot"><span class="vd-spinner"></span></div>
+            </Authorizing>
+        </AuthorizeRouteView>
+        <FocusOnNavigate RouteData="routeData" Selector="h1" />
+    </Found>
+    <NotFound>
+        <LayoutView Layout="typeof(Layout.MainLayout)">
+            <VibeDesk.Ui.Components.Shared.EmptyState
+                Icon="search"
+                Title="We couldn't find that page"
+                Description="The link may be out of date, or the item may have been moved to trash." />
+        </LayoutView>
+    </NotFound>
+</Router>

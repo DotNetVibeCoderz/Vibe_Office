@@ -1,0 +1,162 @@
+@*
+    Cross-app search over Drive. Debounced, and searches names plus extracted document text — which
+    is why the content services maintain SearchText on every save.
+*@
+@implements IDisposable
+@inject IDriveService Drive
+@inject NavigationManager Nav
+
+<div class="vd-search" @onfocusout="OnFocusOut">
+    <span class="vd-search__icon"><Icon Name="search" Size="16" /></span>
+
+    <input class="vd-input vd-search__input"
+           type="search"
+           placeholder="Search files and documents"
+           aria-label="Search files and documents"
+           value="@_term"
+           @oninput="OnInput"
+           @onkeydown="OnKeyDown"
+           @ref="_input" />
+
+    <span class="vd-search__kbd">Ctrl K</span>
+
+    @if (_open)
+    {
+        <div class="vd-search__results" role="listbox">
+            @if (_searching)
+            {
+                <div class="vd-search__status"><span class="vd-spinner"></span> Searching…</div>
+            }
+            else if (_results.Count == 0)
+            {
+                <div class="vd-search__status">No matches for “@_term”.</div>
+            }
+            else
+            {
+                @foreach (var item in _results)
+                {
+                    <button type="button"
+                            class="vd-search__hit"
+                            role="option"
+                            aria-selected="false"
+                            @onclick="() => Go(item)">
+                        <span class="vd-search__hit-icon" style="color:@ColorFor(item.Type)">
+                            <Icon Name="@item.Icon" Size="16" />
+                        </span>
+                        <span class="vd-col" style="min-width:0;text-align:start">
+                            <span class="vd-truncate">@item.Name</span>
+                            <span class="vd-search__hit-meta">
+                                @item.Type · @item.OwnerName · @NotificationBell.Relative(item.UpdatedAt)
+                            </span>
+                        </span>
+                    </button>
+                }
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private ElementReference _input;
+    private string _term = string.Empty;
+    private bool _open;
+    private bool _searching;
+    private List<DriveItemDto> _results = [];
+
+    /// <summary>Cancels the in-flight debounce and query when the term changes again.</summary>
+    private CancellationTokenSource? _debounce;
+
+    private async Task OnInput(ChangeEventArgs e)
+    {
+        _term = e.Value?.ToString() ?? string.Empty;
+
+        _debounce?.Cancel();
+        _debounce?.Dispose();
+        _debounce = new CancellationTokenSource();
+        var token = _debounce.Token;
+
+        if (_term.Trim().Length < 2)
+        {
+            _open = false;
+            _results = [];
+            return;
+        }
+
+        _open = true;
+        _searching = true;
+
+        try
+        {
+            // Wait for the user to stop typing before hitting the database.
+            await Task.Delay(260, token);
+
+            var page = await Drive.QueryAsync(new DriveQuery
+            {
+                Keyword = _term.Trim(),
+                Recursive = true,
+                Take = 8,
+            }, token);
+
+            if (token.IsCancellationRequested) return;
+
+            _results = [.. page.Items];
+        }
+        catch (OperationCanceledException)
+        {
+            // Superseded by a newer keystroke.
+            return;
+        }
+        catch (Exception)
+        {
+            _results = [];
+        }
+        finally
+        {
+            if (!token.IsCancellationRequested) _searching = false;
+        }
+    }
+
+    private void OnKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape")
+        {
+            _open = false;
+            return;
+        }
+
+        if (e.Key == "Enter" && _results.Count > 0) Go(_results[0]);
+    }
+
+    private void Go(DriveItemDto item)
+    {
+        _open = false;
+        _term = string.Empty;
+        _results = [];
+        Nav.NavigateTo(item.OpenRoute);
+    }
+
+    private async Task OnFocusOut()
+    {
+        await Task.Delay(180);
+        if (_open)
+        {
+            _open = false;
+            StateHasChanged();
+        }
+    }
+
+    private static string ColorFor(DriveItemType type) => type switch
+    {
+        DriveItemType.Document => "var(--vd-app-docs)",
+        DriveItemType.Spreadsheet => "var(--vd-app-sheets)",
+        DriveItemType.Presentation => "var(--vd-app-slides)",
+        DriveItemType.Folder => "var(--vd-app-drive)",
+        _ => "var(--vd-ink-3)",
+    };
+
+    public void Dispose()
+    {
+        _debounce?.Cancel();
+        _debounce?.Dispose();
+    }
+}

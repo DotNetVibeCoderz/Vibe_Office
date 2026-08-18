@@ -1,0 +1,467 @@
+/* Per-app surfaces: auth, Drive, and the shared bits the editors sit on. */
+
+.vd-boot {
+  display: grid;
+  place-items: center;
+  height: 100dvh;
+  color: var(--vd-primary);
+}
+
+/* ── auth ───────────────────────────────────────────────────────────────────
+   The one expressive screen. Everywhere else the canting motif is a 2px mark; here it is drawn large
+   so the small version later reads as the same idea rather than an arbitrary line. */
+.vd-auth {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+  height: 100dvh;
+  background: var(--vd-canvas);
+}
+
+.vd-auth__art {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: flex-end;
+  background:
+    radial-gradient(120% 90% at 12% 8%, #16403c 0%, transparent 60%),
+    linear-gradient(158deg, #0b4541 0%, #093b38 40%, #06201f 100%);
+  background-color: #093b38;
+  color: #eaf3f1;
+}
+
+/* The wax-resist field: repeating diagonal bands with one interrupted register, which is how a real
+   batik panel is composed — order with a deliberate break in it. */
+.vd-auth__wax {
+  position: absolute;
+  inset: -20%;
+  opacity: 0.5;
+  background-image:
+    repeating-linear-gradient(
+      68deg,
+      rgb(217 160 71 / 0.16) 0 2px,
+      transparent 2px 26px
+    ),
+    repeating-linear-gradient(
+      68deg,
+      rgb(217 160 71 / 0.07) 0 1px,
+      transparent 1px 9px
+    );
+  mask-image: radial-gradient(85% 70% at 30% 40%, #000 40%, transparent 100%);
+}
+
+.vd-auth__art-body {
+  position: relative;
+  padding: var(--vd-12) var(--vd-12) var(--vd-16);
+  display: flex;
+  flex-direction: column;
+  gap: var(--vd-6);
+  max-width: 46ch;
+}
+
+.vd-auth__lede {
+  font-family: var(--vd-font-display);
+  font-size: clamp(1.75rem, 3.4vw, var(--vd-text-3xl));
+  font-weight: 680;
+  line-height: 1.12;
+  letter-spacing: -0.025em;
+  color: #fff;
+}
+
+.vd-auth__lede em {
+  font-style: normal;
+  /* The one gold accent in the composition, landing on the phrase that carries the pitch. */
+  color: var(--vd-gold-bright);
+}
+
+.vd-auth__note {
+  font-size: var(--vd-text-sm);
+  color: rgb(234 243 241 / 0.66);
+}
+
+.vd-auth__panel {
+  display: grid;
+  place-items: center;
+  padding: var(--vd-6);
+  overflow-y: auto;
+}
+
+.vd-auth__card {
+  width: 100%;
+  max-width: 360px;
+}
+
+.vd-auth__title {
+  font-size: var(--vd-text-xl);
+  font-weight: 660;
+  letter-spacing: -0.02em;
+}
+
+.vd-auth__sub {
+  margin-block: var(--vd-1) var(--vd-6);
+  color: var(--vd-ink-3);
+  font-size: var(--vd-text-base);
+}
+
+.vd-auth__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vd-4);
+}
+
+.vd-auth__error {
+  display: flex;
+  align-items: center;
+  gap: var(--vd-2);
+  margin-block-end: var(--vd-4);
+  padding: var(--vd-2) var(--vd-3);
+  border-radius: var(--vd-radius);
+  background: var(--vd-danger-soft);
+  color: var(--vd-danger);
+  font-size: var(--vd-text-sm);
+}
+
+.vd-auth__check {
+  display: flex;
+  align-items: center;
+  gap: var(--vd-2);
+  font-size: var(--vd-text-sm);
+  color: var(--vd-ink-2);
+  cursor: pointer;
+}
+
+.vd-auth__check input { accent-color: var(--vd-primary); }
+
+.vd-auth__alt {
+  margin-block-start: var(--vd-5);
+  font-size: var(--vd-text-sm);
+  color: var(--vd-ink-3);
+  text-align: center;
+}
+
+.vd-auth__demo {
+  margin-block-start: var(--vd-6);
+  padding: var(--vd-3);
+  border: 1px dashed var(--vd-line-strong);
+  border-radius: var(--vd-radius);
+  background: var(--vd-surface-2);
+}
+
+.vd-auth__demo p {
+  margin-block-start: var(--vd-1);
+  font-size: var(--vd-text-sm);
+  color: var(--vd-ink-3);
+  line-height: var(--vd-leading);
+}
+
+.vd-auth__demo code {
+  padding: 1px 4px;
+  border-radius: var(--vd-radius-sm);
+  background: var(--vd-surface-3);
+  font-size: var(--vd-text-xs);
+}
+
+@media (max-width: 900px) {
+  .vd-auth {
+    grid-template-columns: 1fr;
+    /* The art becomes a short band above the form: enough to carry the identity, not enough to push
+       the password field below the fold on a phone. */
+    grid-template-rows: 152px minmax(0, 1fr);
+  }
+
+  .vd-auth__art { align-items: center; }
+
+  .vd-auth__art-body {
+    padding: var(--vd-5);
+    gap: var(--vd-3);
+  }
+
+  .vd-auth__lede { font-size: var(--vd-text-lg); }
+  .vd-auth__lede br { display: none; }
+  .vd-auth__note { display: none; }
+}
+
+/* ── breadcrumbs ────────────────────────────────────────────────────────── */
+.vd-crumbs {
+  display: flex;
+  align-items: center;
+  gap: var(--vd-1);
+  min-width: 0;
+  font-size: var(--vd-text-sm);
+  color: var(--vd-ink-3);
+  overflow: hidden;
+}
+
+.vd-crumbs a {
+  color: var(--vd-ink-3);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.vd-crumbs a:hover { color: var(--vd-primary); text-decoration: underline; }
+.vd-crumbs__sep { color: var(--vd-ink-faint); }
+.vd-crumbs [aria-current="page"] { color: var(--vd-ink); font-weight: 550; white-space: nowrap; }
+
+/* Inline selects in a toolbar are chrome, not form fields. */
+.vd-select--inline {
+  height: 28px;
+  width: auto;
+  min-width: 132px;
+  border-color: transparent;
+  background: transparent;
+  font-size: var(--vd-text-sm);
+  padding-inline: var(--vd-2);
+}
+
+.vd-select--inline:hover { background: var(--vd-surface-3); }
+
+/* ── Drive ──────────────────────────────────────────────────────────────── */
+.vd-drive { padding: var(--vd-5) var(--vd-5) var(--vd-12); }
+
+.vd-drive__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(196px, 1fr));
+  gap: var(--vd-3);
+}
+
+.vd-filecard {
+  position: relative;
+  border: 1px solid var(--vd-line);
+  border-radius: var(--vd-radius-lg);
+  background: var(--vd-surface);
+  transition: border-color var(--vd-fast) var(--vd-ease),
+    box-shadow var(--vd-fast) var(--vd-ease),
+    transform var(--vd-fast) var(--vd-ease);
+}
+
+.vd-filecard:hover {
+  border-color: var(--vd-line-strong);
+  box-shadow: var(--vd-shadow);
+  transform: translateY(-2px);
+}
+
+.vd-filecard:focus-within { border-color: var(--vd-primary); }
+.vd-filecard.trashed { opacity: 0.72; }
+
+.vd-filecard__link {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vd-3);
+  padding: var(--vd-3);
+  text-decoration: none;
+  color: inherit;
+}
+
+.vd-filecard__thumb {
+  position: relative;
+  display: grid;
+  place-items: center;
+  height: 68px;
+  border-radius: var(--vd-radius);
+  /* A wash of the type's own hue rather than a coloured fill: enough to sort by at a glance,
+     quiet enough that a grid of forty files is not a fruit salad. */
+  background: color-mix(in srgb, var(--vd-file-hue) 9%, var(--vd-surface-2));
+  color: var(--vd-file-hue);
+}
+
+.vd-filecard__star {
+  position: absolute;
+  top: var(--vd-1);
+  inset-inline-end: var(--vd-1);
+  color: var(--vd-gold);
+}
+
+.vd-filecard__name {
+  font-size: var(--vd-text-base);
+  font-weight: 570;
+  line-height: 1.35;
+  /* Two lines then ellipsis: file names are long and truncating at one line loses the distinguishing part. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.vd-filecard__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--vd-1);
+  margin-block-start: var(--vd-1);
+  font-size: var(--vd-text-xs);
+  color: var(--vd-ink-3);
+}
+
+.vd-filecard__badges {
+  position: absolute;
+  top: var(--vd-2);
+  inset-inline-start: var(--vd-2);
+  display: flex;
+  gap: var(--vd-1);
+}
+
+.vd-filecard__actions {
+  position: absolute;
+  top: var(--vd-1);
+  inset-inline-end: var(--vd-1);
+  opacity: 0;
+  transition: opacity var(--vd-fast) var(--vd-ease);
+}
+
+/* Actions appear on hover but must stay reachable by keyboard. */
+.vd-filecard:hover .vd-filecard__actions,
+.vd-filecard:focus-within .vd-filecard__actions { opacity: 1; }
+
+@media (hover: none) {
+  .vd-filecard__actions { opacity: 1; }
+}
+
+/* ── Drive list ─────────────────────────────────────────────────────────── */
+.vd-drive__table-wrap {
+  border: 1px solid var(--vd-line);
+  border-radius: var(--vd-radius-lg);
+  background: var(--vd-surface);
+  overflow: hidden;
+}
+
+.vd-drive__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--vd-text-sm);
+}
+
+.vd-drive__table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: var(--vd-2) var(--vd-3);
+  background: var(--vd-surface-2);
+  border-block-end: 1px solid var(--vd-line);
+  text-align: start;
+  font-family: var(--vd-font-mono);
+  font-size: var(--vd-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--vd-ink-3);
+  white-space: nowrap;
+}
+
+.vd-drive__row td {
+  padding: var(--vd-2) var(--vd-3);
+  border-block-end: 1px solid var(--vd-line);
+  vertical-align: middle;
+}
+
+.vd-drive__row:last-child td { border-block-end: 0; }
+.vd-drive__row:hover { background: var(--vd-surface-2); }
+.vd-drive__row.trashed { opacity: 0.72; }
+
+.vd-drive__name {
+  display: flex;
+  align-items: center;
+  gap: var(--vd-2);
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+  font-weight: 540;
+}
+
+.vd-drive__name:hover { color: var(--vd-primary); }
+
+.vd-drive__icon { flex: 0 0 auto; display: grid; place-items: center; }
+.vd-drive__starred { color: var(--vd-gold); flex: 0 0 auto; }
+.vd-drive__shared { color: var(--vd-info); flex: 0 0 auto; }
+
+.vd-drive__owner {
+  display: flex;
+  align-items: center;
+  gap: var(--vd-2);
+  min-width: 0;
+  color: var(--vd-ink-2);
+  max-width: 200px;
+}
+
+.vd-drive__when { color: var(--vd-ink-3); white-space: nowrap; }
+
+.vd-drive__by {
+  display: block;
+  font-size: var(--vd-text-xs);
+  color: var(--vd-ink-faint);
+}
+
+.vd-drive__size { text-align: end; color: var(--vd-ink-3); white-space: nowrap; }
+.vd-drive__actions { width: 44px; text-align: end; }
+
+.vd-drive__more {
+  display: grid;
+  place-items: center;
+  padding-block: var(--vd-6);
+}
+
+/* Menus anchored inside cards and rows need a positioning context. */
+.vd-itemmenu,
+.vd-newmenu { position: relative; }
+
+/* ── share dialog ───────────────────────────────────────────────────────── */
+.vd-share {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vd-3);
+}
+
+.vd-share__invite {
+  display: flex;
+  gap: var(--vd-2);
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.vd-share__people {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vd-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.vd-share__person {
+  display: flex;
+  align-items: center;
+  gap: var(--vd-3);
+  padding: var(--vd-2);
+  border-radius: var(--vd-radius);
+}
+
+.vd-share__person:hover { background: var(--vd-surface-2); }
+
+.vd-share__email {
+  font-size: var(--vd-text-sm);
+  color: var(--vd-ink-3);
+}
+
+.vd-share__link {
+  display: flex;
+  gap: var(--vd-2);
+  flex-wrap: wrap;
+}
+
+.vd-share__link > select:first-child { flex: 1 1 260px; }
+
+.vd-share__warn {
+  display: flex;
+  align-items: center;
+  gap: var(--vd-2);
+  padding: var(--vd-2) var(--vd-3);
+  border-radius: var(--vd-radius);
+  background: var(--vd-warn-soft);
+  color: var(--vd-warn);
+  font-size: var(--vd-text-sm);
+}
+
+@media (max-width: 700px) {
+  .vd-drive { padding: var(--vd-3); }
+  .vd-drive__grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: var(--vd-2); }
+  .vd-drive__owner, .vd-drive__size { display: none; }
+}

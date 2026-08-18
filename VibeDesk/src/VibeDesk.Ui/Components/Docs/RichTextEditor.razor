@@ -1,0 +1,269 @@
+@*
+    Rich-text surface over contenteditable.
+
+    The one rule that governs this component: Blazor must never re-render the editable element's
+    content. Assigning innerHTML collapses the caret to the start, so a render triggered by anything
+    at all — a toast, a sidebar update, a presence ping — would yank the cursor out from under the
+    user mid-sentence.
+
+    So the markup below contains no dynamic children. Content goes in once through JS on first render
+    and on explicit reload; it comes back out through JS when we need to save. Blazor owns the
+    wrapper, the browser owns the contents.
+*@
+@implements IAsyncDisposable
+@inject IJSRuntime Js
+
+<div class="vd-page" style="@PageStyle">
+    <div class="vd-page__body"
+         @ref="_surface"
+         contenteditable="@(ReadOnly ? "false" : "true")"
+         role="textbox"
+         aria-multiline="true"
+         aria-label="Document body"
+         spellcheck="true"
+         data-placeholder="@Placeholder"
+         @oninput="OnInput"
+         @onkeydown="OnKeyDown"
+         @onblur="FlushAsync">
+    </div>
+</div>
+
+@code {
+    /// <summary>Initial HTML. Changes are pushed to the DOM only when <see cref="Revision"/> moves.</summary>
+    [Parameter] public string Html { get; set; } = "<p></p>";
+
+    /// <summary>
+    /// Bump this to force a reload of the surface — used after a version restore or a rebase, where
+    /// replacing the content is exactly what we want.
+    /// </summary>
+    [Parameter] public long Revision { get; set; }
+
+    [Parameter] public bool ReadOnly { get; set; }
+    [Parameter] public string Placeholder { get; set; } = "Start writing…";
+    [Parameter] public PageSetup Page { get; set; } = new();
+
+    /// <summary>Raised after the user stops typing, with the current HTML.</summary>
+    [Parameter] public EventCallback<string> OnChanged { get; set; }
+
+    /// <summary>Raised when the selection changes, so the toolbar can reflect the active formats.</summary>
+    [Parameter] public EventCallback OnSelectionChanged { get; set; }
+
+    private ElementReference _surface;
+
+    /// <summary>The revision currently in the DOM, so we only overwrite when it genuinely changed.</summary>
+    private long _loadedRevision = -1;
+
+    private CancellationTokenSource? _debounce;
+    private static readonly TimeSpan Delay = TimeSpan.FromMilliseconds(700);
+
+    /// <summary>Guards the placeholder toggle so we don't cross into JS on every keystroke.</summary>
+    private bool _wasEmpty = true;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_loadedRevision == Revision) return;
+
+        _loadedRevision = Revision;
+
+        try
+        {
+            await Js.InvokeVoidAsync("vibedesk.setHtml", _surface, string.IsNullOrWhiteSpace(Html) ? "<p></p>" : Html);
+            await UpdateEmptyStateAsync();
+        }
+        catch (JSException)
+        {
+            // The circuit or element is gone; nothing to load into.
+        }
+    }
+
+    private async Task OnInput()
+    {
+        await UpdateEmptyStateAsync();
+
+        _debounce?.Cancel();
+        _debounce?.Dispose();
+        _debounce = new CancellationTokenSource();
+        var token = _debounce.Token;
+
+        try
+        {
+            await Task.Delay(Delay, token);
+            await FlushAsync();
+        }
+        catch (OperationCanceledException)
+        {
+            // Still typing; the later keystroke will flush.
+        }
+    }
+
+    /// <summary>Reads the current HTML out of the DOM and reports it.</summary>
+    public async Task FlushAsync()
+    {
+        if (ReadOnly) return;
+
+        try
+        {
+            var html = await Js.InvokeAsync<string>("vibedesk.getHtml", _surface);
+
+            // Keep our idea of the loaded revision in step, so a save-triggered parameter change
+            // does not cause OnAfterRender to reload the surface and reset the caret.
+            await OnChanged.InvokeAsync(html);
+        }
+        catch (JSException)
+        {
+            // Circuit tearing down.
+        }
+    }
+
+    private async Task OnKeyDown(KeyboardEventArgs e)
+    {
+        // Tab inside a document should indent, not move focus out of the editor.
+        if (e.Key == "Tab")
+        {
+            await Js.InvokeVoidAsync("vibedesk.execCommand", e.ShiftKey ? "outdent" : "indent", null);
+            return;
+        }
+
+        // Arrow keys and clicks move the selection; let the toolbar refresh its state.
+        if (e.Key.StartsWith("Arrow", StringComparison.Ordinal) || e.Key is "Home" or "End")
+        {
+            await OnSelectionChanged.InvokeAsync();
+        }
+    }
+
+    /// <summary>
+    /// Toggles the placeholder. Uses a data attribute set from JS rather than rendering a child
+    /// element, because any Blazor-rendered child inside the editable region would be a diff target.
+    /// </summary>
+    private async Task UpdateEmptyStateAsync()
+    {
+        try
+        {
+            var html = await Js.InvokeAsync<string>("vibedesk.getHtml", _surface);
+            var empty = IsEffectivelyEmpty(html);
+
+            if (empty == _wasEmpty) return;
+
+            _wasEmpty = empty;
+            await Js.InvokeVoidAsync("vibedesk.setDataAttribute", _surface, "empty", empty ? "true" : "false");
+        }
+        catch (JSException)
+        {
+            // Ignored: the placeholder is cosmetic.
+        }
+    }
+
+    /// <summary>
+    /// A contenteditable that looks empty still contains markup — browsers leave behind
+    /// <c>&lt;p&gt;&lt;br&gt;&lt;/p&gt;</c> or a bare <c>&lt;br&gt;</c>. Strip tags and entities
+    /// before deciding.
+    /// </summary>
+    private static bool IsEffectivelyEmpty(string? html)
+    {
+        if (string.IsNullOrWhiteSpace(html)) return true;
+
+        var text = System.Text.RegularExpressions.Regex.Replace(html, "<[^>]*>", string.Empty);
+        text = System.Net.WebUtility.HtmlDecode(text).Replace(' ', ' ');
+
+        return string.IsNullOrWhiteSpace(text);
+    }
+
+    // ── formatting commands, called by the toolbar ───────────────────────────
+
+    public async Task ExecAsync(string command, string? value = null)
+    {
+        if (ReadOnly) return;
+
+        try
+        {
+            await Js.InvokeVoidAsync("vibedesk.focus", _surface);
+            await Js.InvokeVoidAsync("vibedesk.execCommand", command, value);
+            await FlushAsync();
+            await OnSelectionChanged.InvokeAsync();
+        }
+        catch (JSException)
+        {
+            // Ignored.
+        }
+    }
+
+    public async Task InsertHtmlAsync(string html)
+    {
+        if (ReadOnly) return;
+
+        try
+        {
+            await Js.InvokeVoidAsync("vibedesk.focus", _surface);
+            await Js.InvokeVoidAsync("vibedesk.insertHtml", html);
+            await FlushAsync();
+        }
+        catch (JSException)
+        {
+            // Ignored.
+        }
+    }
+
+    /// <summary>Whether a toggle command is currently active, for the toolbar's pressed state.</summary>
+    public async Task<bool> IsActiveAsync(string command)
+    {
+        try
+        {
+            return await Js.InvokeAsync<bool>("vibedesk.queryCommandState", command);
+        }
+        catch (JSException)
+        {
+            return false;
+        }
+    }
+
+    public async Task<string> GetSelectedTextAsync()
+    {
+        try
+        {
+            return await Js.InvokeAsync<string>("vibedesk.getSelectedText");
+        }
+        catch (JSException)
+        {
+            return string.Empty;
+        }
+    }
+
+    /// <summary>CSS for the sheet itself, derived from the document's page setup.</summary>
+    private string PageStyle
+    {
+        get
+        {
+            var inv = System.Globalization.CultureInfo.InvariantCulture;
+
+            // Paper widths in millimetres; the shorter edge is the measure in portrait.
+            var (widthMm, heightMm) = Page.Size?.ToLowerInvariant() switch
+            {
+                "letter" => (215.9, 279.4),
+                "legal" => (215.9, 355.6),
+                "a5" => (148.0, 210.0),
+                _ => (210.0, 297.0),
+            };
+
+            var landscape = Page.Orientation?.Equals("landscape", StringComparison.OrdinalIgnoreCase) == true;
+            var measureMm = landscape ? heightMm : widthMm;
+
+            var margin = Page.MarginCm > 0 ? Page.MarginCm : 2.5;
+            var fontSize = Page.FontSizePt > 0 ? Page.FontSizePt : 11;
+            var family = string.IsNullOrWhiteSpace(Page.FontFamily) ? "Inter" : Page.FontFamily;
+
+            return string.Join(';',
+                $"max-width:{measureMm.ToString("0.#", inv)}mm",
+                $"padding:{margin.ToString("0.##", inv)}cm",
+                $"font-family:{family},var(--vd-font-ui)",
+                $"font-size:{fontSize.ToString("0.#", inv)}pt",
+                "line-height:1.6");
+        }
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        _debounce?.Cancel();
+        _debounce?.Dispose();
+        return ValueTask.CompletedTask;
+    }
+}

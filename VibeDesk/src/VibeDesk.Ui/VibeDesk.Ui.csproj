@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk.Razor">
+
+  <!--
+    No AddRazorSupportForMvc: that property switches the project into MVC-view mode and stops
+    .razor components from being compiled at all.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>VibeDesk.Ui</RootNamespace>
+  </PropertyGroup>
+
+  <!--
+    Depends on Application only, never Infrastructure. That keeps the component library usable from
+    the Blazor Server host (which talks to Infrastructure directly) and from the MAUI/WPF hosts
+    (which talk to the API), without dragging the ASP.NET shared framework into a mobile app.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\VibeDesk.Application\VibeDesk.Application.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Components.Web" />
+    <PackageReference Include="Markdig" />
+  </ItemGroup>
+
+</Project>

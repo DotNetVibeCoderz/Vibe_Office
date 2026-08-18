@@ -1,0 +1,587 @@
+@*
+    Chart renderer: inline SVG driven by FormulaEngine.BuildChartData.
+
+    No charting library. The data already comes from the formula engine as plain numbers, and a
+    library would add a JS bundle plus a second layout pass for marks we can emit directly — which
+    also keeps the chart in the server-rendered DOM where the rest of the app lives.
+
+    A table view is always available. Three light-mode series slots sit under 3:1 against the surface,
+    and the palette guidance treats that as an obligation to provide non-colour relief, not a warning
+    to dismiss.
+*@
+<div class="vd-chartwrap">
+    <div class="vd-chartwrap__bar">
+        <span class="vd-label vd-truncate">@Data.Title</span>
+        <div class="vd-spacer"></div>
+        <button type="button" class="vd-btn vd-btn--icon vd-btn--sm"
+                aria-pressed="@_asTable.ToString().ToLowerInvariant()"
+                @onclick="() => _asTable = !_asTable"
+                title="@(_asTable ? "Show chart" : "Show as table")"
+                aria-label="@(_asTable ? "Show chart" : "Show as table")">
+            <Icon Name="@(_asTable ? "chart-column" : "table")" Size="14" />
+        </button>
+    </div>
+
+    @if (_asTable)
+    {
+        <div class="vd-scroll-x">
+            <table class="vd-pivot">
+                <thead>
+                    <tr>
+                        <th scope="col">Category</th>
+                        @foreach (var series in Data.Series)
+                        {
+                            <th scope="col">@series.Name</th>
+                        }
+                    </tr>
+                </thead>
+                <tbody>
+                    @for (var i = 0; i < Data.Categories.Count; i++)
+                    {
+                        var index = i;
+                        <tr>
+                            <th scope="row">@Data.Categories[index]</th>
+                            @foreach (var series in Data.Series)
+                            {
+                                <td>@Num(index < series.Points.Count ? series.Points[index] : 0)</td>
+                            }
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+    else if (Data.Series.Count == 0 || Data.Categories.Count == 0)
+    {
+        <p class="vd-hint" style="padding:var(--vd-4);text-align:center">
+            Pick a category range and at least one series range.
+        </p>
+    }
+    else
+    {
+        <svg class="vd-chart" viewBox="0 0 @W @H" role="img" aria-label="@AriaSummary"
+             preserveAspectRatio="xMidYMid meet">
+
+            @if (IsRadial)
+            {
+                @RenderRadial
+            }
+            else
+            {
+                @RenderCartesian
+            }
+        </svg>
+
+        @* A legend is always present for two or more series, so identity is never colour alone. *@
+        @if (Data.Series.Count > 1 && Data.ShowLegend)
+        {
+            <div class="vd-chart__legend">
+                @for (var s = 0; s < Data.Series.Count; s++)
+                {
+                    var index = s;
+                    <span class="vd-chart__key">
+                        <span class="vd-chart__swatch" style="background:@ChartPalette.Token(index)"></span>
+                        @Data.Series[index].Name
+                    </span>
+                }
+            </div>
+        }
+        else if (IsRadial && Data.Categories.Count > 1)
+        {
+            <div class="vd-chart__legend">
+                @for (var c = 0; c < Data.Categories.Count && c < ChartPalette.SlotCount; c++)
+                {
+                    var index = c;
+                    <span class="vd-chart__key">
+                        <span class="vd-chart__swatch" style="background:@ChartPalette.Token(index)"></span>
+                        @Data.Categories[index]
+                    </span>
+                }
+            </div>
+        }
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public ChartData Data { get; set; } = default!;
+
+    private bool _asTable;
+
+    // Fixed viewBox; the SVG scales to its container so one geometry serves every card size.
+    private const double W = 640;
+    private const double H = 300;
+    private const double PadLeft = 54;
+    private const double PadRight = 14;
+    private const double PadTop = 12;
+    private const double PadBottom = 34;
+
+    private double PlotW => W - PadLeft - PadRight;
+    private double PlotH => H - PadTop - PadBottom;
+
+    private bool IsRadial => Data.Kind is "pie" or "doughnut";
+    private bool IsHorizontal => Data.Kind == "bar";
+
+    private string AriaSummary =>
+        $"{Data.Kind} chart, {Data.Title}. {Data.Series.Count} series over {Data.Categories.Count} categories.";
+
+    private static string Num(double v) =>
+        v.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>SVG coordinates must be invariant regardless of the user's locale.</summary>
+    private static string C(double v) =>
+        v.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+
+    // ── scale ───────────────────────────────────────────────────────────────
+
+    private (double Min, double Max) Extent
+    {
+        get
+        {
+            var values = Data.Series.SelectMany(s => s.Points).ToList();
+            if (values.Count == 0) return (0, 1);
+
+            if (Data.Stacked)
+            {
+                // A stacked chart's ceiling is the tallest column total, not the tallest single value.
+                var totals = new List<double>();
+                for (var i = 0; i < Data.Categories.Count; i++)
+                {
+                    totals.Add(Data.Series.Sum(s => i < s.Points.Count ? Math.Max(0, s.Points[i]) : 0));
+                }
+                values = totals;
+            }
+
+            var min = Math.Min(0, values.Min());
+            var max = Math.Max(values.Max(), min + 1);
+
+            // Round the ceiling to a friendly step so gridline labels are readable numbers.
+            var step = NiceStep((max - min) / 4);
+            max = Math.Ceiling(max / step) * step;
+            if (min < 0) min = Math.Floor(min / step) * step;
+
+            return (min, max);
+        }
+    }
+
+    /// <summary>Snaps a raw interval up to 1, 2, 2.5 or 5 times a power of ten.</summary>
+    private static double NiceStep(double raw)
+    {
+        if (raw <= 0) return 1;
+
+        var magnitude = Math.Pow(10, Math.Floor(Math.Log10(raw)));
+        var normalised = raw / magnitude;
+
+        var factor = normalised switch
+        {
+            <= 1 => 1,
+            <= 2 => 2,
+            <= 2.5 => 2.5,
+            <= 5 => 5,
+            _ => 10,
+        };
+
+        return factor * magnitude;
+    }
+
+    private double ValueToY(double value)
+    {
+        var (min, max) = Extent;
+        var span = max - min;
+        return PadTop + PlotH - (value - min) / span * PlotH;
+    }
+
+    private double ValueToX(double value)
+    {
+        var (min, max) = Extent;
+        var span = max - min;
+        return PadLeft + (value - min) / span * PlotW;
+    }
+
+    // ── cartesian ───────────────────────────────────────────────────────────
+
+    private RenderFragment RenderCartesian => builder =>
+    {
+        var seq = 0;
+        var (min, max) = Extent;
+        var step = NiceStep((max - min) / 4);
+
+        // Gridlines and value labels. Recessive by design: the marks carry the message.
+        if (Data.ShowGrid)
+        {
+            builder.OpenElement(seq++, "g");
+            builder.AddAttribute(seq++, "class", "vd-chart__grid");
+
+            for (var v = min; v <= max + step / 2; v += step)
+            {
+                if (IsHorizontal)
+                {
+                    var x = ValueToX(v);
+                    builder.OpenElement(seq++, "line");
+                    builder.AddAttribute(seq++, "x1", C(x));
+                    builder.AddAttribute(seq++, "x2", C(x));
+                    builder.AddAttribute(seq++, "y1", C(PadTop));
+                    builder.AddAttribute(seq++, "y2", C(PadTop + PlotH));
+                    builder.CloseElement();
+
+                    builder.OpenElement(seq++, "text");
+                    builder.AddAttribute(seq++, "class", "vd-chart__value");
+                    builder.AddAttribute(seq++, "x", C(x));
+                    builder.AddAttribute(seq++, "y", C(H - PadBottom + 14));
+                    builder.AddAttribute(seq++, "text-anchor", "middle");
+                    builder.AddContent(seq++, Num(v));
+                    builder.CloseElement();
+                }
+                else
+                {
+                    var y = ValueToY(v);
+                    builder.OpenElement(seq++, "line");
+                    builder.AddAttribute(seq++, "x1", C(PadLeft));
+                    builder.AddAttribute(seq++, "x2", C(W - PadRight));
+                    builder.AddAttribute(seq++, "y1", C(y));
+                    builder.AddAttribute(seq++, "y2", C(y));
+                    builder.CloseElement();
+
+                    builder.OpenElement(seq++, "text");
+                    builder.AddAttribute(seq++, "class", "vd-chart__value");
+                    builder.AddAttribute(seq++, "x", C(PadLeft - 7));
+                    builder.AddAttribute(seq++, "y", C(y + 3));
+                    builder.AddAttribute(seq++, "text-anchor", "end");
+                    builder.AddContent(seq++, Num(v));
+                    builder.CloseElement();
+                }
+            }
+
+            builder.CloseElement();
+        }
+
+        // Baseline.
+        builder.OpenElement(seq++, "g");
+        builder.AddAttribute(seq++, "class", "vd-chart__axis");
+        builder.OpenElement(seq++, "line");
+        if (IsHorizontal)
+        {
+            builder.AddAttribute(seq++, "x1", C(ValueToX(Math.Max(0, min))));
+            builder.AddAttribute(seq++, "x2", C(ValueToX(Math.Max(0, min))));
+            builder.AddAttribute(seq++, "y1", C(PadTop));
+            builder.AddAttribute(seq++, "y2", C(PadTop + PlotH));
+        }
+        else
+        {
+            builder.AddAttribute(seq++, "x1", C(PadLeft));
+            builder.AddAttribute(seq++, "x2", C(W - PadRight));
+            builder.AddAttribute(seq++, "y1", C(ValueToY(Math.Max(0, min))));
+            builder.AddAttribute(seq++, "y2", C(ValueToY(Math.Max(0, min))));
+        }
+        builder.CloseElement();
+        builder.CloseElement();
+
+        var count = Data.Categories.Count;
+        var slotSize = (IsHorizontal ? PlotH : PlotW) / Math.Max(1, count);
+
+        // Category labels, thinned so they never collide.
+        var labelEvery = Math.Max(1, (int)Math.Ceiling(count / (IsHorizontal ? 14.0 : 12.0)));
+        for (var i = 0; i < count; i++)
+        {
+            if (i % labelEvery != 0) continue;
+
+            builder.OpenElement(seq++, "text");
+            builder.AddAttribute(seq++, "class", "vd-chart__label");
+
+            if (IsHorizontal)
+            {
+                builder.AddAttribute(seq++, "x", C(PadLeft - 7));
+                builder.AddAttribute(seq++, "y", C(PadTop + slotSize * i + slotSize / 2 + 3));
+                builder.AddAttribute(seq++, "text-anchor", "end");
+            }
+            else
+            {
+                builder.AddAttribute(seq++, "x", C(PadLeft + slotSize * i + slotSize / 2));
+                builder.AddAttribute(seq++, "y", C(H - PadBottom + 14));
+                builder.AddAttribute(seq++, "text-anchor", "middle");
+            }
+
+            builder.AddContent(seq++, Data.Categories[i]);
+            builder.CloseElement();
+        }
+
+        if (Data.Kind is "line" or "area")
+        {
+            RenderLines(builder, ref seq, slotSize);
+        }
+        else if (Data.Kind == "scatter")
+        {
+            RenderScatter(builder, ref seq, slotSize);
+        }
+        else
+        {
+            RenderBars(builder, ref seq, slotSize, min);
+        }
+    };
+
+    private void RenderBars(RenderTreeBuilder builder, ref int seq, double slotSize, double min)
+    {
+        var seriesCount = Data.Series.Count;
+        var baseline = Math.Max(0, min);
+
+        // 2px of surface between adjacent fills, and a slot gap so columns read as a group.
+        const double gapWithinSlot = 2;
+        const double slotPadding = 0.22;
+
+        var usable = slotSize * (1 - slotPadding);
+        var barSize = Data.Stacked
+            ? usable
+            : Math.Max(2, (usable - gapWithinSlot * (seriesCount - 1)) / seriesCount);
+
+        for (var i = 0; i < Data.Categories.Count; i++)
+        {
+            var slotStart = (IsHorizontal ? PadTop : PadLeft) + slotSize * i + slotSize * slotPadding / 2;
+            var stackAccumulator = baseline;
+
+            for (var s = 0; s < seriesCount; s++)
+            {
+                var series = Data.Series[s];
+                if (i >= series.Points.Count) continue;
+
+                var value = series.Points[i];
+                var color = ChartPalette.Token(s);
+
+                double x, y, width, height;
+
+                if (IsHorizontal)
+                {
+                    var from = Data.Stacked ? ValueToX(stackAccumulator) : ValueToX(baseline);
+                    var to = Data.Stacked ? ValueToX(stackAccumulator + value) : ValueToX(value);
+
+                    x = Math.Min(from, to);
+                    width = Math.Max(1, Math.Abs(to - from));
+                    y = Data.Stacked ? slotStart : slotStart + (barSize + gapWithinSlot) * s;
+                    height = barSize;
+                }
+                else
+                {
+                    var from = Data.Stacked ? ValueToY(stackAccumulator) : ValueToY(baseline);
+                    var to = Data.Stacked ? ValueToY(stackAccumulator + value) : ValueToY(value);
+
+                    y = Math.Min(from, to);
+                    height = Math.Max(1, Math.Abs(to - from));
+                    x = Data.Stacked ? slotStart : slotStart + (barSize + gapWithinSlot) * s;
+                    width = barSize;
+                }
+
+                if (Data.Stacked) stackAccumulator += value;
+
+                builder.OpenElement(seq++, "rect");
+                builder.AddAttribute(seq++, "class", "vd-chart__mark");
+                builder.AddAttribute(seq++, "x", C(x));
+                builder.AddAttribute(seq++, "y", C(y));
+                builder.AddAttribute(seq++, "width", C(width));
+                builder.AddAttribute(seq++, "height", C(height));
+                builder.AddAttribute(seq++, "fill", color);
+                // Rounded data-end only; the baseline end stays square so bars sit on the axis.
+                builder.AddAttribute(seq++, "rx", "3");
+                builder.OpenElement(seq++, "title");
+                builder.AddContent(seq++, $"{Data.Categories[i]} · {series.Name}: {Num(value)}");
+                builder.CloseElement();
+                builder.CloseElement();
+            }
+        }
+    }
+
+    private void RenderLines(RenderTreeBuilder builder, ref int seq, double slotSize)
+    {
+        var (min, _) = Extent;
+        var baselineY = ValueToY(Math.Max(0, min));
+
+        for (var s = 0; s < Data.Series.Count; s++)
+        {
+            var series = Data.Series[s];
+            if (series.Points.Count == 0) continue;
+
+            var color = ChartPalette.Token(s);
+
+            var points = series.Points
+                .Select((v, i) => (X: PadLeft + slotSize * i + slotSize / 2, Y: ValueToY(v)))
+                .ToList();
+
+            if (Data.Kind == "area")
+            {
+                var area = new System.Text.StringBuilder();
+                area.Append($"M {C(points[0].X)} {C(baselineY)}");
+                foreach (var p in points) area.Append($" L {C(p.X)} {C(p.Y)}");
+                area.Append($" L {C(points[^1].X)} {C(baselineY)} Z");
+
+                builder.OpenElement(seq++, "path");
+                builder.AddAttribute(seq++, "d", area.ToString());
+                builder.AddAttribute(seq++, "fill", color);
+                // Low opacity so overlapping areas stay readable; the stroke carries identity.
+                builder.AddAttribute(seq++, "opacity", "0.16");
+                builder.CloseElement();
+            }
+
+            var line = string.Join(" ", points.Select((p, i) =>
+                $"{(i == 0 ? "M" : "L")} {C(p.X)} {C(p.Y)}"));
+
+            builder.OpenElement(seq++, "path");
+            builder.AddAttribute(seq++, "d", line);
+            builder.AddAttribute(seq++, "fill", "none");
+            builder.AddAttribute(seq++, "stroke", color);
+            builder.AddAttribute(seq++, "stroke-width", "2");
+            builder.AddAttribute(seq++, "stroke-linejoin", "round");
+            builder.AddAttribute(seq++, "stroke-linecap", "round");
+            builder.CloseElement();
+
+            // Markers only when they can be told apart; a dense line becomes a smear of dots.
+            if (points.Count <= 40)
+            {
+                for (var i = 0; i < points.Count; i++)
+                {
+                    builder.OpenElement(seq++, "circle");
+                    builder.AddAttribute(seq++, "class", "vd-chart__mark");
+                    builder.AddAttribute(seq++, "cx", C(points[i].X));
+                    builder.AddAttribute(seq++, "cy", C(points[i].Y));
+                    builder.AddAttribute(seq++, "r", "4");
+                    builder.AddAttribute(seq++, "fill", color);
+                    // A surface ring keeps overlapping markers separable.
+                    builder.AddAttribute(seq++, "stroke", "var(--vd-surface)");
+                    builder.AddAttribute(seq++, "stroke-width", "2");
+                    builder.OpenElement(seq++, "title");
+                    builder.AddContent(seq++,
+                        $"{(i < Data.Categories.Count ? Data.Categories[i] : (i + 1).ToString())} · {series.Name}: {Num(series.Points[i])}");
+                    builder.CloseElement();
+                    builder.CloseElement();
+                }
+            }
+        }
+    }
+
+    private void RenderScatter(RenderTreeBuilder builder, ref int seq, double slotSize)
+    {
+        for (var s = 0; s < Data.Series.Count; s++)
+        {
+            var series = Data.Series[s];
+            var color = ChartPalette.Token(s);
+
+            for (var i = 0; i < series.Points.Count; i++)
+            {
+                builder.OpenElement(seq++, "circle");
+                builder.AddAttribute(seq++, "class", "vd-chart__mark");
+                builder.AddAttribute(seq++, "cx", C(PadLeft + slotSize * i + slotSize / 2));
+                builder.AddAttribute(seq++, "cy", C(ValueToY(series.Points[i])));
+                builder.AddAttribute(seq++, "r", "5");
+                builder.AddAttribute(seq++, "fill", color);
+                builder.AddAttribute(seq++, "stroke", "var(--vd-surface)");
+                builder.AddAttribute(seq++, "stroke-width", "2");
+                builder.OpenElement(seq++, "title");
+                builder.AddContent(seq++,
+                    $"{(i < Data.Categories.Count ? Data.Categories[i] : (i + 1).ToString())} · {series.Name}: {Num(series.Points[i])}");
+                builder.CloseElement();
+                builder.CloseElement();
+            }
+        }
+    }
+
+    // ── pie & doughnut ──────────────────────────────────────────────────────
+
+    private RenderFragment RenderRadial => builder =>
+    {
+        var seq = 0;
+
+        // Radial charts show one series split by category, so colour encodes the category here.
+        var series = Data.Series.FirstOrDefault();
+        if (series is null) return;
+
+        var values = series.Points.Select(v => Math.Max(0, v)).ToList();
+        var total = values.Sum();
+        if (total <= 0) return;
+
+        var cx = W / 2;
+        var cy = H / 2;
+        var outer = Math.Min(PlotH, PlotW) / 2 - 6;
+        var inner = Data.Kind == "doughnut" ? outer * 0.58 : 0;
+
+        var angle = -Math.PI / 2; // start at 12 o'clock
+
+        for (var i = 0; i < values.Count; i++)
+        {
+            var fraction = values[i] / total;
+            var sweep = fraction * Math.PI * 2;
+
+            // A 2px surface gap between slices, expressed as an angular inset.
+            var inset = Math.Min(sweep * 0.03, 0.02);
+            var from = angle + inset;
+            var to = angle + sweep - inset;
+
+            if (to > from)
+            {
+                builder.OpenElement(seq++, "path");
+                builder.AddAttribute(seq++, "class", "vd-chart__mark");
+                builder.AddAttribute(seq++, "d", Arc(cx, cy, inner, outer, from, to));
+                builder.AddAttribute(seq++, "fill", ChartPalette.Token(i));
+                builder.OpenElement(seq++, "title");
+                builder.AddContent(seq++,
+                    $"{(i < Data.Categories.Count ? Data.Categories[i] : (i + 1).ToString())}: {Num(values[i])} ({(fraction * 100):0.#}%)");
+                builder.CloseElement();
+                builder.CloseElement();
+
+                // Direct-label only slices with room for the text; the legend covers the rest.
+                if (fraction >= 0.07)
+                {
+                    var mid = (from + to) / 2;
+                    var labelRadius = inner > 0 ? (inner + outer) / 2 : outer * 0.66;
+
+                    builder.OpenElement(seq++, "text");
+                    builder.AddAttribute(seq++, "class", "vd-chart__value");
+                    builder.AddAttribute(seq++, "x", C(cx + Math.Cos(mid) * labelRadius));
+                    builder.AddAttribute(seq++, "y", C(cy + Math.Sin(mid) * labelRadius + 3));
+                    builder.AddAttribute(seq++, "text-anchor", "middle");
+                    builder.AddContent(seq++, $"{fraction * 100:0}%");
+                    builder.CloseElement();
+                }
+            }
+
+            angle += sweep;
+        }
+
+        if (Data.Kind == "doughnut")
+        {
+            builder.OpenElement(seq++, "text");
+            builder.AddAttribute(seq++, "class", "vd-chart__label");
+            builder.AddAttribute(seq++, "x", C(cx));
+            builder.AddAttribute(seq++, "y", C(cy + 4));
+            builder.AddAttribute(seq++, "text-anchor", "middle");
+            builder.AddAttribute(seq++, "style", "font-size:15px;font-weight:650;fill:var(--vd-ink)");
+            builder.AddContent(seq++, Num(total));
+            builder.CloseElement();
+        }
+    };
+
+    /// <summary>
+    /// Path for a slice or ring segment. Split into two arcs when the sweep exceeds a semicircle,
+    /// because a single elliptical arc cannot express more than 180° unambiguously.
+    /// </summary>
+    private static string Arc(double cx, double cy, double inner, double outer, double from, double to)
+    {
+        var largeArc = to - from > Math.PI ? 1 : 0;
+
+        var x1 = cx + Math.Cos(from) * outer;
+        var y1 = cy + Math.Sin(from) * outer;
+        var x2 = cx + Math.Cos(to) * outer;
+        var y2 = cy + Math.Sin(to) * outer;
+
+        if (inner <= 0)
+        {
+            return $"M {C(cx)} {C(cy)} L {C(x1)} {C(y1)} " +
+                   $"A {C(outer)} {C(outer)} 0 {largeArc} 1 {C(x2)} {C(y2)} Z";
+        }
+
+        var x3 = cx + Math.Cos(to) * inner;
+        var y3 = cy + Math.Sin(to) * inner;
+        var x4 = cx + Math.Cos(from) * inner;
+        var y4 = cy + Math.Sin(from) * inner;
+
+        return $"M {C(x1)} {C(y1)} " +
+               $"A {C(outer)} {C(outer)} 0 {largeArc} 1 {C(x2)} {C(y2)} " +
+               $"L {C(x3)} {C(y3)} " +
+               $"A {C(inner)} {C(inner)} 0 {largeArc} 0 {C(x4)} {C(y4)} Z";
+    }
+}

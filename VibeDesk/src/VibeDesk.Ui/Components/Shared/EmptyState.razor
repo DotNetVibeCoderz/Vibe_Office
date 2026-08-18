@@ -1,0 +1,27 @@
+@*
+    Empty and error states. An empty screen is an invitation to act, so this always takes an action
+    slot rather than leaving the user at a dead end.
+*@
+<div class="vd-empty">
+    <span class="vd-empty__mark">
+        <Icon Name="@Icon" Size="24" />
+    </span>
+    <h2>@Title</h2>
+    @if (!string.IsNullOrEmpty(Description))
+    {
+        <p>@Description</p>
+    }
+    @if (Action is not null)
+    {
+        <div class="vd-row" style="margin-top:var(--vd-2)">
+            @Action
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public string Icon { get; set; } = "folder";
+    [Parameter, EditorRequired] public string Title { get; set; } = string.Empty;
+    [Parameter] public string? Description { get; set; }
+    [Parameter] public RenderFragment? Action { get; set; }
+}

@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>VibeDesk.Ai</RootNamespace>
+    <!--
+      The Google and Ollama connectors are still marked experimental by Semantic Kernel, and
+      FunctionChoiceBehavior carries SKEXP0001 on some surfaces. Suppressing here rather than at each
+      call site keeps the plugin code readable.
+    -->
+    <NoWarn>$(NoWarn);SKEXP0001;SKEXP0010;SKEXP0070</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\VibeDesk.Application\VibeDesk.Application.csproj" />
+    <ProjectReference Include="..\VibeDesk.Domain\VibeDesk.Domain.csproj" />
+    <ProjectReference Include="..\VibeDesk.Infrastructure\VibeDesk.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.SemanticKernel" />
+    <PackageReference Include="Microsoft.SemanticKernel.Connectors.OpenAI" />
+    <PackageReference Include="Microsoft.SemanticKernel.Connectors.Google" />
+    <PackageReference Include="Microsoft.SemanticKernel.Connectors.Ollama" />
+    <PackageReference Include="Anthropic" />
+    <PackageReference Include="HtmlAgilityPack" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,25 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/VibeDesk.Ai/VibeDesk.Ai.csproj" />
+    <Project Path="src/VibeDesk.Api/VibeDesk.Api.csproj" />
+    <Project Path="src/VibeDesk.Application/VibeDesk.Application.csproj" />
+    <Project Path="src/VibeDesk.Cli/VibeDesk.Cli.csproj" />
+    <Project Path="src/VibeDesk.Client/VibeDesk.Client.csproj" />
+    <Project Path="src/VibeDesk.Desktop/VibeDesk.Desktop.csproj" />
+    <Project Path="src/VibeDesk.Domain/VibeDesk.Domain.csproj" />
+    <Project Path="src/VibeDesk.Infrastructure/VibeDesk.Infrastructure.csproj" />
+    <Project Path="src/VibeDesk.Mobile/VibeDesk.Mobile.csproj" />
+    <Project Path="src/VibeDesk.Scripting/VibeDesk.Scripting.csproj" />
+    <Project Path="src/VibeDesk.Ui/VibeDesk.Ui.csproj" />
+    <Project Path="src/VibeDesk.Web/VibeDesk.Web.csproj" />
+  </Folder>
+  <Folder Name="/src/Migrations/">
+    <Project Path="src/Migrations/VibeDesk.Migrations.MySql/VibeDesk.Migrations.MySql.csproj" />
+    <Project Path="src/Migrations/VibeDesk.Migrations.PostgreSql/VibeDesk.Migrations.PostgreSql.csproj" />
+    <Project Path="src/Migrations/VibeDesk.Migrations.Sqlite/VibeDesk.Migrations.Sqlite.csproj" />
+    <Project Path="src/Migrations/VibeDesk.Migrations.SqlServer/VibeDesk.Migrations.SqlServer.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/VibeDesk.Tests/VibeDesk.Tests.csproj" />
+  </Folder>
+</Solution>

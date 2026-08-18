@@ -1,0 +1,394 @@
+@page "/drive"
+@page "/drive/{FolderId:guid}"
+@page "/drive/shared"
+@page "/drive/starred"
+@page "/drive/trash"
+@attribute [Authorize]
+
+@implements IDisposable
+@inject IDriveService DriveService
+@inject IPermissionService Permissions
+@inject NavigationManager Nav
+@inject ToastService Toasts
+@inject UiState Ui
+@inject IJSRuntime Js
+
+<PageTitle>@PageHeading · VibeDesk</PageTitle>
+
+<SectionContent SectionName="@AppShell.TitleSection">
+    <h1>@PageHeading</h1>
+    @if (_crumbs.Count > 1)
+    {
+        <nav class="vd-crumbs" aria-label="Folder path">
+            <a href="/drive">My Drive</a>
+            @foreach (var crumb in _crumbs)
+            {
+                <span class="vd-crumbs__sep" aria-hidden="true">/</span>
+                @if (crumb.Id == FolderId)
+                {
+                    <span aria-current="page">@crumb.Name</span>
+                }
+                else
+                {
+                    <a href="/drive/@crumb.Id">@crumb.Name</a>
+                }
+            }
+        </nav>
+    }
+</SectionContent>
+
+<SectionContent SectionName="@AppShell.ToolbarSection">
+    @if (Mode == DriveMode.Folder)
+    {
+        <div class="vd-toolbar__group">
+            <NewMenu ParentId="FolderId" OnCreated="ReloadAsync" />
+        </div>
+
+        <span class="vd-toolbar__sep"></span>
+
+        <label class="vd-btn vd-btn--ghost" title="Upload files">
+            <Icon Name="upload" Size="16" />
+            <span>Upload</span>
+            <InputFile OnChange="OnUpload" multiple class="vd-sr-only" />
+        </label>
+
+        <span class="vd-toolbar__sep"></span>
+    }
+
+    @if (Mode == DriveMode.Trash && _items.Count > 0)
+    {
+        <button type="button" class="vd-btn vd-btn--ghost" @onclick="EmptyTrash">
+            <Icon Name="trash" Size="16" /> Empty trash
+        </button>
+        <span class="vd-toolbar__sep"></span>
+    }
+
+    <div class="vd-toolbar__group">
+        <select class="vd-select vd-select--inline" value="@_sortBy" @onchange="OnSortChanged"
+                aria-label="Sort by">
+            <option value="updated">Last modified</option>
+            <option value="name">Name</option>
+            <option value="created">Created</option>
+            <option value="size">Size</option>
+            <option value="type">Type</option>
+        </select>
+
+        <button type="button" class="vd-btn vd-btn--icon vd-btn--sm"
+                @onclick="ToggleDirection"
+                title="@(_descending ? "Descending" : "Ascending")"
+                aria-label="@(_descending ? "Sort descending" : "Sort ascending")">
+            <Icon Name="@(_descending ? "chevron-down" : "chevron-up")" Size="16" />
+        </button>
+    </div>
+
+    <div class="vd-spacer"></div>
+
+    <div class="vd-toolbar__group" role="group" aria-label="View">
+        <button type="button" class="vd-btn vd-btn--icon vd-btn--sm"
+                aria-pressed="@((_view == "grid").ToString().ToLowerInvariant())"
+                @onclick='() => _view = "grid"' title="Grid view" aria-label="Grid view">
+            <Icon Name="grid" Size="16" />
+        </button>
+        <button type="button" class="vd-btn vd-btn--icon vd-btn--sm"
+                aria-pressed="@((_view == "list").ToString().ToLowerInvariant())"
+                @onclick='() => _view = "list"' title="List view" aria-label="List view">
+            <Icon Name="list" Size="16" />
+        </button>
+    </div>
+</SectionContent>
+
+<div class="vd-drive">
+    @if (_loading)
+    {
+        <div class="vd-drive__grid">
+            @for (var i = 0; i < 8; i++)
+            {
+                <div class="vd-skeleton" style="height:112px"></div>
+            }
+        </div>
+    }
+    else if (_items.Count == 0)
+    {
+        <EmptyState Icon="@EmptyIcon" Title="@EmptyTitle" Description="@EmptyDescription">
+            <Action>
+                @if (Mode == DriveMode.Folder)
+                {
+                    <NewMenu ParentId="FolderId" OnCreated="ReloadAsync" Primary="true" />
+                }
+                else
+                {
+                    <a class="vd-btn vd-btn--outline" href="/drive">Go to My Drive</a>
+                }
+            </Action>
+        </EmptyState>
+    }
+    else if (_view == "grid")
+    {
+        <div class="vd-drive__grid">
+            @foreach (var item in _items)
+            {
+                <DriveCard Item="item"
+                           Mode="Mode"
+                           OnChanged="ReloadAsync"
+                           OnShare="() => OpenShare(item)"
+                           @key="item.Id" />
+            }
+        </div>
+    }
+    else
+    {
+        <div class="vd-drive__table-wrap vd-scroll-x">
+            <table class="vd-drive__table">
+                <thead>
+                    <tr>
+                        <th scope="col">Name</th>
+                        <th scope="col">Owner</th>
+                        <th scope="col">Modified</th>
+                        <th scope="col" style="text-align:right">Size</th>
+                        <th scope="col"><span class="vd-sr-only">Actions</span></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var item in _items)
+                    {
+                        <DriveRow Item="item"
+                                  Mode="Mode"
+                                  OnChanged="ReloadAsync"
+                                  OnShare="() => OpenShare(item)"
+                                  @key="item.Id" />
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+
+    @if (_hasMore)
+    {
+        <div class="vd-drive__more">
+            <button type="button" class="vd-btn vd-btn--outline" @onclick="LoadMoreAsync" disabled="@_loadingMore">
+                @if (_loadingMore)
+                {
+                    <span class="vd-spinner"></span>
+                }
+                Show more
+            </button>
+        </div>
+    }
+</div>
+
+<ShareDialog @bind-Open="_shareOpen" Item="_shareTarget" OnChanged="ReloadAsync" />
+
+@code {
+    [Parameter] public Guid? FolderId { get; set; }
+
+    private readonly List<DriveItemDto> _items = [];
+    private List<BreadcrumbDto> _crumbs = [];
+
+    private bool _loading = true;
+    private bool _loadingMore;
+    private bool _hasMore;
+    private int _total;
+
+    private string _view = "grid";
+    private string _sortBy = "updated";
+    private bool _descending = true;
+
+    private bool _shareOpen;
+    private DriveItemDto? _shareTarget;
+
+    private const int PageSize = 60;
+
+    private DriveMode Mode
+    {
+        get
+        {
+            var path = Nav.ToBaseRelativePath(Nav.Uri).Split('?')[0].TrimEnd('/');
+
+            return path switch
+            {
+                "drive/shared" => DriveMode.Shared,
+                "drive/starred" => DriveMode.Starred,
+                "drive/trash" => DriveMode.Trash,
+                _ => DriveMode.Folder,
+            };
+        }
+    }
+
+    private string PageHeading => Mode switch
+    {
+        DriveMode.Shared => "Shared with me",
+        DriveMode.Starred => "Starred",
+        DriveMode.Trash => "Trash",
+        _ => _crumbs.Count > 0 ? _crumbs[^1].Name : "My Drive",
+    };
+
+    private string EmptyIcon => Mode switch
+    {
+        DriveMode.Shared => "users",
+        DriveMode.Starred => "star",
+        DriveMode.Trash => "trash",
+        _ => "folder",
+    };
+
+    private string EmptyTitle => Mode switch
+    {
+        DriveMode.Shared => "Nothing shared with you yet",
+        DriveMode.Starred => "No starred items",
+        DriveMode.Trash => "Trash is empty",
+        _ => "This folder is empty",
+    };
+
+    private string EmptyDescription => Mode switch
+    {
+        DriveMode.Shared => "When a teammate shares a file or folder, it shows up here.",
+        DriveMode.Starred => "Star an item from its menu to keep it within reach.",
+        DriveMode.Trash => "Items you delete stay here until you empty the trash.",
+        _ => "Create a document, or drop files in to get started.",
+    };
+
+    protected override void OnInitialized() => Nav.LocationChanged += OnLocationChanged;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        Ui.SetContext("drive", FolderId);
+        await ReloadAsync();
+    }
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e) =>
+        InvokeAsync(async () =>
+        {
+            // The three Drive views share this component, so a route change needs an explicit reload.
+            await ReloadAsync();
+            StateHasChanged();
+        });
+
+    private async Task ReloadAsync()
+    {
+        _loading = true;
+        _items.Clear();
+        StateHasChanged();
+
+        try
+        {
+            await LoadPageAsync(skip: 0);
+
+            _crumbs = FolderId is not null
+                ? [.. await DriveService.GetBreadcrumbsAsync(FolderId.Value)]
+                : [];
+        }
+        catch (Exception e)
+        {
+            Toasts.Error(e);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task LoadMoreAsync()
+    {
+        _loadingMore = true;
+        try
+        {
+            await LoadPageAsync(_items.Count);
+        }
+        catch (Exception e)
+        {
+            Toasts.Error(e);
+        }
+        finally
+        {
+            _loadingMore = false;
+        }
+    }
+
+    private async Task LoadPageAsync(int skip)
+    {
+        var query = new DriveQuery
+        {
+            ParentId = Mode == DriveMode.Folder ? FolderId : null,
+            SharedWithMeOnly = Mode == DriveMode.Shared,
+            StarredOnly = Mode == DriveMode.Starred,
+            TrashedOnly = Mode == DriveMode.Trash,
+            // The cross-cutting views span the whole tree; a folder view lists only its own children.
+            Recursive = Mode != DriveMode.Folder,
+            SortBy = _sortBy,
+            Descending = _descending,
+            Skip = skip,
+            Take = PageSize,
+        };
+
+        var page = await DriveService.QueryAsync(query);
+
+        if (skip == 0) _items.Clear();
+        _items.AddRange(page.Items);
+
+        _total = page.TotalCount;
+        _hasMore = _items.Count < _total;
+    }
+
+    private async Task OnSortChanged(ChangeEventArgs e)
+    {
+        _sortBy = e.Value?.ToString() ?? "updated";
+        await ReloadAsync();
+    }
+
+    private async Task ToggleDirection()
+    {
+        _descending = !_descending;
+        await ReloadAsync();
+    }
+
+    private async Task OnUpload(InputFileChangeEventArgs e)
+    {
+        const long maxBytes = 256L * 1024 * 1024;
+        var uploaded = 0;
+
+        foreach (var file in e.GetMultipleFiles(20))
+        {
+            try
+            {
+                await using var stream = file.OpenReadStream(maxBytes);
+                await DriveService.UploadAsync(
+                    file.Name,
+                    string.IsNullOrWhiteSpace(file.ContentType) ? "application/octet-stream" : file.ContentType,
+                    stream,
+                    FolderId);
+                uploaded++;
+            }
+            catch (Exception ex)
+            {
+                Toasts.Error(ex);
+            }
+        }
+
+        if (uploaded > 0)
+        {
+            Toasts.Success(uploaded == 1 ? "File uploaded." : $"{uploaded} files uploaded.");
+            await ReloadAsync();
+        }
+    }
+
+    private async Task EmptyTrash()
+    {
+        try
+        {
+            var count = await DriveService.EmptyTrashAsync();
+            Toasts.Success(count == 0 ? "Trash was already empty." : $"Deleted {count} items permanently.");
+            await ReloadAsync();
+        }
+        catch (Exception e)
+        {
+            Toasts.Error(e);
+        }
+    }
+
+    private void OpenShare(DriveItemDto item)
+    {
+        _shareTarget = item;
+        _shareOpen = true;
+    }
+
+    public void Dispose() => Nav.LocationChanged -= OnLocationChanged;
+}
