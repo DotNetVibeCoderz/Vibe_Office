@@ -16,9 +16,9 @@ Blazor, berjalan sebagai aplikasi web, desktop Windows, atau mobile dari satu UI
 
 | | |
 |---|---|
-| **Drive** | Pusatnya. Semua aplikasi lain menyimpan lewat sini, sehingga permission, sharing, versioning, dan pencatatan aktivitas terjadi di satu tempat saja. Pohon folder, sampah, berbintang, kuota. |
+| **Drive** | Pusatnya. Semua aplikasi lain menyimpan lewat sini, sehingga permission, sharing, versioning, dan pencatatan aktivitas terjadi di satu tempat saja. Pohon folder, sampah, berbintang, kuota. Unggahan `.docx`, `.xlsx`, atau `.pptx` langsung jadi item yang bisa diedit, dan tiap item bisa diekspor kembali. |
 | **Docs** | Editor teks kaya dengan komentar dan saran perubahan yang bisa diterima langsung ke dokumen. |
-| **Sheets** | Formula engine sungguhan — ~110 fungsi, referensi antar-sheet, deteksi siklus — plus grafik, pivot table, dan conditional formatting. |
+| **Sheets** | Formula engine sungguhan — ~120 fungsi termasuk dynamic array, referensi antar-sheet, deteksi siklus — plus grafik, pivot table, dan conditional formatting. |
 | **Slides** | Enam tema, transisi per slide, catatan pembicara, presenter view, dan grafik hidup yang ditarik dari spreadsheet. |
 | **Calendar** | Tampilan bulan, minggu, hari, dan agenda di atas acara berulang, pengingat, peserta, dan kalender bersama. |
 
@@ -45,16 +45,23 @@ banyak percakapan, menerima lampiran gambar dan dokumen, serta menampilkan tool 
 ia pakai — bukan meminta Anda percaya begitu saja pada teksnya.
 
 Berjalan di atas **Semantic Kernel** dan mendukung empat penyedia — **OpenAI**, **Anthropic**,
-**Google Gemini**, dan **Ollama** — yang bisa dipilih per percakapan. Dua belas kernel function
-memungkinkannya mencari di web, membaca halaman, mengunduh berkas, berhitung, mengecek tanggal, dan
-membaca berkas Drive Anda sendiri.
+**Google Gemini**, dan **Ollama** — yang bisa dipilih per percakapan. Dua puluh satu kernel function
+memungkinkannya mencari di web, membaca halaman, mengunduh berkas, berhitung, mengecek tanggal,
+membaca berkas Drive Anda sendiri — sekaligus membuat dan menyuntingnya.
 
-Dua keputusan desain yang perlu diketahui:
+Minta saja "buatkan folder Q4 lalu isi dengan sheet anggaran", dan ia mengerjakannya, lalu menyebutkan
+id berkasnya.
+
+Tiga keputusan desain yang perlu diketahui:
 
 - `math.calculate` **memakai ulang** formula engine Sheets, bukan implementasi kedua. Jadi hitungan di
   chat berperilaku persis seperti di dalam sel.
-- Tool Drive sama sekali tidak punya parameter user id. Setiap pembacaan lewat lapisan permission yang
-  sama dengan UI, sehingga asisten hanya bisa melihat apa yang memang sudah bisa Anda buka.
+- Tool Drive sama sekali tidak punya parameter user id. Setiap panggilan lewat lapisan permission yang
+  sama dengan UI, sehingga asisten hanya bisa menjangkau apa yang memang sudah bisa Anda buka.
+- **Bisa membuat dan mengubah, tapi tidak pernah menghapus.** Tidak ada tool hapus atau trash sama
+  sekali — bukan dibatasi, memang tidak disediakan — jadi instruksi yang salah paham paling banter
+  meninggalkan berkas nyasar, bukan menghilangkan pekerjaan. Setel
+  `Assistant:AllowWorkspaceWrites` ke false untuk mengunci asisten jadi baca-saja.
 
 Bisa berjalan sepenuhnya offline lewat Ollama; jalur itu tidak butuh API key sama sekali.
 
@@ -190,6 +197,7 @@ VibeDesk.Application     kontrak, DTO, model dokumen, formula engine
 VibeDesk.Infrastructure  EF Core, Identity, storage, cache, implementasi service
 VibeDesk.Ai              Mr Clippy — Semantic Kernel, provider, kernel function
 VibeDesk.Scripting       runtime script, workspace API, trigger, sandbox
+VibeDesk.Office          impor/ekspor .docx / .xlsx / .pptx di atas OpenXML SDK
 VibeDesk.Ui              seluruh UI termasuk halamannya, sebagai Razor class library
 VibeDesk.Client          kontrak yang sama, dipenuhi lewat HTTP alih-alih EF Core
 VibeDesk.Web             host Blazor Server

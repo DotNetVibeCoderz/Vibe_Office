@@ -15,8 +15,8 @@ Tracking dokumen pengembangan. Sumber kebenaran fitur: `requirements.md`.
 | `VibeDesk.Application` | ✅ Build sukses | Abstraksi storage/cache/user, model konten Docs/Sheets/Slides, **formula engine penuh**, DTO Drive |
 | `VibeDesk.Infrastructure` | ✅ Build sukses | Identity, DbContext, 4 provider DB, 4 storage, 2 cache, **semua service**, seeder, DI |
 | `VibeDesk.Migrations.*` (4) | ✅ Migration jadi | Satu assembly per provider; SQLite sudah diverifikasi apply → 27 tabel |
-| `VibeDesk.Ai` (Mr Clippy) | ✅ Build sukses | Semantic Kernel + 4 provider, 12 kernel function, sesi & lampiran tersimpan |
-| `VibeDesk.Tests` | ✅ 161/161 lulus | Formula engine, alamat A1, plugin Clippy, cron, DataFrame, sandbox C#, parser CLI |
+| `VibeDesk.Ai` (Mr Clippy) | ✅ Build sukses | Semantic Kernel + 4 provider, 21 kernel function (11 baca + 10 tulis), sesi & lampiran tersimpan |
+| `VibeDesk.Tests` | ✅ 254/254 lulus | Formula engine, alamat A1, plugin Clippy, cron, DataFrame, sandbox C#, parser CLI, dynamic array, konverter Office |
 | `VibeDesk.Ui` (Razor lib) | ✅ Build sukses | Design system, shell, kelima aplikasi, panel Clippy, markdown |
 | `VibeDesk.Api` | ✅ **JALAN** | 62 rute REST + OpenAPI/Scalar, hub SignalR, gRPC; diuji end-to-end |
 | `VibeDesk.Client` | ✅ Build sukses | Kontrak Application di atas HTTP, sesi + sign-in bersama |
@@ -24,6 +24,7 @@ Tracking dokumen pengembangan. Sumber kebenaran fitur: `requirements.md`.
 | `VibeDesk.Desktop` (Photino Hybrid) | ✅ **JALAN** | Jendela native lintas platform; Avalonia gagal, lihat di bawah |
 | `VibeDesk.Mobile` (MAUI Blazor) | ✅ Build sukses | Target Android |
 | `VibeDesk.Scripting` | ✅ **JALAN** | 3 runtime (Jint/IronPython/Roslyn), workspace API, scope, trigger, 23 template |
+| `VibeDesk.Office` | ✅ **JALAN** | Impor/ekspor .docx/.xlsx/.pptx; ketiganya lolos OpenXmlValidator |
 | `VibeDesk.Cli` (`vibedesk`) | ✅ **JALAN** | login/list/run/check/push/pull/enable/logs/templates; diuji end-to-end |
 | Docs / README (EN+ID) | ✅ Selesai | README dwibahasa + 6 halaman `docs/` + screenshot |
 | `Plan.md` | ✅ Selesai | Roadmap; Fase 7 mencatat pindahnya desktop ke Avalonia |
@@ -266,8 +267,8 @@ sehingga tidak ada parameter yang bisa diisi model untuk menjangkau berkas orang
 
 ## Tests
 
-`dotnet run --project tests/VibeDesk.Tests` — 161 tes, semuanya lulus: formula engine, alamat A1,
-plugin Clippy, cron lima kolom, `DataFrame`, guard sandbox C#, dan parser opsi CLI.
+`dotnet run --project tests/VibeDesk.Tests` — 254 tes, semuanya lulus: formula engine, alamat A1,
+plugin Clippy, cron lima kolom, `DataFrame`, guard sandbox C#, parser opsi CLI, dan dynamic array.
 
 `dotnet test` **tidak dipakai**: xunit.v3 berjalan di atas Microsoft.Testing.Platform dan .NET 10 SDK
 menghapus jalur VSTest untuknya. `dotnet.config` sudah menunjuk runner yang benar, tapi menjalankan
@@ -498,6 +499,147 @@ Sekaligus menutup dua celah yang baru kelihatan saat sample-nya ditulis:
 Satu bug render kecil ikut ketahuan dari screenshot: `<span>v@script.VersionNumber</span>` dibaca Razor
 sebagai alamat email, jadi kartu script menampilkan `V@SCRIPT.VERSIONNUMBER` apa adanya. Perlu
 `v@(script.VersionNumber)`.
+
+### Audit 30 fungsi spreadsheet, dan apa yang ternyata hilang
+
+Diaudit secara empiris — tiap formula benar-benar dievaluasi lewat engine sungguhan di atas sheet
+sungguhan, bukan dicocokkan namanya di kode. Hasil awal: **25 dari 30 didukung**.
+
+Yang menarik, dua "kegagalan" pertama ternyata bukan soal fungsinya:
+
+- **Kelima fungsi lookup lulus semua** (VLOOKUP, HLOOKUP, XLOOKUP, INDEX, MATCH) begitu diuji dengan
+  range sel asli. `#VALUE!` yang muncul di percobaan pertama disebabkan **literal array `{...}`** yang
+  tidak dikenali parser — bukan fungsinya yang tidak ada.
+- Lebih buruk lagi, `COUNT({1;2;3})` **diam-diam menjawab 0**, bukan error. Jawaban salah yang terlihat
+  benar adalah kegagalan paling mahal di spreadsheet.
+
+Yang benar-benar hilang: **FILTER, UNIQUE, SORT, SEQUENCE, LET** — seluruh keluarga dynamic array.
+
+### Menambahkannya ternyata butuh tiga perbaikan, bukan satu
+
+Menulis kelima fungsinya mudah. Tapi begitu ditulis tesnya, ketahuan ketiganya tidak berguna tanpa ini:
+
+1. **`INDEX` hanya menerima range**, jadi `INDEX(SORT(A1:A6),1)` menjawab `#REF!` — tidak ada cara
+   membaca satu elemen dari hasilnya.
+2. **Operator tidak menyebar ke array.** `A1:A3>99` hanya membandingkan sel pertama, jadi mask FILTER
+   panjangnya 1 lawan 3 dan ditolak. Tanpa ini FILTER praktis tidak bisa dipakai dengan bentuk yang
+   orang tulis secara alami.
+3. **Agregat menolak teks di dalam array.** `SUM(SORT(A1:A6))` menjawab `#VALUE!` untuk kolom yang
+   memuat nama, padahal `SUM(A1:A6)` mengabaikannya. Sebabnya: pengecekan "lewati teks" memakai tipe
+   node (`arg is ReferenceNode`), bukan sifat nilainya. Sekarang `EvaluateToList` melaporkan apakah
+   argumennya sebuah koleksi.
+
+Efek samping perbaikan (2) melampaui dynamic array: `SUM(A1:A3*2)` sekarang menjumlahkan seluruh baris
+yang digandakan (26), bukan sel pertama dikali dua (10). Itu perilaku yang benar dan tidak ada satu pun
+tes lama yang mengunci perilaku sebelumnya.
+
+Literal array `{1,2;3,4}` ikut ditambahkan ke lexer dan parser, mendatar row-major karena
+`FormulaValue` array memang tidak menyimpan bentuk.
+
+**Hasil akhir: 30 dari 30**, diverifikasi ulang lewat jalur yang sama. Dua batas ditulis apa adanya di
+`docs/apps.md`: hasilnya **tidak spill** ke sel tetangga (sel yang berisi `=SEQUENCE(4)` menampilkan
+`1`, persis seperti sel berisi `=A1:A4`), dan array-nya datar sehingga `SORT(range, 2)` ditolak
+alih-alih diam-diam mengurutkan kolom pertama.
+
+### Uji asisten dengan LLM sungguhan
+
+Diuji dengan **DeepSeek** (`deepseek-v4-flash`) lewat jalur OpenAI-compatible, plus **Tavily** untuk
+pencarian web. Kuncinya lewat environment variable, bukan `appsettings.json`.
+
+Satu bug ketahuan langsung: `ClippyContext` wajib diisi, jadi pesan tanpa `context` — yang sah lewat
+REST, gRPC, atau CLI — melempar `NullReferenceException` dan berbalas "An unexpected error occurred."
+UI selalu mengirim context, jadi ini hanya terlihat dari jalur API. Sekarang context opsional dan
+di-default ke `Workspace`.
+
+Setelah itu semuanya jalan, dan bukan cuma "ada balasannya":
+
+| Yang diuji | Tool yang dipanggil | Hasil |
+| --- | --- | --- |
+| Persona | — | Menyebut Mr Clippy, Gravicode Studios, Kang Fadhil |
+| Drive | `search_drive` | Menyebutkan berkas nyata milik pengguna |
+| Aritmetika | `calculate` ×2 | 1234 × 5678 = 7.006.652; √8281 = 91 |
+| Tanggal | `current_datetime` | Benar, di zona Asia/Jakarta |
+| Web | `web_search` | Ringkasan .NET Aspire berikut tautan sumbernya |
+| Baca berkas | `search_drive` → `read_document` → `calculate` | Total Revenue $97.631 — **cocok persis** dengan baris Total di sheet-nya |
+
+Rantai tiga tool terakhir itu yang paling meyakinkan: asisten menemukan sendiri berkasnya, membacanya,
+lalu menghitung — dan angkanya bisa dicocokkan dengan isi sheet.
+
+### Impor/ekspor Office — `VibeDesk.Office`
+
+Fase 10. `.docx`, `.xlsx`, dan `.pptx`, dua arah, di atas **DocumentFormat.OpenXml 3.5.1** — SDK resmi
+Microsoft, MIT, satu dependensi untuk ketiga format sekaligus alih-alih tiga pustaka satu-format dengan
+tiga set keanehan sendiri.
+
+Proyeknya hanya mereferensi `VibeDesk.Application`: konverter memetakan OOXML ke model konten dan tidak
+punya urusan dengan EF Core, storage, atau web stack. Kontraknya (`IOfficeConverter`) tinggal di
+Application, jadi jalur unggah Drive dan endpoint ekspor bergantung pada abstraksi, bukan pada SDK-nya.
+
+**Impor** menempel di `DriveService.UploadAsync`: berkas Office jadi item yang benar-benar bisa diedit,
+bukan lampiran buram. Kalau konversinya gagal — paket rusak, terkunci sandi — berkasnya tetap tersimpan
+sebagai lampiran. Menolak unggahannya sama sekali jelas lebih buruk daripada menyimpannya apa adanya.
+
+**Ekspor** dibangun ulang dari model konten setiap kali diminta; tidak ada yang disimpan. Ada di
+`/api/drive/{id}/export` dan `/drive/export/{id}`, plus entri "Download as .docx/.xlsx/.pptx" di menu
+Drive.
+
+### Round-trip lolos, tapi Office menolak file-nya
+
+Tes round-trip pertama lulus semua — dan itu justru menyesatkan: kedua sisi konverter sepakat satu sama
+lain, yang akan tetap terjadi walaupun keduanya salah dengan cara yang sama.
+
+Ditambahkan `OfficeValidityTests` yang menjalankan `OpenXmlValidator` bawaan SDK — aturan yang sama yang
+dipakai Word, Excel, dan PowerPoint saat memutuskan membuka berkas atau menawarkan "repair". **Dua dari
+tiga format langsung gagal:**
+
+- **Word** — `<w:tbl>` wajib punya `<w:tblGrid>` sebelum barisnya; urutan anak `<w:tblBorders>` terkunci
+  skema (top, left, bottom, right, insideH, insideV) dan urutan saya salah; di `<w:pPr>`, `keepNext`
+  harus mendahului `spacing`, dan `spacing` mendahului `ind`.
+- **PowerPoint** — `<a:majorFont>`/`<a:minorFont>` wajib menyebut `<a:ea>` dan `<a:cs>`, meski kosong.
+
+Excel lolos sejak awal. Ketiganya valid sekarang, dan tes validator itu yang menjaganya tetap begitu.
+
+### Yang terbawa dan yang hilang
+
+Konversi ini **lossy dua arah**, dan itu memang disengaja: model VibeDesk mendeskripsikan dokumen
+sebagai HTML, peta sel jarang, dan daftar elemen slide — tidak satu pun berbentuk OOXML.
+
+| | Terbawa | Hilang |
+| --- | --- | --- |
+| Word | Heading, paragraf, bold/italic/underline/strike, daftar berpoin dan bernomor, tabel, tautan, line break | Gambar, footnote, header/footer, section break, font dan warna, tracked changes |
+| Excel | Seluruh sheet, nilai, tipe, formula, format angka kustom | Font, isian, border, grafik, pivot, conditional formatting, validasi data, sel gabungan, gambar |
+| PowerPoint | Urutan slide, teks tiap shape, catatan pembicara | Gambar, grafik, tabel, SmartArt, tema, animasi, transisi, posisi persis |
+
+Format biner lama (`.doc`, `.xls`, `.ppt`) **ditolak dengan sengaja**. Itu bukan OOXML sama sekali, SDK-nya
+tidak bisa membacanya, dan meloloskannya sebagai "dokumen" hanya akan menghasilkan berkas penuh mojibake
+alih-alih jawaban jujur "ini tetap jadi lampiran".
+
+Diverifikasi end-to-end, bukan hanya lewat unit test: `.docx` berisi heading, run tebal, dan tabel
+diunggah lewat API dan kembali sebagai `Document` dengan HTML
+`<h1>…</h1><p>… <b>32 persen</b> …</p><h2>…</h2><table>…</table>` utuh. Ekspor `Q3 Revenue Model`
+menghasilkan `.xlsx` berisi 77 sel dengan angka **dan** formulanya (`B2*C2`, `D2-E2`) — bukan hanya
+nilai hasil hitungnya.
+
+### Bug lama yang baru ketahuan: semua unduhan di web host 500
+
+Ekspor lewat UI mengembalikan 500. Dikira bug rute baru — ternyata rute **unduh berkas yang sudah ada
+sejak lama pun 500**, dengan error yang sama persis:
+
+> Do not call GetAuthenticationStateAsync outside of the DI scope for a Razor component.
+
+`HttpCurrentUser` memanggil `AuthenticationStateProvider` **di konstruktornya**. Provider itu hanya sah
+di dalam scope DI sebuah komponen Razor dan melempar di luar itu — jadi setiap minimal-API endpoint di
+host web gagal begitu menyentuh service apa pun yang me-resolve `ICurrentUser`. Karena `DriveService`
+memakainya secara internal, memindahkan injeksi keluar dari endpoint tidak akan menolong; perbaikannya
+harus di `HttpCurrentUser` sendiri.
+
+Sekarang resolusinya ditunda sampai pemakaian pertama, dan kalau provider menolak, jatuh ke
+`IHttpContextAccessor`. Alasan asli memilih provider tetap berlaku — circuit Blazor hidup lebih lama
+daripada request yang membukanya, jadi HTTP context bisa null atau basi di dalam komponen — tapi di luar
+circuit tidak ada masalah itu, dan principal milik request justru yang paling tepat.
+
+Diverifikasi: ekspor sekarang `200` dengan
+`content-disposition: attachment; filename=laporan.docx`, dan yang 500 hilang.
 
 ---
 

@@ -11,6 +11,7 @@
     <ProjectReference Include="..\VibeDesk.Infrastructure\VibeDesk.Infrastructure.csproj" />
     <ProjectReference Include="..\VibeDesk.Ai\VibeDesk.Ai.csproj" />
     <ProjectReference Include="..\VibeDesk.Scripting\VibeDesk.Scripting.csproj" />
+    <ProjectReference Include="..\VibeDesk.Office\VibeDesk.Office.csproj" />
   </ItemGroup>
 
   <!--

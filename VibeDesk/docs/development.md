@@ -12,7 +12,7 @@ dotnet run --project src/VibeDesk.Web         # https://localhost:7181, http://l
 dotnet run --project src/VibeDesk.Api         # https://localhost:7299, docs at /scalar/v1
 dotnet run --project src/VibeDesk.Desktop     # native window; needs the API running
 dotnet build src/VibeDesk.Mobile -f net10.0-android
-dotnet run --project tests/VibeDesk.Tests     # 161 tests
+dotnet run --project tests/VibeDesk.Tests     # 213 tests
 ```
 
 The CLI is a separate executable rather than a `dotnet run` target — it is meant to go on `PATH`:

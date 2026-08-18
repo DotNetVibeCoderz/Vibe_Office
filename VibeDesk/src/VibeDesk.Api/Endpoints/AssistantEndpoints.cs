@@ -126,6 +126,6 @@ public static class AssistantEndpoints
 
     public sealed record SendMessageRequest(
         string Message,
-        ClippyContext Context,
+        ClippyContext? Context,
         IReadOnlyList<ChatAttachmentInput>? Attachments);
 }

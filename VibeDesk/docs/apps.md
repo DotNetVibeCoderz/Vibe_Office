@@ -26,6 +26,49 @@ path rather than a recursive walk.
 
 ---
 
+## Word, Excel and PowerPoint
+
+Uploading a `.docx`, `.xlsx` or `.pptx` **converts it into a real VibeDesk item** rather than parking
+it as an attachment: it opens in the editor, is searchable, and takes comments and version history
+like anything else. Every document, spreadsheet and presentation exports back out through
+**Download as .docx / .xlsx / .pptx** in the Drive menu.
+
+![A Word file imported into Docs](screenshots/14-office-imported-doc.png)
+
+Built on **DocumentFormat.OpenXml** — Microsoft's own SDK, MIT-licensed — so one dependency covers all
+three formats in both directions.
+
+### Conversion is lossy, in both directions
+
+VibeDesk stores a document as HTML, a spreadsheet as a sparse cell map, and a deck as a list of
+positioned elements. None of those *is* OOXML, so the mapping keeps what has a counterpart on the
+other side and drops what does not:
+
+| | Carried | Dropped |
+|---|---|---|
+| **Word** | Headings, paragraphs, bold/italic/underline/strikethrough, bulleted and numbered lists, tables, hyperlink text, line breaks | Images, footnotes, headers and footers, section breaks, fonts and colours, tracked changes |
+| **Excel** | Every sheet, cell values and their types, **formulas**, custom number formats | Fonts, fills, borders, charts, pivot tables, conditional formatting, data validation, merged cells, images |
+| **PowerPoint** | Slide order, the text of every text-bearing shape, speaker notes | Images, charts, tables, SmartArt, themes, animations, transitions, exact positioning |
+
+Formulas survive the Excel round trip, which is the part users notice losing first: an exported
+workbook contains `=B2*C2`, not the number it happened to evaluate to.
+
+### What is refused, and why
+
+The legacy binary formats — `.doc`, `.xls`, `.ppt` — are **not** imported. They are not OOXML at all,
+the SDK cannot read them, and treating one as a document would produce a file full of mojibake. They
+upload and download as ordinary attachments instead, which is the honest outcome. Convert them in
+Office or LibreOffice first.
+
+A package that fails to convert — corrupt, or password-protected — is also stored as an attachment
+rather than rejected. Losing the upload would be worse than not converting it.
+
+Exports are built from the content model on each request, so nothing is stored and an export is always
+current. Import happens once, on upload: the item is a VibeDesk document from then on, and the original
+package is not kept.
+
+---
+
 ## Docs
 
 ![Docs](screenshots/05-docs-light.png)
@@ -50,14 +93,35 @@ revision change only, and the component has no dynamic children at all.
 
 A real spreadsheet, not a styled table.
 
-- **~110 functions** across maths, statistics, text, logic, lookup and dates
+- **~120 functions** across maths, statistics, text, logic, lookup, dates and dynamic arrays
 - Formula parsing by a hand-written lexer and recursive-descent parser with spreadsheet precedence:
   comparison → `&` → `+ -` → `* /` → `^` (right-associative) → unary → postfix `%`
-- Cross-sheet references (`Data!A1`), absolute markers (`$C$5`), named ranges, and empty arguments
-  (`IF(A1,,"no")`)
+- Cross-sheet references (`Data!A1`), absolute markers (`$C$5`), named ranges, empty arguments
+  (`IF(A1,,"no")`), and inline array literals (`{1,2;3,4}`)
 - **Cycle detection** — a dependency loop yields `#CIRCULAR!` rather than a stack overflow
 - Charts (7 kinds, inline SVG), pivot tables, conditional formatting including colour scales
 - Frozen rows and columns, number formats, cell notes
+
+### Dynamic arrays
+
+`SEQUENCE`, `SORT`, `UNIQUE`, `FILTER` and `LET` are present, and operators apply elementwise, so
+`FILTER(A1:A20, A1:A20>1000)` and `SUM(A1:A20*2)` mean what they look like.
+
+```
+=SUM(FILTER(D2:D12, D2:D12>10000))
+=INDEX(SORT(UNIQUE(A2:A99)), 1)
+=LET(revenue, SUM(D2:D12), revenue - SUM(E2:E12))
+```
+
+Two limits worth knowing before you rely on them:
+
+- **They do not spill.** A cell holding `=SEQUENCE(4)` shows `1`, exactly as a cell holding `=A1:A4`
+  shows the first value. Spilling needs a shaped value plus grid ownership so a spill can be blocked,
+  recalculated and cleared, and that is not built. Wrap the result — `SUM`, `COUNT`, `INDEX`,
+  `MATCH`, `XLOOKUP` all take one.
+- **Arrays are flat.** A range is already row-major with no width attached, so `{1,2;3,4}` is four
+  values rather than two rows of two. `SORT(range, 2)` is therefore refused rather than silently
+  sorted by the first column, and `VLOOKUP` still needs a real range for its table.
 
 Evaluation is demand-driven with memoisation, so recalculation costs what the formulas cost, not what
 the grid costs. The grid itself is virtualised — a 200-row default sheet renders only what is visible.

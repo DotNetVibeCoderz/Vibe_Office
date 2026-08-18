@@ -67,6 +67,13 @@
                         <Icon Name="download" Size="16" /> Download
                     </a>
                 }
+                else if (OfficeExtension is { } extension)
+                {
+                    @* Built on request from the content model, so there is nothing stored to link to. *@
+                    <a class="vd-menu__item" href="/drive/export/@Item.Id" role="menuitem">
+                        <Icon Name="download" Size="16" /> Download as @extension
+                    </a>
+                }
 
                 <div class="vd-menu__sep"></div>
 
@@ -122,6 +129,15 @@
 }
 
 @code {
+    /// <summary>The Office extension this item exports to, or null when it has no equivalent.</summary>
+    private string? OfficeExtension => Item.Type switch
+    {
+        DriveItemType.Document => ".docx",
+        DriveItemType.Spreadsheet => ".xlsx",
+        DriveItemType.Presentation => ".pptx",
+        _ => null,
+    };
+
     [Parameter, EditorRequired] public DriveItemDto Item { get; set; } = default!;
     [Parameter] public DriveMode Mode { get; set; } = DriveMode.Folder;
     [Parameter] public EventCallback OnChanged { get; set; }

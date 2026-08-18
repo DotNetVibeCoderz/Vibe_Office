@@ -24,8 +24,8 @@ public sealed class TimePlugin(string timeZoneId)
     [KernelFunction("date_add")]
     [Description("Shifts a date by a number of days and returns the result. Use for questions like 'three weeks from Tuesday'.")]
     public string DateAdd(
-        [Description("Start date as yyyy-MM-dd. Leave empty for today.")] string? date,
-        [Description("Days to add; may be negative.")] int days)
+        [Description("Days to add; may be negative.")] int days,
+        [Description("Start date as yyyy-MM-dd. Leave empty for today.")] string? date = null)
     {
         var start = ParseOrToday(date);
 

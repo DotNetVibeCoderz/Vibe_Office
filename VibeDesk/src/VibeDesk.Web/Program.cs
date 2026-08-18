@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using VibeDesk.Ai;
+using VibeDesk.Office;
 using VibeDesk.Scripting;
 using VibeDesk.Application.Abstractions;
 using VibeDesk.Infrastructure;
@@ -34,6 +35,9 @@ builder.Services.AddVibeDeskAssistant(builder.Configuration);
 
 // ── Script & Automation engine ──────────────────────────────────────────────
 builder.Services.AddVibeDeskScripting(builder.Configuration);
+
+// Office import and export. Stateless, so one instance serves every request.
+builder.Services.AddVibeDeskOffice();
 
 // ── identity + cookie authentication ────────────────────────────────────────
 builder.Services.AddVibeDeskIdentity();

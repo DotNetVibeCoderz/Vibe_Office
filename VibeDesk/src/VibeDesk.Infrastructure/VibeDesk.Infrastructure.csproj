@@ -7,6 +7,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\VibeDesk.Application\VibeDesk.Application.csproj" />
+    <ProjectReference Include="..\VibeDesk.Office\VibeDesk.Office.csproj" />
   </ItemGroup>
 
   <ItemGroup Label="EF Core + all four database providers">

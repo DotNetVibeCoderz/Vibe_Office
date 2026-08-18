@@ -50,7 +50,7 @@ public class TimePluginTests
     [InlineData("2026-01-01", -1, "2025-12-31")]
     [InlineData("2026-02-28", 1, "2026-03-01")]   // 2026 is not a leap year
     public void ShiftsDatesAcrossMonthAndYearBoundaries(string from, int days, string expected) =>
-        Assert.StartsWith(expected, _time.DateAdd(from, days));
+        Assert.StartsWith(expected, _time.DateAdd(days: days, date: from));
 
     [Fact]
     public void CountsWholeDaysBetweenDates()

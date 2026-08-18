@@ -79,7 +79,7 @@ public sealed class ClippyApiClient(HttpClient http) : ApiClientBase(http), ICli
     public async IAsyncEnumerable<ClippyChunk> SendAsync(
         Guid sessionId,
         string message,
-        ClippyContext context,
+        ClippyContext? context,
         IReadOnlyList<ChatAttachmentInput>? attachments = null,
         [EnumeratorCancellation] CancellationToken ct = default)
     {

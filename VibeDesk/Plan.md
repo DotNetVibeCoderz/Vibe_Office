@@ -151,7 +151,29 @@ NumPy/pandas tidak bisa dimuat, dan analisis Roslyn adalah pertahanan berlapis �
 
 ---
 
-## Fase 10 — Pengetatan ⬜ **berikutnya**
+## Fase 10 — Kemampuan yang ditanyakan setelah rilis ✅
+
+Dua celah yang muncul dari pertanyaan langsung, bukan dari spec:
+
+**Tool tulis untuk Mr Clippy.** Asisten sebelumnya hanya bisa membaca — 11 kernel function, semuanya
+read-only. Sekarang ada `authoring` dengan 10 fungsi: buat/ubah dokumen, spreadsheet, presentasi, dan
+kelola folder Drive. Batas yang dipilih dan dikunci: **boleh buat dan ubah, tidak pernah hapus.** Tidak
+ada tool trash atau delete sama sekali — bukan dibatasi, memang tidak disediakan — jadi tidak ada
+panggilan yang bisa disalahpahami model sampai menghilangkan pekerjaan. Ada saklarnya di
+`Assistant:AllowWorkspaceWrites`.
+
+**Impor/ekspor Office.** `.docx`, `.xlsx`, `.pptx` dua arah lewat `VibeDesk.Office` di atas
+DocumentFormat.OpenXml. Unggahan Office jadi item yang benar-benar bisa diedit; tiap item bisa
+diunduh kembali sebagai berkas Office. Konversinya lossy dan batasnya ditulis apa adanya di
+`docs/apps.md`, dan format biner lama (`.doc`/`.xls`/`.ppt`) ditolak dengan sengaja.
+
+Keduanya diuji melawan LLM sungguhan dan berkas OOXML sungguhan, bukan hanya lewat unit test — dan
+keduanya membongkar bug yang sudah ada sebelumnya: konteks asisten yang wajib diisi, dan seluruh
+unduhan di host web yang ternyata 500.
+
+---
+
+## Fase 11 — Pengetatan ⬜ **berikutnya**
 
 - Closure table menggantikan filter visibilitas berbasis path — filter sekarang tidak ramah index dan
   itu sudah dicatat, bukan ditemukan nanti

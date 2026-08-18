@@ -35,6 +35,17 @@ public sealed class AssistantOptions
 
     public string TimeZoneId { get; set; } = "Asia/Jakarta";
 
+    /// <summary>
+    /// Lets the assistant create and edit the user's documents, spreadsheets, presentations and
+    /// folders, not just read them.
+    /// </summary>
+    /// <remarks>
+    /// Even when enabled, nothing the assistant can call deletes: there is no trash or delete tool,
+    /// so the worst a misread instruction produces is a stray file. Set false to keep the assistant
+    /// strictly read-only.
+    /// </remarks>
+    public bool AllowWorkspaceWrites { get; set; } = true;
+
     public OpenAIOptions OpenAI { get; set; } = new();
     public AnthropicOptions Anthropic { get; set; } = new();
     public GoogleOptions Google { get; set; } = new();

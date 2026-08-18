@@ -29,8 +29,8 @@ public sealed partial class WorkspacePlugin(
     [KernelFunction("search_drive")]
     [Description("Searches the user's Drive by keyword and returns matching files with their ids, types and dates. Call this to find a document before reading it.")]
     public async Task<string> SearchDriveAsync(
-        [Description("Words to match against file names and contents. Leave empty to list recent files.")] string? keyword,
-        [Description("Optional filter: document, spreadsheet, presentation, folder or file.")] string? type,
+        [Description("Words to match against file names and contents. Leave empty to list recent files.")] string? keyword = null,
+        [Description("Optional filter: document, spreadsheet, presentation, folder or file.")] string? type = null,
         CancellationToken ct = default)
     {
         var query = new DriveQuery
@@ -59,7 +59,7 @@ public sealed partial class WorkspacePlugin(
     [KernelFunction("read_document")]
     [Description("Reads a Docs, Sheets or Slides file from Drive as plain text. Pass the id from search_drive, or leave it empty to read the file the user currently has open.")]
     public async Task<string> ReadDocumentAsync(
-        [Description("Drive item id. Empty means the currently open file.")] string? itemId,
+        [Description("Drive item id. Empty means the currently open file.")] string? itemId = null,
         CancellationToken ct = default)
     {
         var id = Resolve(itemId);

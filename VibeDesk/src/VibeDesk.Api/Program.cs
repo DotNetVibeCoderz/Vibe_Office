@@ -10,6 +10,7 @@ using VibeDesk.Application.Abstractions;
 using VibeDesk.Application.Platform;
 using VibeDesk.Infrastructure;
 using VibeDesk.Infrastructure.Persistence;
+using VibeDesk.Office;
 using VibeDesk.Scripting;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -22,6 +23,9 @@ builder.Services.AddVibeDeskAssistant(builder.Configuration);
 // The runtimes, the executor and the background workers. The trigger decorators are registered at
 // the bottom of this file instead, where nothing can replace them.
 builder.Services.AddVibeDeskScripting(builder.Configuration);
+
+// Office import and export. Stateless, so one instance serves every request.
+builder.Services.AddVibeDeskOffice();
 
 // Identity is registered for password verification only — the API issues bearer tokens rather than
 // cookies, so none of the interactive sign-in machinery is wired up.

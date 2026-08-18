@@ -33,6 +33,12 @@ internal sealed class FormulaEvaluator(IFormulaContext context, string? currentS
     private const int MaxDepth = 128;
     private int _depth;
 
+    /// <summary>
+    /// Names bound by an enclosing <c>LET</c>. Null until one is used, because the overwhelming
+    /// majority of formulas never bind anything and should not pay for a dictionary.
+    /// </summary>
+    private Dictionary<string, FormulaValue>? _bindings;
+
     public FormulaValue Evaluate(Node node)
     {
         if (++_depth > MaxDepth) return FormulaValue.Error(FormulaError.Num);
@@ -46,6 +52,7 @@ internal sealed class FormulaEvaluator(IFormulaContext context, string? currentS
                 UnaryNode u => EvaluateUnary(u),
                 BinaryNode b => EvaluateBinary(b),
                 FunctionNode f => FormulaFunctions.Invoke(f.Name, f.Args, this),
+                ArrayNode a => EvaluateArrayLiteral(a),
                 _ => FormulaValue.Error(FormulaError.Value),
             };
         }
@@ -59,13 +66,44 @@ internal sealed class FormulaEvaluator(IFormulaContext context, string? currentS
     /// Flattens an argument to scalar values. A range argument contributes every cell, which is what
     /// aggregate functions like SUM want; a scalar contributes itself.
     /// </summary>
-    public IReadOnlyList<FormulaValue> EvaluateToList(Node node)
+    public IReadOnlyList<FormulaValue> EvaluateToList(Node node) => EvaluateToList(node, out _);
+
+    /// <inheritdoc cref="EvaluateToList(Node)"/>
+    /// <param name="isCollection">
+    /// True when the argument was a range or produced an array. Aggregates need this: text inside a
+    /// collection is skipped, while text passed directly is coerced and may error.
+    /// </param>
+    public IReadOnlyList<FormulaValue> EvaluateToList(Node node, out bool isCollection)
     {
         if (node is ReferenceNode r && SheetRange.TryParse(r.Raw, out var sr) && sr.Value.Range.CellCount > 1)
+        {
+            isCollection = true;
             return _ctx.GetRange(sr.Value.SheetName ?? _sheet, sr.Value.Range);
+        }
 
         var v = Evaluate(node);
-        return v.Kind == FormulaValueKind.Array ? v.Items : [v];
+        isCollection = v.Kind == FormulaValueKind.Array;
+
+        return isCollection ? v.Items : [v];
+    }
+
+    /// <summary>
+    /// Builds an inline array. Nested arrays and range references flatten into the result, so
+    /// <c>{A1:A3, 99}</c> is one list rather than a list holding a list.
+    /// </summary>
+    private FormulaValue EvaluateArrayLiteral(ArrayNode node)
+    {
+        var values = new List<FormulaValue>(node.Items.Count);
+
+        foreach (var item in node.Items)
+        {
+            var v = Evaluate(item);
+
+            if (v.Kind == FormulaValueKind.Array) values.AddRange(v.Items);
+            else values.Add(v);
+        }
+
+        return FormulaValue.Array([.. values]);
     }
 
     /// <summary>Resolves an argument that must be a range (MATCH, VLOOKUP table, …).</summary>
@@ -113,8 +151,34 @@ internal sealed class FormulaEvaluator(IFormulaContext context, string? currentS
         return FormulaValue.Array([.. _ctx.GetRange(sheet, range)]);
     }
 
+    /// <summary>
+    /// Binds a name for the duration of <paramref name="body"/>, then restores whatever it shadowed.
+    /// Restoring matters: <c>LET(x,1,LET(x,2,x)+x)</c> must see 2 inside and 1 outside.
+    /// </summary>
+    public FormulaValue EvaluateWithBinding(string name, FormulaValue value, Node body)
+    {
+        _bindings ??= new Dictionary<string, FormulaValue>(StringComparer.OrdinalIgnoreCase);
+
+        var hadPrevious = _bindings.TryGetValue(name, out var previous);
+        _bindings[name] = value;
+
+        try
+        {
+            return Evaluate(body);
+        }
+        finally
+        {
+            if (hadPrevious) _bindings[name] = previous;
+            else _bindings.Remove(name);
+        }
+    }
+
     private FormulaValue EvaluateName(string name)
     {
+        // A LET binding shadows a workbook named range, which is what a reader expects when the
+        // name is declared two characters to the left.
+        if (_bindings is not null && _bindings.TryGetValue(name, out var bound)) return bound;
+
         var target = _ctx.ResolveName(name);
         if (target is null) return FormulaValue.Error(FormulaError.Name);
         return EvaluateReference(target);
@@ -162,7 +226,7 @@ internal sealed class FormulaEvaluator(IFormulaContext context, string? currentS
             case TokenKind.Star:
             case TokenKind.Slash:
             case TokenKind.Caret:
-                return Arithmetic(b.Op, left, right);
+                return Lift(b.Op, left, right, Arithmetic);
 
             case TokenKind.Equal:
             case TokenKind.NotEqual:
@@ -170,11 +234,50 @@ internal sealed class FormulaEvaluator(IFormulaContext context, string? currentS
             case TokenKind.LessEqual:
             case TokenKind.Greater:
             case TokenKind.GreaterEqual:
-                return Comparison(b.Op, left, right);
+                return Lift(b.Op, left, right, Comparison);
 
             default:
                 return FormulaValue.Error(FormulaError.Value);
         }
+    }
+
+    /// <summary>
+    /// Applies a scalar operator elementwise when either side is an array, so <c>A1:A3&gt;99</c> is a
+    /// mask of three booleans rather than one comparison of the first cell.
+    /// </summary>
+    /// <remarks>
+    /// This is what makes FILTER usable: without it the mask has one element, the lengths disagree,
+    /// and the honest answer is a refusal — which reads as the function being broken. A scalar on
+    /// either side is broadcast against the array; two arrays of different lengths are refused,
+    /// because pairing them off and dropping the tail would compute a plausible wrong answer.
+    /// </remarks>
+    private static FormulaValue Lift(
+        TokenKind op, FormulaValue l, FormulaValue r,
+        Func<TokenKind, FormulaValue, FormulaValue, FormulaValue> apply)
+    {
+        var leftIsArray = l.Kind == FormulaValueKind.Array;
+        var rightIsArray = r.Kind == FormulaValueKind.Array;
+
+        if (!leftIsArray && !rightIsArray) return apply(op, l, r);
+
+        var count = leftIsArray ? l.Items.Count : r.Items.Count;
+
+        if (leftIsArray && rightIsArray && l.Items.Count != r.Items.Count)
+        {
+            return FormulaValue.Error(FormulaError.Value);
+        }
+
+        var results = new FormulaValue[count];
+
+        for (var i = 0; i < count; i++)
+        {
+            results[i] = apply(
+                op,
+                leftIsArray ? l.Items[i] : l,
+                rightIsArray ? r.Items[i] : r);
+        }
+
+        return FormulaValue.Array(results);
     }
 
     /// <summary>Collapses an array to its first value, as a scalar operator position requires.</summary>

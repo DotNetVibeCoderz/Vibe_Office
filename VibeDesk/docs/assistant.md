@@ -72,14 +72,41 @@ panel still renders progressively.
 | | `read_document` | Read a Doc/Sheet/Deck as plain text |
 | | `get_open_document` | What the user is looking at right now |
 | | `list_calendar_events` | Events in a date window |
+| `authoring` | `create_document` | New document, body as HTML |
+| | `append_to_document` | Add to the end, leaving the rest alone |
+| | `replace_document_content` | Rewrite the body; the old text stays in version history |
+| | `create_spreadsheet` | New sheet from CSV-style rows |
+| | `append_spreadsheet_rows` | Add rows below what is already there |
+| | `create_presentation` | New deck; slides separated by a blank line |
+| | `add_slides` | Append slides to an existing deck |
+| | `create_folder` | New folder |
+| | `rename_item` | Rename a file or folder |
+| | `move_item` | Move a file or folder |
 
 `time` exists because without it the model dates everything from its training cutoff — wrong in a
 calendar app in a way users notice immediately.
 
-`math.calculate` **reuses `FormulaEngine`** — the same parser and the same ~110 functions that back
+`math.calculate` **reuses `FormulaEngine`** — the same parser and the same ~120 functions that back
 Sheets. `ROUND`, `SUMPRODUCT` and the date functions therefore behave in chat exactly as they do in a
 cell, and there is only one place for a bug to live.
 
+### The authoring plugin can create and change, never destroy
+
+`authoring` is registered separately from `workspace` and behind `Assistant:AllowWorkspaceWrites`
+(default `true`); set it false to keep the assistant strictly read-only.
+
+**There is no delete, trash or empty-trash function at all** — not gated, not confirmed, simply absent.
+A model that misreads "clear out the old drafts" can at worst leave a stray file. Renaming and moving
+are offered because both are reversible; destroying is not offered, so there is no call to get wrong.
+
+Everything else the read plugin guarantees still holds: no function takes a user id, and every call
+goes through the same permission service the UI uses, so the assistant can only write where its user
+could already write.
+
+> **Nullable is not optional.** A parameter declared `string?` with no default is **required** in the
+> generated tool schema, so a model that sensibly omits it gets its call refused and has to retry.
+> That cost `create_presentation` two round trips before it was found. Every optional parameter now
+> carries `= null`, and `KernelFunctionShapeTests` fails the build if a new one does not.
 ---
 
 ## Security boundaries

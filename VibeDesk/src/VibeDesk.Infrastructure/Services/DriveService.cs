@@ -23,7 +23,8 @@ public sealed class DriveService(
     ICacheService cache,
     IUserDirectory users,
     IActivityService activity,
-    IOptions<StorageOptions> storageOptions) : IDriveService
+    IOptions<StorageOptions> storageOptions,
+    IOfficeConverter? office = null) : IDriveService
 {
     private readonly StorageOptions _storageOptions = storageOptions.Value;
 
@@ -303,6 +304,19 @@ public sealed class DriveService(
         var userId = currentUser.RequireId();
         await RequireParentWritableAsync(parentId, ct);
 
+        // An Office file becomes a real editable item rather than an opaque attachment. Done before
+        // the quota check because a converted document stores its text, not the original package.
+        if (office?.Detect(fileName, contentType) is { } format)
+        {
+            if (await TryImportOfficeAsync(office, format, fileName, content, parentId, ct) is { } imported)
+            {
+                return imported;
+            }
+
+            // Conversion failed — a corrupt or password-protected package. Falling through keeps the
+            // bytes as an attachment, which is far better than refusing the upload outright.
+        }
+
         var usage = await GetUsageAsync(ct);
         if (content.CanSeek && content.Length > _storageOptions.MaxUploadBytes)
         {
@@ -344,6 +358,61 @@ public sealed class DriveService(
         await activity.LogAsync("item.uploaded", item.Id, $"{item.Name} ({item.SizeBytes} bytes)", ct);
 
         return await ProjectOneAsync(item, PermissionRole.Owner, ct);
+    }
+
+    /// <summary>
+    /// Converts an uploaded Office file into a native item, or returns null when the package cannot
+    /// be read.
+    /// </summary>
+    /// <remarks>
+    /// The stream is buffered first: the OpenXML SDK seeks all over a package, and an upload stream
+    /// off the wire generally cannot. Failure is swallowed on purpose — a file the converter chokes
+    /// on is stored as an attachment by the caller, which is the outcome the user wants far more than
+    /// a rejected upload.
+    /// </remarks>
+    private async Task<DriveItemDto?> TryImportOfficeAsync(
+        IOfficeConverter converter,
+        OfficeFormat format,
+        string fileName,
+        Stream content,
+        Guid? parentId,
+        CancellationToken ct)
+    {
+        using var buffer = new MemoryStream();
+        await content.CopyToAsync(buffer, ct);
+        buffer.Position = 0;
+
+        string payload;
+
+        try
+        {
+            payload = format switch
+            {
+                OfficeFormat.Excel => ContentJson.Serialize(converter.ReadExcel(buffer)),
+                OfficeFormat.PowerPoint => ContentJson.Serialize(converter.ReadPowerPoint(buffer)),
+                _ => ContentJson.Serialize(converter.ReadWord(buffer)),
+            };
+        }
+        catch (Exception)
+        {
+            // Rewind so the caller can still store the original bytes.
+            if (content.CanSeek) content.Position = 0;
+            return null;
+        }
+
+        // The extension is dropped: the item is a VibeDesk document now, not a .docx.
+        var name = Path.GetFileNameWithoutExtension(fileName);
+
+        var created = await CreateDocumentAsync(
+            IOfficeConverter.TargetType(format),
+            string.IsNullOrWhiteSpace(name) ? fileName : name,
+            parentId,
+            payload,
+            ct);
+
+        await activity.LogAsync("item.imported", created.Id, $"{fileName} → {format}", ct);
+
+        return created;
     }
 
     public async Task<Stream?> OpenFileAsync(Guid id, CancellationToken ct = default)

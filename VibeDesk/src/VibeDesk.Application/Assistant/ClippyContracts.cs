@@ -116,7 +116,7 @@ public interface IClippyService
     IAsyncEnumerable<ClippyChunk> SendAsync(
         Guid sessionId,
         string message,
-        ClippyContext context,
+        ClippyContext? context,
         IReadOnlyList<ChatAttachmentInput>? attachments = null,
         CancellationToken ct = default);
 

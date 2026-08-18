@@ -7,7 +7,7 @@ internal enum TokenKind
     Number, String, Boolean, Identifier, Reference,
     Plus, Minus, Star, Slash, Caret, Percent, Ampersand,
     Equal, NotEqual, Less, LessEqual, Greater, GreaterEqual,
-    LParen, RParen, Comma, Colon, End,
+    LParen, RParen, LBrace, RBrace, Comma, Colon, End,
 }
 
 internal readonly record struct Token(TokenKind Kind, string Text, double Number = 0, int Position = 0);
@@ -52,6 +52,8 @@ internal sealed class FormulaLexer(string source)
             case '&': _i++; return new Token(TokenKind.Ampersand, "&", Position: start);
             case '(': _i++; return new Token(TokenKind.LParen, "(", Position: start);
             case ')': _i++; return new Token(TokenKind.RParen, ")", Position: start);
+            case '{': _i++; return new Token(TokenKind.LBrace, "{", Position: start);
+            case '}': _i++; return new Token(TokenKind.RBrace, "}", Position: start);
             case ':': _i++; return new Token(TokenKind.Colon, ":", Position: start);
             case ',': case ';': _i++; return new Token(TokenKind.Comma, ",", Position: start);
             case '=': _i++; return new Token(TokenKind.Equal, "=", Position: start);
@@ -238,6 +240,9 @@ internal sealed record BinaryNode(TokenKind Op, Node Left, Node Right) : Node;
 
 internal sealed record FunctionNode(string Name, List<Node> Args) : Node;
 
+/// <summary>An inline array, <c>{1,2;3,4}</c>.</summary>
+internal sealed record ArrayNode(List<Node> Items) : Node;
+
 /// <summary>
 /// Recursive-descent parser over the token list, with the standard spreadsheet precedence ladder:
 /// comparison &lt; concatenation &lt; additive &lt; multiplicative &lt; power &lt; unary &lt; postfix-%.
@@ -343,6 +348,34 @@ internal sealed class FormulaParser(List<Token> tokens)
         return node;
     }
 
+    /// <summary>
+    /// An inline array: <c>{1,2,3}</c> or <c>{1,2;3,4}</c>.
+    /// </summary>
+    /// <remarks>
+    /// Rows and columns collapse into one flat list, because a <see cref="FormulaValue"/> array
+    /// carries no shape — the same reason a multi-cell range is already row-major and flat. The
+    /// tokenizer maps both <c>,</c> and <c>;</c> to <see cref="TokenKind.Comma"/> (they are
+    /// interchangeable argument separators across locales), so both separators arrive here alike.
+    /// </remarks>
+    private Node ParseArrayLiteral()
+    {
+        Match(TokenKind.LBrace);
+
+        var items = new List<Node>();
+
+        if (Current.Kind != TokenKind.RBrace)
+        {
+            do
+            {
+                items.Add(ParseExpression());
+            } while (Match(TokenKind.Comma));
+        }
+
+        Match(TokenKind.RBrace);
+
+        return new ArrayNode(items);
+    }
+
     private Node ParsePrimary()
     {
         var token = Current;
@@ -364,6 +397,9 @@ internal sealed class FormulaParser(List<Token> tokens)
             case TokenKind.Reference:
                 _p++;
                 return new ReferenceNode(token.Text);
+
+            case TokenKind.LBrace:
+                return ParseArrayLiteral();
 
             case TokenKind.LParen:
                 _p++;

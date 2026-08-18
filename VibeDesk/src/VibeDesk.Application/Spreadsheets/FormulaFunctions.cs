@@ -8,7 +8,7 @@ namespace VibeDesk.Application.Spreadsheets;
 /// dictionary of delegates because most functions need the raw argument <em>nodes</em> (IF must not
 /// evaluate the branch it isn't taking, COUNTIF needs the criteria range unflattened).
 /// </summary>
-internal static class FormulaFunctions
+internal static partial class FormulaFunctions
 {
     /// <summary>Serial-number epoch. Day 1 is 1900-01-01, matching Excel's (bug-compatible) offset.</summary>
     private static readonly DateTime SerialEpoch = new(1899, 12, 30, 0, 0, 0, DateTimeKind.Utc);
@@ -150,6 +150,13 @@ internal static class FormulaFunctions
         "COLUMN" => RowCol(args, ev, row: false),
         "XLOOKUP" => XLookup(args, ev),
 
+        // ── dynamic arrays ────────────────────────────────────────────────────────────────────
+        "SEQUENCE" => Sequence(args, ev),
+        "SORT" => SortValues(args, ev),
+        "UNIQUE" => Unique(args, ev),
+        "FILTER" => Filter(args, ev),
+        "LET" => Let(args, ev),
+
         _ => FormulaValue.Error(FormulaError.Name),
     };
 
@@ -167,15 +174,19 @@ internal static class FormulaFunctions
 
         foreach (var arg in args)
         {
-            foreach (var v in ev.EvaluateToList(arg))
+            var values = ev.EvaluateToList(arg, out var isCollection);
+
+            foreach (var v in values)
             {
                 if (v.IsError) { error = v; return false; }
                 if (v.IsEmpty) continue;
 
-                // Text inside a range is skipped; text passed directly is coerced (and may error).
+                // Text inside a collection is skipped; text passed directly is coerced (and may
+                // error). Testing the node type instead missed arrays — SUM(SORT(A1:A6)) over a
+                // column holding names refused the whole sum rather than ignoring the names.
                 if (v.Kind == FormulaValueKind.Text)
                 {
-                    if (arg is ReferenceNode) continue;
+                    if (isCollection) continue;
                     var coerced = v.ToNumber();
                     if (coerced.IsError) { error = coerced; return false; }
                     numbers.Add(coerced.RawNumber);
@@ -1254,7 +1265,15 @@ internal static class FormulaFunctions
         if (args.Count < 2) return FormulaValue.Error(FormulaError.Value);
 
         if (!ev.TryEvaluateRange(args[0], out var range, out var sheet))
-            return FormulaValue.Error(FormulaError.Ref);
+        {
+            // Not a range, but possibly an array — SORT, UNIQUE, FILTER and SEQUENCE all return one,
+            // and INDEX is how you read a single element out of them.
+            var array = ev.Evaluate(args[0]);
+
+            return array.Kind == FormulaValueKind.Array
+                ? IndexArray(array.Items, args, ev)
+                : FormulaValue.Error(FormulaError.Ref);
+        }
 
         var rowValue = ev.Evaluate(args[1]).ToNumber();
         if (rowValue.IsError) return rowValue;

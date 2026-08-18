@@ -15,6 +15,12 @@
     <PackageVersion Include="MySql.EntityFrameworkCore" Version="10.0.9" />
   </ItemGroup>
 
+  <ItemGroup Label="Office file formats">
+    <!-- Microsoft's own SDK, MIT-licensed: one dependency covers .docx, .xlsx and .pptx in both
+         directions, which beats three single-format libraries with three sets of quirks. -->
+    <PackageVersion Include="DocumentFormat.OpenXml" Version="3.5.1" />
+  </ItemGroup>
+
   <ItemGroup Label="ASP.NET Core / Identity / API">
     <PackageVersion Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="10.0.11" />
     <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.11" />

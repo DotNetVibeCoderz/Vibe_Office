@@ -166,10 +166,14 @@ public sealed class ClippyService(
     public async IAsyncEnumerable<ClippyChunk> SendAsync(
         Guid sessionId,
         string message,
-        ClippyContext context,
+        ClippyContext? context,
         IReadOnlyList<ChatAttachmentInput>? attachments = null,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
+        // A caller outside the editors — the REST API, gRPC, a CLI — has no open document, and that
+        // is a legitimate way to use the assistant rather than a malformed request.
+        context ??= new ClippyContext("Workspace");
+
         var session = await FindAsync(sessionId, ct).ConfigureAwait(false);
 
         if (session is null)
@@ -236,6 +240,13 @@ public sealed class ClippyService(
             new WebPlugin(httpFactory.CreateClient(HttpClientName), _options), "web");
         kernel.Plugins.AddFromObject(
             new WorkspacePlugin(drive, content, calendar, context, _options.MaxToolResultChars), "workspace");
+
+        // Registered separately and behind a switch: reading the user's files and changing them are
+        // different levels of trust, and a deployment may want only the first.
+        if (_options.AllowWorkspaceWrites)
+        {
+            kernel.Plugins.AddFromObject(new WorkspaceWritePlugin(drive, content), "authoring");
+        }
     }
 
     private async Task<ChatHistory> BuildHistoryAsync(

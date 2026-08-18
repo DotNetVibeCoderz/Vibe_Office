@@ -16,9 +16,9 @@ a Windows desktop app, or a mobile app from one shared UI.
 
 | | |
 |---|---|
-| **Drive** | The hub. Every other app stores through it, so permissions, sharing, versioning and activity logging happen in exactly one place. Folder tree, trash, starred, quota. |
+| **Drive** | The hub. Every other app stores through it, so permissions, sharing, versioning and activity logging happen in exactly one place. Folder tree, trash, starred, quota. Uploading a `.docx`, `.xlsx` or `.pptx` converts it into a real editable item, and every item exports back out. |
 | **Docs** | Rich-text editing with comments and tracked suggestions you can accept into the document. |
-| **Sheets** | A real formula engine — ~110 functions, cross-sheet references, cycle detection — plus charts, pivot tables and conditional formatting. |
+| **Sheets** | A real formula engine — ~120 functions including dynamic arrays, cross-sheet references, cycle detection — plus charts, pivot tables and conditional formatting. |
 | **Slides** | Six themes, per-slide transitions, speaker notes, presenter view, and live charts pulled from a spreadsheet. |
 | **Calendar** | Month, week, day and agenda views over recurring events, reminders, attendees and shared calendars. |
 
@@ -45,15 +45,21 @@ multiple conversations, accepts image and document attachments, and shows you wh
 used rather than asking you to trust the prose.
 
 It runs on **Semantic Kernel** and supports four providers — **OpenAI**, **Anthropic**, **Google
-Gemini** and **Ollama** — selectable per conversation. Twelve kernel functions let it search the web,
-read a page, download a file, do arithmetic, check the date, and read your own Drive files.
+Gemini** and **Ollama** — selectable per conversation. Twenty-one kernel functions let it search the
+web, read a page, download a file, do arithmetic, check the date, read your own Drive files — and
+create and edit them.
 
-Two design points worth knowing:
+Ask it to "make a folder for Q4 and put a budget sheet in it", and it does, then tells you the ids.
+
+Three design points worth knowing:
 
 - `math.calculate` reuses the *spreadsheet* formula engine rather than a second implementation, so
   arithmetic in chat behaves exactly as it does in a cell.
-- The Drive tools take no user-id parameter at all. Every read goes through the same permission
-  layer as the UI, so the assistant can only ever see what you could already open.
+- The Drive tools take no user-id parameter at all. Every call goes through the same permission
+  layer as the UI, so the assistant can only ever reach what you could already open.
+- **It can create and change, but never delete.** There is no trash or delete tool at all — not
+  gated, simply absent — so a misread instruction can leave a stray file but cannot lose work.
+  Set `Assistant:AllowWorkspaceWrites` to false to keep it strictly read-only.
 
 Works fully offline via Ollama; no API key required for that path.
 
@@ -186,6 +192,7 @@ VibeDesk.Application     contracts, DTOs, document models, the formula engine
 VibeDesk.Infrastructure  EF Core, Identity, storage, cache, service implementations
 VibeDesk.Ai              Mr Clippy — Semantic Kernel, providers, kernel functions
 VibeDesk.Scripting       script runtimes, the workspace API, triggers, the sandbox
+VibeDesk.Office          .docx / .xlsx / .pptx import and export, on the OpenXML SDK
 VibeDesk.Ui              the entire UI, pages included, as a Razor class library
 VibeDesk.Client          the same contracts, satisfied over HTTP instead of EF Core
 VibeDesk.Web             Blazor Server host

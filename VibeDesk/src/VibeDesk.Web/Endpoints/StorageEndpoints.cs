@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using VibeDesk.Application.Abstractions;
+using VibeDesk.Application.Documents;
 using VibeDesk.Application.Drive;
 using VibeDesk.Domain;
 
@@ -22,12 +23,71 @@ public static class StorageEndpoints
         app.MapGet("/drive/download/{id:guid}", DownloadItemAsync)
             .RequireAuthorization();
 
+        // Export a native item to its Office equivalent. Separate from the download route because
+        // nothing is stored: the file is built from the content model on each request.
+        app.MapGet("/drive/export/{id:guid}", ExportItemAsync)
+            .RequireAuthorization();
+
         // Raw storage key. Restricted to chat attachments: those are addressed by key rather than by
         // a Drive item, so there is no item to check against.
         app.MapGet("/storage/{*key}", DownloadByKeyAsync)
             .RequireAuthorization();
 
         return app;
+    }
+
+    private static async Task<IResult> ExportItemAsync(
+        Guid id,
+        IDriveService drive,
+        IDocumentContentService content,
+        IOfficeConverter office,
+        IPermissionService permissions,
+        ICurrentUser currentUser,
+        CancellationToken ct)
+    {
+        var role = await permissions.ResolveRoleAsync(id, currentUser.Id, ct);
+        if (role == PermissionRole.None) return Results.NotFound();
+
+        var item = await drive.GetAsync(id, ct);
+        if (item is null) return Results.NotFound();
+
+        var format = item.Type switch
+        {
+            DriveItemType.Spreadsheet => OfficeFormat.Excel,
+            DriveItemType.Presentation => OfficeFormat.PowerPoint,
+            DriveItemType.Document => OfficeFormat.Word,
+            _ => (OfficeFormat?)null,
+        };
+
+        // A folder or an uploaded blob has no Office equivalent; the plain download route serves those.
+        if (format is not { } target) return Results.NotFound();
+
+        var (extension, contentType) = IOfficeConverter.Descriptor(target);
+
+        // Built in memory: the OpenXML SDK writes its package on dispose and seeks while doing so,
+        // which a response stream does not allow.
+        var buffer = new MemoryStream();
+
+        switch (target)
+        {
+            case OfficeFormat.Excel:
+                office.WriteExcel(buffer, await content.GetTypedAsync<SpreadsheetModel>(id, ct) ?? new());
+                break;
+
+            case OfficeFormat.PowerPoint:
+                office.WritePowerPoint(
+                    buffer, await content.GetTypedAsync<PresentationModel>(id, ct) ?? new(), item.Name);
+                break;
+
+            default:
+                office.WriteWord(
+                    buffer, await content.GetTypedAsync<DocumentModel>(id, ct) ?? new(), item.Name);
+                break;
+        }
+
+        buffer.Position = 0;
+
+        return Results.File(buffer, contentType, item.Name + extension);
     }
 
     private static async Task<IResult> DownloadItemAsync(

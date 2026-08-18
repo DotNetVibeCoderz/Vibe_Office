@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using VibeDesk.Application.Documents;
 using VibeDesk.Application.Drive;
 using VibeDesk.Domain;
 
@@ -77,6 +78,59 @@ public static class DriveEndpoints
             // our own origin, and a per-type allow-list is one forgotten entry away from the same bug.
             return Results.File(stream, item.ContentType ?? "application/octet-stream", item.Name);
         }).WithSummary("Download a file's binary");
+
+        drive.MapGet("/{id:guid}/export", async (
+            Guid id,
+            IDriveService service,
+            IDocumentContentService content,
+            IOfficeConverter office,
+            CancellationToken ct) =>
+        {
+            var item = await service.GetAsync(id, ct);
+            if (item is null) return Results.NotFound();
+
+            var format = item.Type switch
+            {
+                DriveItemType.Spreadsheet => OfficeFormat.Excel,
+                DriveItemType.Presentation => OfficeFormat.PowerPoint,
+                DriveItemType.Document => OfficeFormat.Word,
+                _ => (OfficeFormat?)null,
+            };
+
+            if (format is not { } target)
+            {
+                return Results.Problem(
+                    "Only documents, spreadsheets and presentations can be exported to Office formats.",
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            var (extension, contentType) = IOfficeConverter.Descriptor(target);
+
+            // Built in memory rather than streamed: the OpenXML SDK writes its package on dispose and
+            // seeks while doing it, so it needs a stream it owns until the last byte is written.
+            var buffer = new MemoryStream();
+
+            switch (target)
+            {
+                case OfficeFormat.Excel:
+                    office.WriteExcel(buffer, await content.GetTypedAsync<SpreadsheetModel>(id, ct) ?? new());
+                    break;
+
+                case OfficeFormat.PowerPoint:
+                    office.WritePowerPoint(
+                        buffer, await content.GetTypedAsync<PresentationModel>(id, ct) ?? new(), item.Name);
+                    break;
+
+                default:
+                    office.WriteWord(
+                        buffer, await content.GetTypedAsync<DocumentModel>(id, ct) ?? new(), item.Name);
+                    break;
+            }
+
+            buffer.Position = 0;
+
+            return Results.File(buffer, contentType, item.Name + extension);
+        }).WithSummary("Export a document, spreadsheet or presentation as .docx, .xlsx or .pptx");
 
         drive.MapGet("/{id:guid}/download-url", async (
             Guid id,

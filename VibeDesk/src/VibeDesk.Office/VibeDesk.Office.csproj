@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>VibeDesk.Office</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      Application only: the converters map between OOXML and the content models, and have no reason
+      to see EF Core, storage or the web stack.
+    -->
+    <ProjectReference Include="..\VibeDesk.Application\VibeDesk.Application.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="DocumentFormat.OpenXml" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+  </ItemGroup>
+
+</Project>
