@@ -8,7 +8,7 @@
 <PageTitle>Executive Dashboard - CUAN</PageTitle>
 
 <div class="cu-mb-3">
-    <h2 style="margin:0;">📊 Executive Dashboard</h2>
+    <h1 class="cu-page-title">Executive Dashboard</h1>
     <p class="cu-text-muted">Ringkasan kinerja bisnis untuk pengambilan keputusan</p>
 </div>
 
@@ -34,8 +34,8 @@
             <button class="cu-btn cu-btn-primary" @onclick="ApplyFilter">Terapkan</button>
         </div>
         <div style="margin-left:auto;align-self:end;" class="cu-flex cu-gap-1">
-            <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportExcel">📥 Excel</button>
-            <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportPdf">📄 PDF</button>
+            <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportExcel"><Icon Name="download" Size="14" /> Excel</button>
+            <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportPdf"><Icon Name="printer" Size="14" /> PDF</button>
         </div>
     </div>
 </div>
@@ -49,14 +49,14 @@
 
 <div class="cu-grid cu-grid-2 cu-mb-3">
     <div class="cu-card cu-chart">
-        <h3 style="margin-top:0;">📈 Penjualan vs Pembelian (Bulanan)</h3>
+        <h3 style="margin-top:0;">Penjualan vs Pembelian (Bulanan)</h3>
         <ApexChart TItem="MonthlyValue" Title="" Height="280">
             <ApexPointSeries TItem="MonthlyValue" Items="monthlySales" Name="Penjualan" XValue="x=>x.Month" YValue="x=>x.Value" />
             <ApexPointSeries TItem="MonthlyValue" Items="monthlyPurchases" Name="Pembelian" XValue="x=>x.Month" YValue="x=>x.Value" />
         </ApexChart>
     </div>
     <div class="cu-card cu-chart">
-        <h3 style="margin-top:0;">💸 Arus Kas (Bulanan)</h3>
+        <h3 style="margin-top:0;">Arus Kas (Bulanan)</h3>
         <ApexChart TItem="MonthlyValue" Title="" Height="280">
             <ApexPointSeries TItem="MonthlyValue" Items="monthlyCashIn" Name="Kas Masuk" XValue="x=>x.Month" YValue="x=>x.Value" />
             <ApexPointSeries TItem="MonthlyValue" Items="monthlyCashOut" Name="Kas Keluar" XValue="x=>x.Month" YValue="x=>x.Value" />
@@ -66,14 +66,14 @@
 
 <div class="cu-grid cu-grid-2 cu-mb-3">
     <div class="cu-card">
-        <h3 style="margin-top:0;">🏆 Top 5 Customer</h3>
+        <h3 style="margin-top:0;">Top 5 Customer</h3>
         <div class="cu-table-wrap">
             <table class="cu-table"><thead><tr><th>Customer</th><th class="cu-text-right">Total Penjualan</th><th class="cu-text-right">Piutang</th></tr></thead>
             <tbody>@foreach (var c in topCustomers){<tr><td>@c.Name</td><td class="cu-text-right">@c.TotalSales.ToString("N0")</td><td class="cu-text-right">@c.Balance.ToString("N0")</td></tr>}</tbody></table>
         </div>
     </div>
     <div class="cu-card">
-        <h3 style="margin-top:0;">⚠️ Invoice Jatuh Tempo</h3>
+        <h3 style="margin-top:0;">Invoice Jatuh Tempo</h3>
         <div class="cu-table-wrap">
             <table class="cu-table"><thead><tr><th>No</th><th>Customer</th><th>Jatuh Tempo</th><th class="cu-text-right">Sisa</th></tr></thead>
             <tbody>@foreach (var i in overdueInvoices){<tr><td style="font-family:monospace;">@i.InvoiceNumber</td><td>@i.CustomerName</td><td>@i.DueDate.ToString("dd/MM/yy")</td><td class="cu-text-right">@i.RemainingAmount.ToString("N0")</td></tr>}</tbody></table>
@@ -82,7 +82,7 @@
 </div>
 
 <div class="cu-card">
-    <h3 style="margin-top:0;">📦 Produk Terlaris</h3>
+    <h3 style="margin-top:0;">Produk Terlaris</h3>
     <div class="cu-table-wrap">
         <table class="cu-table"><thead><tr><th>Barang</th><th class="cu-text-right">Qty Terjual</th><th class="cu-text-right">Omzet</th></tr></thead>
         <tbody>@foreach (var p in topItems){<tr><td>@p.ItemName</td><td class="cu-text-right">@p.TotalQty</td><td class="cu-text-right">@p.TotalRevenue.ToString("N0")</td></tr>}</tbody></table>

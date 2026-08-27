@@ -1,0 +1,144 @@
+@page "/master/suppliers"
+@rendermode @(RenderMode.InteractiveServer)
+@attribute [Authorize(Roles = "Admin,Akuntan,Purchasing")]
+@inject AppDbContext DbContext
+@inject IJSRuntime JS
+
+<PageTitle>Master Supplier - CUAN</PageTitle>
+
+<div class="cu-flex-between cu-mb-2">
+    <div><h2 style="margin:0;">🏭 Master Supplier</h2><span class="cu-text-muted">@totalSuppliers supplier terdaftar</span></div>
+    <div class="cu-flex cu-gap-1">
+        <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportExcel">📥 Excel</button>
+        <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportCsv">📄 CSV</button>
+        <button class="cu-btn cu-btn-primary cu-btn-sm" @onclick="() => ShowModal(null)">+ Supplier Baru</button>
+    </div>
+</div>
+
+<div class="cu-card cu-mb-2">
+    <div class="cu-flex cu-gap-2">
+        <div style="flex:1;"><input class="cu-form-input" @bind="searchTerm" @bind:event="oninput" placeholder="🔍 Cari kode, nama, kota..." /></div>
+    </div>
+</div>
+
+<div class="cu-card">
+    <table class="cu-table">
+        <thead><tr><th>Kode</th><th>Nama</th><th>Kota</th><th>Telepon</th><th>NPWP</th><th>Hutang</th><th>Status</th><th></th></tr></thead>
+        <tbody>
+            @foreach (var s in filteredSuppliers)
+            {
+                <tr>
+                    <td style="font-family:monospace;font-weight:600;">@s.SupplierCode</td><td>@s.Name</td><td>@s.City</td><td>@s.Phone</td>
+                    <td style="font-size:0.75rem;">@s.TaxNumber</td>
+                    <td class="cu-text-right" style="font-weight:600;">@s.Balance.ToString("N0")</td>
+                    <td><span class="cu-badge @(s.IsActive ? "cu-badge-success" : "cu-badge-danger")">@(s.IsActive ? "Active" : "Inactive")</span></td>
+                    <td>
+                        <button class="cu-btn cu-btn-sm cu-btn-outline" @onclick="() => ShowModal(s)">✏️</button>
+                        <button class="cu-btn cu-btn-sm cu-btn-danger" title="Hapus" @onclick="() => DeleteSupplier(s)">🗑️</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@if (showModal)
+{
+    <div class="cu-modal-overlay" @onclick="HideModal">
+        <div class="cu-modal" @onclick:stopPropagation="true">
+            <h3 style="margin-top:0;">@(editingSupplier.Id == 0 ? "Tambah Supplier" : "Edit Supplier")</h3>
+            <EditForm Model="editingSupplier" OnValidSubmit="SaveSupplier">
+                <div class="cu-grid cu-grid-2">
+                    <div class="cu-form-group"><label class="cu-form-label">Kode *</label><InputText @bind-Value="editingSupplier.SupplierCode" class="cu-form-input" /></div>
+                    <div class="cu-form-group"><label class="cu-form-label">Nama *</label><InputText @bind-Value="editingSupplier.Name" class="cu-form-input" /></div>
+                </div>
+                <div class="cu-form-group"><label class="cu-form-label">Alamat</label><InputTextArea @bind-Value="editingSupplier.Address" class="cu-form-input" rows="2" /></div>
+                <div class="cu-grid cu-grid-2">
+                    <div class="cu-form-group"><label class="cu-form-label">Kota</label><InputText @bind-Value="editingSupplier.City" class="cu-form-input" /></div>
+                    <div class="cu-form-group"><label class="cu-form-label">Telepon</label><InputText @bind-Value="editingSupplier.Phone" class="cu-form-input" /></div>
+                </div>
+                <div class="cu-grid cu-grid-2">
+                    <div class="cu-form-group"><label class="cu-form-label">Email</label><InputText @bind-Value="editingSupplier.Email" class="cu-form-input" /></div>
+                    <div class="cu-form-group"><label class="cu-form-label">NPWP</label><InputText @bind-Value="editingSupplier.TaxNumber" class="cu-form-input" /></div>
+                </div>
+                <div class="cu-form-group"><label class="cu-form-label"><input type="checkbox" @bind="editingSupplier.IsActive" /> Aktif?</label></div>
+                <div class="cu-flex cu-gap-1" style="justify-content:flex-end;margin-top:1rem;">
+                    <button type="button" class="cu-btn cu-btn-outline" @onclick="HideModal">Batal</button>
+                    <button type="submit" class="cu-btn cu-btn-primary">💾 Simpan</button>
+                </div>
+            </EditForm>
+        </div>
+    </div>
+}
+
+@code {
+    private List<Supplier> suppliers = new();
+    private string searchTerm = "";
+    private int totalSuppliers;
+    private bool showModal;
+    private Supplier editingSupplier = new();
+
+    private IEnumerable<Supplier> filteredSuppliers => suppliers
+        .Where(s => string.IsNullOrEmpty(searchTerm)
+            || s.SupplierCode.Contains(searchTerm, StringComparison.OrdinalIgnoreCase)
+            || s.Name.Contains(searchTerm, StringComparison.OrdinalIgnoreCase)
+            || (s.City ?? "").Contains(searchTerm, StringComparison.OrdinalIgnoreCase))
+        .OrderBy(s => s.SupplierCode);
+
+    protected override async Task OnInitializedAsync() { await LoadData(); }
+    private async Task LoadData() { suppliers = await DbContext.Suppliers.OrderBy(s => s.SupplierCode).ToListAsync(); totalSuppliers = suppliers.Count; }
+    private void ShowModal(Supplier? s) { editingSupplier = s != null ? new Supplier { Id = s.Id, SupplierCode = s.SupplierCode, Name = s.Name, Address = s.Address, City = s.City, Phone = s.Phone, Email = s.Email, TaxNumber = s.TaxNumber, IsActive = s.IsActive } : new Supplier { IsActive = true }; showModal = true; }
+    private void HideModal() { showModal = false; }
+    private async Task SaveSupplier() { if (editingSupplier.Id == 0) { editingSupplier.CreatedAt = DateTime.UtcNow; DbContext.Suppliers.Add(editingSupplier); } else { var ex = await DbContext.Suppliers.FindAsync(editingSupplier.Id); if (ex != null) { ex.SupplierCode = editingSupplier.SupplierCode; ex.Name = editingSupplier.Name; ex.Address = editingSupplier.Address; ex.City = editingSupplier.City; ex.Phone = editingSupplier.Phone; ex.Email = editingSupplier.Email; ex.TaxNumber = editingSupplier.TaxNumber; ex.IsActive = editingSupplier.IsActive; ex.UpdatedAt = DateTime.UtcNow; } } await DbContext.SaveChangesAsync(); showModal = false; await LoadData(); }
+
+    private async Task DeleteSupplier(Supplier supplier)
+    {
+        if (!await ConfirmAsync($"Hapus supplier {supplier.SupplierCode} - {supplier.Name}?") ) return;
+        DbContext.Suppliers.Remove(supplier);
+        await DbContext.SaveChangesAsync();
+        await LoadData();
+    }
+
+    private async Task ExportCsv()
+    {
+        var data = filteredSuppliers.Select(s => new
+        {
+            s.SupplierCode,
+            s.Name,
+            s.City,
+            s.Phone,
+            s.TaxNumber,
+            s.Balance,
+            s.IsActive
+        });
+
+        var bytes = ExportService.ExportToCsv(data);
+        await DownloadAsync(bytes, "suppliers.csv", "text/csv");
+    }
+
+    private async Task ExportExcel()
+    {
+        var data = filteredSuppliers.Select(s => new
+        {
+            s.SupplierCode,
+            s.Name,
+            s.City,
+            s.Phone,
+            s.TaxNumber,
+            s.Balance,
+            s.IsActive
+        });
+
+        var bytes = ExportService.ExportToExcel(data, "Suppliers");
+        await DownloadAsync(bytes, "suppliers.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    }
+
+    private async Task DownloadAsync(byte[] data, string fileName, string contentType)
+    {
+        var base64 = Convert.ToBase64String(data);
+        await JS.InvokeVoidAsync("downloadFileFromBytes", fileName, contentType, base64);
+    }
+
+    private async Task<bool> ConfirmAsync(string message) =>
+        await JS.InvokeAsync<bool>("confirm", message);
+}

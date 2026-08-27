@@ -12,7 +12,10 @@ namespace Cuan.Api;
 /// Akses melalui /api/v1/*
 /// </summary>
 [ApiController]
-[Route("api/v1/[controller]")]
+// Rute ditulis eksplisit, bukan [controller]. Kelas ini bernama ApiController,
+// jadi token [controller] dulu menghasilkan /api/v1/Api/... dan seluruh URL
+// yang tercantum di README tidak pernah cocok.
+[Route("api/v1")]
 [Produces("application/json")]
 public class ApiController : ControllerBase
 {

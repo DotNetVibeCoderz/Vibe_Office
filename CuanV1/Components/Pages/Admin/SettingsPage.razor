@@ -1,0 +1,47 @@
+@page "/admin/settings"
+@rendermode @(RenderMode.InteractiveServer)
+@attribute [Authorize(Roles = "Admin")]
+@inject AppDbContext DbContext
+<PageTitle>Pengaturan - CUAN</PageTitle>
+<div class="cu-flex-between cu-mb-2"><div><h2 style="margin:0;">🔧 Pengaturan Sistem</h2></div><button class="cu-btn cu-btn-primary cu-btn-sm" @onclick="SaveSettings">💾 Simpan</button></div>
+<div class="cu-card"><table class="cu-table"><thead><tr><th>Key</th><th>Value</th><th>Grup</th><th>Deskripsi</th></tr></thead><tbody>@foreach (var s in settings){<tr><td style="font-family:monospace;">@s.SettingKey</td><td style="min-width:240px;">
+@if (selectOptions.TryGetValue(s.SettingKey, out var options))
+{
+    <select class="cu-select" @bind="s.SettingValue">@foreach (var o in options){<option value="@o">@o</option>}</select>
+}
+else
+{
+    <input class="cu-form-input" @bind="s.SettingValue" />
+}
+</td><td>@s.Group</td><td style="font-size:0.75rem;color:var(--cu-text-secondary);">@s.Description</td></tr>}</tbody></table></div>
+@code {
+    private List<SystemSetting> settings = new();
+    private Dictionary<string, List<string>> selectOptions = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        settings = await DbContext.SystemSettings.OrderBy(s => s.Group).ThenBy(s => s.SettingKey).ToListAsync();
+
+        var currencies = await DbContext.Currencies.OrderBy(c => c.Code).Select(c => c.Code).ToListAsync();
+        var taxRates = await DbContext.Taxes.OrderBy(t => t.Rate).Select(t => t.Rate.ToString("0.##")).Distinct().ToListAsync();
+
+        selectOptions = new Dictionary<string, List<string>>
+        {
+            ["EnableMultiCurrency"] = new List<string> { "true", "false" },
+            ["EnableMultiWarehouse"] = new List<string> { "true", "false" },
+            ["EnableAuditLog"] = new List<string> { "true", "false" },
+            ["AutoPostJournal"] = new List<string> { "true", "false" },
+            ["BaseCurrency"] = currencies,
+            ["DefaultTaxRate"] = taxRates,
+            ["ItemsPerPage"] = new List<string> { "10", "20", "50", "100" },
+            ["FiscalYearStart"] = new List<string> { "01-01", "04-01", "07-01", "10-01" },
+            ["FiscalYearEnd"] = new List<string> { "12-31", "03-31", "06-30", "09-30" }
+        };
+    }
+
+    private async Task SaveSettings()
+    {
+        foreach (var s in settings) { s.UpdatedAt = DateTime.UtcNow; }
+        await DbContext.SaveChangesAsync();
+    }
+}

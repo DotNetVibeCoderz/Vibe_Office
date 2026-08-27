@@ -1,0 +1,229 @@
+@page "/reports/ledger"
+@rendermode @(RenderMode.InteractiveServer)
+@attribute [Authorize(Roles = "Admin,Akuntan,Viewer")]
+@inject AppDbContext DbContext
+@inject SettingsService Settings
+@inject IJSRuntime JS
+
+<PageTitle>Buku Besar — CUAN</PageTitle>
+
+<PageHead Section="Laporan" Title="Buku Besar"
+          Subtitle="@(selected is null ? "Pilih akun untuk melihat mutasinya" : $"{selected.AccountCode} — {selected.AccountName}")">
+    <Actions>
+        <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="Print" disabled="@(selected is null)">
+            <Icon Name="printer" Size="14" /> Cetak
+        </button>
+        <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportCsv" disabled="@(selected is null)">
+            <Icon Name="download" Size="14" /> CSV
+        </button>
+    </Actions>
+</PageHead>
+
+<div class="cu-filterbar">
+    <select class="cu-select" style="min-width:320px;" value="@accountId" @onchange="OnAccountChanged">
+        <option value="0">— pilih akun —</option>
+        @foreach (var account in accounts)
+        {
+            <option value="@account.Id">@account.AccountCode — @account.AccountName</option>
+        }
+    </select>
+    <input type="date" class="cu-form-input" style="width:150px;" @bind="from" @bind:after="LoadAsync" />
+    <span class="cu-text-faint">s/d</span>
+    <input type="date" class="cu-form-input" style="width:150px;" @bind="to" @bind:after="LoadAsync" />
+    <label class="cu-switch">
+        <input type="checkbox" @bind="postedOnly" @bind:after="LoadAsync" />
+        <span class="cu-switch-track"></span>
+        <span class="cu-text-muted">Hanya yang diposting</span>
+    </label>
+</div>
+
+@if (selected is null)
+{
+    <div class="cu-card">
+        <EmptyState Title="Pilih satu akun"
+                    Message="Buku besar memperlihatkan setiap mutasi debit dan kredit sebuah akun beserta saldo berjalannya." />
+    </div>
+}
+else
+{
+    <div class="cu-grid cu-grid-4 cu-mb-3">
+        <div class="cu-card cu-stat" style="margin-bottom:0;">
+            <div class="cu-stat-label">Saldo awal periode</div>
+            <div class="cu-stat-value">@Settings.Money(openingBalance)</div>
+        </div>
+        <div class="cu-card cu-stat cu-stat-debit" style="margin-bottom:0;">
+            <div class="cu-stat-label">Mutasi debit</div>
+            <div class="cu-stat-value">@Settings.Money(rows.Sum(r => r.Debit))</div>
+        </div>
+        <div class="cu-card cu-stat cu-stat-credit" style="margin-bottom:0;">
+            <div class="cu-stat-label">Mutasi kredit</div>
+            <div class="cu-stat-value">@Settings.Money(rows.Sum(r => r.Credit))</div>
+        </div>
+        <div class="cu-card cu-stat cu-stat-primary" style="margin-bottom:0;">
+            <div class="cu-stat-label">Saldo akhir</div>
+            <div class="cu-stat-value">@Settings.Money(ClosingBalance)</div>
+            <div class="cu-stat-foot">@NormalSideLabel</div>
+        </div>
+    </div>
+
+    <div class="cu-card cu-card-flush" style="margin-bottom:0;">
+        <div class="cu-card-header">
+            <span class="cu-card-title">@selected.AccountCode — @selected.AccountName</span>
+            <span class="cu-text-muted">@rows.Count mutasi</span>
+        </div>
+
+        @if (rows.Count == 0)
+        {
+            <EmptyState Title="Tidak ada mutasi di rentang ini"
+                        Message="Coba perlebar rentang tanggal, atau matikan penyaring “hanya yang diposting”." />
+        }
+        else
+        {
+            <div class="cu-table-wrap">
+                <table class="cu-table">
+                    <thead>
+                        <tr>
+                            <th>Tanggal</th><th>Nomor jurnal</th><th>Keterangan</th><th>Referensi</th>
+                            <th class="cu-text-right cu-col-debit">Debit</th>
+                            <th class="cu-text-right cu-col-credit">Kredit</th>
+                            <th class="cu-text-right">Saldo</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr class="cu-subtotal-row">
+                            <td colspan="6">Saldo awal per @Settings.FormatDate(from)</td>
+                            <td class="cu-text-right">@Settings.Number(openingBalance)</td>
+                        </tr>
+
+                        @{ var running = openingBalance; }
+                        @foreach (var row in rows)
+                        {
+                            running += PostingService.SignedAmount(selected.AccountType, row.Debit, row.Credit);
+                            <tr>
+                                <td class="cu-mono">@Settings.FormatDate(row.Date)</td>
+                                <td class="cu-mono">@row.JournalNumber</td>
+                                <td>@row.Description</td>
+                                <td class="cu-mono cu-text-faint">@row.Reference</td>
+                                <td class="cu-text-right cu-col-debit">@(row.Debit == 0 ? "" : Settings.Number(row.Debit))</td>
+                                <td class="cu-text-right cu-col-credit">@(row.Credit == 0 ? "" : Settings.Number(row.Credit))</td>
+                                <td class="cu-text-right">@Settings.Number(running)</td>
+                            </tr>
+                        }
+
+                        <tr class="cu-total-row">
+                            <td colspan="4">Saldo akhir per @Settings.FormatDate(to)</td>
+                            <td class="cu-text-right">@Settings.Number(rows.Sum(r => r.Debit))</td>
+                            <td class="cu-text-right">@Settings.Number(rows.Sum(r => r.Credit))</td>
+                            <td class="cu-text-right">@Settings.Number(ClosingBalance)</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private sealed record LedgerRow(DateTime Date, string JournalNumber, string? Description,
+        string? Reference, decimal Debit, decimal Credit);
+
+    private List<ChartOfAccount> accounts = new();
+    private List<LedgerRow> rows = new();
+    private ChartOfAccount? selected;
+
+    private int accountId;
+    private DateTime from = new(DateTime.Today.Year, 1, 1);
+    private DateTime to = DateTime.Today;
+    private bool postedOnly = true;
+    private decimal openingBalance;
+
+    private decimal ClosingBalance => openingBalance +
+        rows.Sum(r => PostingService.SignedAmount(selected?.AccountType ?? 1, r.Debit, r.Credit));
+
+    private string NormalSideLabel => selected?.AccountType is 1 or 5
+        ? "Bertambah di debit" : "Bertambah di kredit";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Settings.EnsureLoadedAsync();
+        accounts = await DbContext.ChartOfAccounts
+            .Where(a => !a.IsHeader)
+            .OrderBy(a => a.AccountCode)
+            .ToListAsync();
+    }
+
+    private async Task OnAccountChanged(ChangeEventArgs e)
+    {
+        accountId = int.Parse(e.Value?.ToString() ?? "0");
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        selected = accounts.FirstOrDefault(a => a.Id == accountId);
+        if (selected is null)
+        {
+            rows = new();
+            openingBalance = 0;
+            return;
+        }
+
+        var query = DbContext.JournalEntryDetails
+            .Include(d => d.JournalEntry)
+            .Where(d => d.ChartOfAccountId == accountId);
+
+        if (postedOnly) query = query.Where(d => d.JournalEntry!.IsPosted);
+
+        // Saldo awal: saldo pembukaan akun ditambah seluruh mutasi sebelum tanggal mulai.
+        var before = await query
+            .Where(d => d.JournalEntry!.TransactionDate < from)
+            .Select(d => new { d.Debit, d.Credit })
+            .ToListAsync();
+
+        openingBalance = selected.OpeningBalance +
+            before.Sum(b => PostingService.SignedAmount(selected.AccountType, b.Debit, b.Credit));
+
+        rows = (await query
+            .Where(d => d.JournalEntry!.TransactionDate >= from && d.JournalEntry!.TransactionDate <= to)
+            .OrderBy(d => d.JournalEntry!.TransactionDate).ThenBy(d => d.Id)
+            .Select(d => new
+            {
+                d.JournalEntry!.TransactionDate,
+                d.JournalEntry.JournalNumber,
+                Desc = d.Description ?? d.JournalEntry.Description,
+                d.JournalEntry.Reference,
+                d.Debit,
+                d.Credit
+            })
+            .ToListAsync())
+            .Select(d => new LedgerRow(d.TransactionDate, d.JournalNumber, d.Desc, d.Reference, d.Debit, d.Credit))
+            .ToList();
+    }
+
+    private async Task Print() => await JS.InvokeVoidAsync("cuanPrint");
+
+    private async Task ExportCsv()
+    {
+        if (selected is null) return;
+
+        var running = openingBalance;
+        var data = rows.Select(r =>
+        {
+            running += PostingService.SignedAmount(selected.AccountType, r.Debit, r.Credit);
+            return new
+            {
+                Tanggal = r.Date.ToString("yyyy-MM-dd"),
+                Jurnal = r.JournalNumber,
+                Keterangan = r.Description,
+                Referensi = r.Reference,
+                Debit = r.Debit,
+                Kredit = r.Credit,
+                Saldo = running
+            };
+        }).ToList();
+
+        var bytes = ExportService.ExportToCsv(data);
+        await JS.InvokeVoidAsync("downloadFileFromBytes",
+            $"buku-besar-{selected.AccountCode}.csv", "text/csv", Convert.ToBase64String(bytes));
+    }
+}

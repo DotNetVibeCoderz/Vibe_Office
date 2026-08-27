@@ -2,31 +2,105 @@
 @rendermode @(RenderMode.InteractiveServer)
 @attribute [Authorize(Roles = "Admin,Akuntan,Kasir")]
 @inject AppDbContext DbContext
+@inject SettingsService Settings
+@inject PostingService Posting
+@inject DocumentNumberService Numbers
 @inject IJSRuntime JS
-<PageTitle>Bank - CUAN</PageTitle>
 
-<div class="cu-flex-between cu-mb-2">
-    <div><h2 style="margin:0;">🏦 Transaksi Bank</h2></div>
-    <div class="cu-flex cu-gap-1">
-        <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportExcel">📥 Excel</button>
-        <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportCsv">📄 CSV</button>
-        <button class="cu-btn cu-btn-primary cu-btn-sm" @onclick="CreateNew">+ Transaksi Baru</button>
+<PageTitle>Bank — CUAN</PageTitle>
+
+<PageHead Section="Transaksi" Title="Transaksi Bank"
+          Subtitle="@($"{banks.Count} rekening · saldo gabungan {Settings.Money(banks.Sum(b => b.Balance))}")">
+    <Actions>
+        <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportExcel">
+            <Icon Name="download" Size="14" /> Excel
+        </button>
+        <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportCsv">
+            <Icon Name="download" Size="14" /> CSV
+        </button>
+        <button class="cu-btn cu-btn-primary cu-btn-sm" @onclick="CreateNew">
+            <Icon Name="plus" Size="14" /> Transaksi baru
+        </button>
+    </Actions>
+</PageHead>
+
+<div class="cu-filterbar">
+    <div class="cu-search">
+        <span class="cu-search-icon"><Icon Name="search" Size="15" /></span>
+        <input class="cu-form-input" placeholder="Cari nomor, bank, atau keterangan…" @bind="searchTerm" @bind:event="oninput" />
     </div>
 </div>
 
-<div class="cu-card cu-mb-2">
-    <input class="cu-form-input" @bind="searchTerm" @bind:event="oninput" placeholder="🔍 Cari no, bank, deskripsi..." />
+<div class="cu-card cu-card-flush" style="margin-bottom:0;">
+    @if (!filteredTransactions.Any())
+    {
+        <EmptyState Title="Belum ada transaksi bank"
+                    Message="Setiap mutasi bank memperbarui saldo rekening sekaligus membentuk jurnalnya." />
+    }
+    else
+    {
+        <div class="cu-table-wrap">
+            <table class="cu-table">
+                <thead>
+                    <tr>
+                        <th>Nomor</th><th>Tanggal</th><th>Rekening</th><th>Keterangan</th>
+                        <th class="cu-text-right cu-col-debit">Masuk</th>
+                        <th class="cu-text-right cu-col-credit">Keluar</th>
+                        <th>Jurnal</th><th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var t in filteredTransactions)
+                    {
+                        <tr>
+                            <td class="cu-mono">@t.TransactionNumber</td>
+                            <td class="cu-mono">@Settings.FormatDate(t.TransactionDate)</td>
+                            <td>
+                                @t.BankAccount?.BankName
+                                <span class="cu-text-faint cu-mono">@t.BankAccount?.AccountNumber</span>
+                            </td>
+                            <td>@t.Description</td>
+                            <td class="cu-text-right cu-col-debit">
+                                @(t.Type == BankTransactionType.BankIn ? Settings.Number(t.Amount) : "")
+                            </td>
+                            <td class="cu-text-right cu-col-credit">
+                                @(t.Type == BankTransactionType.BankOut ? Settings.Number(t.Amount) : "")
+                            </td>
+                            <td>
+                                <span class="cu-badge @(t.JournalEntryId is not null ? "cu-badge-success" : "")">
+                                    @(t.JournalEntryId is not null ? "Terjurnal" : "—")
+                                </span>
+                            </td>
+                            <td class="cu-text-right">
+                                <div class="cu-row-actions">
+                                    <button class="cu-btn cu-btn-outline cu-btn-icon" title="Ubah" @onclick="() => EditTx(t)">
+                                        <Icon Name="edit" Size="13" />
+                                    </button>
+                                    <button class="cu-btn cu-btn-danger cu-btn-icon" title="Hapus" @onclick="() => DeleteTx(t)">
+                                        <Icon Name="trash" Size="13" />
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                    <tr class="cu-total-row">
+                        <td colspan="4">Jumlah</td>
+                        <td class="cu-text-right">@Settings.Number(filteredTransactions.Where(t => t.Type == BankTransactionType.BankIn).Sum(t => t.Amount))</td>
+                        <td class="cu-text-right">@Settings.Number(filteredTransactions.Where(t => t.Type == BankTransactionType.BankOut).Sum(t => t.Amount))</td>
+                        <td colspan="2"></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    }
 </div>
 
-<div class="cu-card"><table class="cu-table"><thead><tr><th>No</th><th>Tanggal</th><th>Bank</th><th>Tipe</th><th class="cu-text-right">Jumlah</th><th>Deskripsi</th><th></th></tr></thead>
-<tbody>@foreach(var t in filteredTransactions){<tr><td style="font-family:monospace;">@t.TransactionNumber</td><td>@t.TransactionDate.ToString("dd/MM/yy")</td><td>@t.BankAccount?.BankName</td><td><span class="cu-badge @(t.Type==BankTransactionType.BankIn?"cu-badge-success":"cu-badge-danger")">@t.Type</span></td><td class="cu-text-right">@t.Amount.ToString("N0")</td><td>@t.Description</td><td><button class="cu-btn cu-btn-sm cu-btn-outline" @onclick="() => EditTx(t)">✏️</button><button class="cu-btn cu-btn-sm cu-btn-danger" @onclick="() => DeleteTx(t)">🗑️</button></td></tr>}</tbody></table></div>
-
-@if(showCreate){<div class="cu-modal-overlay" @onclick="()=>showCreate=false"><div class="cu-modal" style="min-width:450px;" @onclick:stopPropagation="true"><h3>@(newTx.Id==0?"Bank Baru":"Edit Transaksi Bank")</h3>
+@if(showCreate){<div class="cu-modal-overlay" @onclick="()=>showCreate=false"><div class="cu-modal" style="min-width:450px;" @onclick:stopPropagation="true"><h3 style="margin-top:0;">@(newTx.Id==0?"Transaksi bank baru":$"Ubah {newTx.TransactionNumber}")</h3>
 <div class="cu-form-group"><label class="cu-form-label">Bank</label><select class="cu-select" @bind="newTx.BankAccountId">@foreach(var b in banks){<option value="@b.Id">@b.BankName - @b.AccountNumber</option>}</select></div>
-<div class="cu-form-group"><label class="cu-form-label">Tipe</label><select class="cu-select" @bind="newTx.Type"><option value="@BankTransactionType.BankIn">📥 Bank Masuk</option><option value="@BankTransactionType.BankOut">📤 Bank Keluar</option></select></div>
+<div class="cu-form-group"><label class="cu-form-label">Tipe</label><select class="cu-select" @bind="newTx.Type"><option value="@BankTransactionType.BankIn">Bank masuk</option><option value="@BankTransactionType.BankOut">Bank keluar</option></select></div>
 <div class="cu-grid cu-grid-2"><div class="cu-form-group"><label class="cu-form-label">Tanggal</label><InputDate @bind-Value="newTx.TransactionDate" class="cu-form-input"/></div><div class="cu-form-group"><label class="cu-form-label">Jumlah</label><InputNumber @bind-Value="newTx.Amount" class="cu-form-input"/></div></div>
 <div class="cu-form-group"><label class="cu-form-label">Deskripsi</label><InputText @bind-Value="newTx.Description" class="cu-form-input"/></div>
-<div class="cu-flex cu-gap-1" style="justify-content:flex-end;"><button class="cu-btn cu-btn-outline" @onclick="()=>showCreate=false">Batal</button><button class="cu-btn cu-btn-primary" @onclick="SaveTx">💾 Simpan</button></div></div></div>}
+<div class="cu-flex cu-gap-1" style="justify-content:flex-end;"><button class="cu-btn cu-btn-outline" @onclick="()=>showCreate=false">Batal</button><button class="cu-btn cu-btn-primary" @onclick="SaveTx"><Icon Name="save" Size="14" /> Simpan</button></div></div></div>}
 
 @code {
     private List<BankTransaction> transactions=new();
@@ -42,7 +116,7 @@
             || (t.Description ?? "").Contains(searchTerm, StringComparison.OrdinalIgnoreCase))
         .OrderByDescending(t => t.TransactionDate);
 
-    protected override async Task OnInitializedAsync(){await LoadData();}
+    protected override async Task OnInitializedAsync(){await Settings.EnsureLoadedAsync();await LoadData();}
 
     private async Task LoadData()
     {
@@ -71,12 +145,16 @@
     {
         if (newTx.Id == 0)
         {
-            newTx.CreatedAt=DateTime.UtcNow;
-            var c=await DbContext.BankTransactions.CountAsync();
-            newTx.TransactionNumber=$"BNK-{DateTime.UtcNow.Year}-{c+1:D4}";
+            var kind = newTx.Type == BankTransactionType.BankIn ? DocumentKind.BankIn : DocumentKind.BankOut;
+            newTx.TransactionNumber = await Numbers.NextAsync(DbContext, kind, newTx.TransactionDate);
+            newTx.CreatedAt = DateTime.UtcNow;
             DbContext.BankTransactions.Add(newTx);
-            var bank=await DbContext.BankAccounts.FindAsync(newTx.BankAccountId);
-            if(bank!=null)bank.Balance+=newTx.Type==BankTransactionType.BankIn?newTx.Amount:-newTx.Amount;
+
+            var bank = await DbContext.BankAccounts.FindAsync(newTx.BankAccountId);
+            if (bank != null) bank.Balance += newTx.Type == BankTransactionType.BankIn ? newTx.Amount : -newTx.Amount;
+
+            await DbContext.SaveChangesAsync();
+            await Posting.PostBankAsync(newTx);
         }
         else
         {
@@ -91,7 +169,13 @@
                 if (bank != null)
                     bank.Balance += newTx.Type == BankTransactionType.BankIn ? newTx.Amount : -newTx.Amount;
 
+                // Jurnal lama dibatalkan supaya saldo akun tidak terhitung dua kali.
+                await Posting.ReverseDocumentJournalAsync(existing.JournalEntryId);
+                newTx.JournalEntryId = null;
+                newTx.IsPosted = false;
                 DbContext.BankTransactions.Update(newTx);
+                await DbContext.SaveChangesAsync();
+                await Posting.PostBankAsync(newTx);
             }
         }
 
@@ -103,6 +187,7 @@
     private async Task DeleteTx(BankTransaction tx)
     {
         if (!await ConfirmAsync($"Hapus transaksi {tx.TransactionNumber}?") ) return;
+        await Posting.ReverseDocumentJournalAsync(tx.JournalEntryId);
         var bank = await DbContext.BankAccounts.FindAsync(tx.BankAccountId);
         if (bank != null)
             bank.Balance += tx.Type == BankTransactionType.BankIn ? -tx.Amount : tx.Amount;
@@ -150,5 +235,5 @@
     }
 
     private async Task<bool> ConfirmAsync(string message) =>
-        await JS.InvokeAsync<bool>("confirm", message);
+        await JS.InvokeAsync<bool>("cuanConfirm", message);
 }

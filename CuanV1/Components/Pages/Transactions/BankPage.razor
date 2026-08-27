@@ -1,0 +1,154 @@
+@page "/transactions/bank"
+@rendermode @(RenderMode.InteractiveServer)
+@attribute [Authorize(Roles = "Admin,Akuntan,Kasir")]
+@inject AppDbContext DbContext
+@inject IJSRuntime JS
+<PageTitle>Bank - CUAN</PageTitle>
+
+<div class="cu-flex-between cu-mb-2">
+    <div><h2 style="margin:0;">🏦 Transaksi Bank</h2></div>
+    <div class="cu-flex cu-gap-1">
+        <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportExcel">📥 Excel</button>
+        <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportCsv">📄 CSV</button>
+        <button class="cu-btn cu-btn-primary cu-btn-sm" @onclick="CreateNew">+ Transaksi Baru</button>
+    </div>
+</div>
+
+<div class="cu-card cu-mb-2">
+    <input class="cu-form-input" @bind="searchTerm" @bind:event="oninput" placeholder="🔍 Cari no, bank, deskripsi..." />
+</div>
+
+<div class="cu-card"><table class="cu-table"><thead><tr><th>No</th><th>Tanggal</th><th>Bank</th><th>Tipe</th><th class="cu-text-right">Jumlah</th><th>Deskripsi</th><th></th></tr></thead>
+<tbody>@foreach(var t in filteredTransactions){<tr><td style="font-family:monospace;">@t.TransactionNumber</td><td>@t.TransactionDate.ToString("dd/MM/yy")</td><td>@t.BankAccount?.BankName</td><td><span class="cu-badge @(t.Type==BankTransactionType.BankIn?"cu-badge-success":"cu-badge-danger")">@t.Type</span></td><td class="cu-text-right">@t.Amount.ToString("N0")</td><td>@t.Description</td><td><button class="cu-btn cu-btn-sm cu-btn-outline" @onclick="() => EditTx(t)">✏️</button><button class="cu-btn cu-btn-sm cu-btn-danger" @onclick="() => DeleteTx(t)">🗑️</button></td></tr>}</tbody></table></div>
+
+@if(showCreate){<div class="cu-modal-overlay" @onclick="()=>showCreate=false"><div class="cu-modal" style="min-width:450px;" @onclick:stopPropagation="true"><h3>@(newTx.Id==0?"Bank Baru":"Edit Transaksi Bank")</h3>
+<div class="cu-form-group"><label class="cu-form-label">Bank</label><select class="cu-select" @bind="newTx.BankAccountId">@foreach(var b in banks){<option value="@b.Id">@b.BankName - @b.AccountNumber</option>}</select></div>
+<div class="cu-form-group"><label class="cu-form-label">Tipe</label><select class="cu-select" @bind="newTx.Type"><option value="@BankTransactionType.BankIn">📥 Bank Masuk</option><option value="@BankTransactionType.BankOut">📤 Bank Keluar</option></select></div>
+<div class="cu-grid cu-grid-2"><div class="cu-form-group"><label class="cu-form-label">Tanggal</label><InputDate @bind-Value="newTx.TransactionDate" class="cu-form-input"/></div><div class="cu-form-group"><label class="cu-form-label">Jumlah</label><InputNumber @bind-Value="newTx.Amount" class="cu-form-input"/></div></div>
+<div class="cu-form-group"><label class="cu-form-label">Deskripsi</label><InputText @bind-Value="newTx.Description" class="cu-form-input"/></div>
+<div class="cu-flex cu-gap-1" style="justify-content:flex-end;"><button class="cu-btn cu-btn-outline" @onclick="()=>showCreate=false">Batal</button><button class="cu-btn cu-btn-primary" @onclick="SaveTx">💾 Simpan</button></div></div></div>}
+
+@code {
+    private List<BankTransaction> transactions=new();
+    private List<BankAccount> banks=new();
+    private bool showCreate;
+    private BankTransaction newTx=new(){TransactionDate=DateTime.Today};
+    private string searchTerm = "";
+
+    private IEnumerable<BankTransaction> filteredTransactions => transactions
+        .Where(t => string.IsNullOrEmpty(searchTerm)
+            || t.TransactionNumber.Contains(searchTerm, StringComparison.OrdinalIgnoreCase)
+            || (t.BankAccount?.BankName ?? "").Contains(searchTerm, StringComparison.OrdinalIgnoreCase)
+            || (t.Description ?? "").Contains(searchTerm, StringComparison.OrdinalIgnoreCase))
+        .OrderByDescending(t => t.TransactionDate);
+
+    protected override async Task OnInitializedAsync(){await LoadData();}
+
+    private async Task LoadData()
+    {
+        transactions = await DbContext.BankTransactions.Include(t=>t.BankAccount).OrderByDescending(t=>t.TransactionDate).Take(200).ToListAsync();
+        banks = await DbContext.BankAccounts.ToListAsync();
+    }
+
+    private void CreateNew(){newTx=new BankTransaction{TransactionDate=DateTime.Today};showCreate=true;}
+
+    private void EditTx(BankTransaction tx)
+    {
+        newTx = new BankTransaction
+        {
+            Id = tx.Id,
+            TransactionNumber = tx.TransactionNumber,
+            TransactionDate = tx.TransactionDate,
+            BankAccountId = tx.BankAccountId,
+            Type = tx.Type,
+            Amount = tx.Amount,
+            Description = tx.Description
+        };
+        showCreate = true;
+    }
+
+    private async Task SaveTx()
+    {
+        if (newTx.Id == 0)
+        {
+            newTx.CreatedAt=DateTime.UtcNow;
+            var c=await DbContext.BankTransactions.CountAsync();
+            newTx.TransactionNumber=$"BNK-{DateTime.UtcNow.Year}-{c+1:D4}";
+            DbContext.BankTransactions.Add(newTx);
+            var bank=await DbContext.BankAccounts.FindAsync(newTx.BankAccountId);
+            if(bank!=null)bank.Balance+=newTx.Type==BankTransactionType.BankIn?newTx.Amount:-newTx.Amount;
+        }
+        else
+        {
+            var existing = await DbContext.BankTransactions.AsNoTracking().FirstOrDefaultAsync(t => t.Id == newTx.Id);
+            if (existing != null)
+            {
+                var oldBank = await DbContext.BankAccounts.FindAsync(existing.BankAccountId);
+                if (oldBank != null)
+                    oldBank.Balance += existing.Type == BankTransactionType.BankIn ? -existing.Amount : existing.Amount;
+
+                var bank = await DbContext.BankAccounts.FindAsync(newTx.BankAccountId);
+                if (bank != null)
+                    bank.Balance += newTx.Type == BankTransactionType.BankIn ? newTx.Amount : -newTx.Amount;
+
+                DbContext.BankTransactions.Update(newTx);
+            }
+        }
+
+        await DbContext.SaveChangesAsync();
+        showCreate=false;
+        await LoadData();
+    }
+
+    private async Task DeleteTx(BankTransaction tx)
+    {
+        if (!await ConfirmAsync($"Hapus transaksi {tx.TransactionNumber}?") ) return;
+        var bank = await DbContext.BankAccounts.FindAsync(tx.BankAccountId);
+        if (bank != null)
+            bank.Balance += tx.Type == BankTransactionType.BankIn ? -tx.Amount : tx.Amount;
+        DbContext.BankTransactions.Remove(tx);
+        await DbContext.SaveChangesAsync();
+        await LoadData();
+    }
+
+    private async Task ExportCsv()
+    {
+        var data = filteredTransactions.Select(t => new
+        {
+            t.TransactionNumber,
+            t.TransactionDate,
+            Bank = t.BankAccount?.BankName,
+            t.Type,
+            t.Amount,
+            t.Description
+        });
+
+        var bytes = ExportService.ExportToCsv(data);
+        await DownloadAsync(bytes, "bank_transactions.csv", "text/csv");
+    }
+
+    private async Task ExportExcel()
+    {
+        var data = filteredTransactions.Select(t => new
+        {
+            t.TransactionNumber,
+            t.TransactionDate,
+            Bank = t.BankAccount?.BankName,
+            t.Type,
+            t.Amount,
+            t.Description
+        });
+
+        var bytes = ExportService.ExportToExcel(data, "BankTransactions");
+        await DownloadAsync(bytes, "bank_transactions.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    }
+
+    private async Task DownloadAsync(byte[] data, string fileName, string contentType)
+    {
+        var base64 = Convert.ToBase64String(data);
+        await JS.InvokeVoidAsync("downloadFileFromBytes", fileName, contentType, base64);
+    }
+
+    private async Task<bool> ConfirmAsync(string message) =>
+        await JS.InvokeAsync<bool>("confirm", message);
+}

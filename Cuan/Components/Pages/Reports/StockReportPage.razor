@@ -1,17 +1,158 @@
 @page "/reports/stock"
 @rendermode @(RenderMode.InteractiveServer)
-@attribute [Authorize(Roles = "Admin,Akuntan,StafGudang")]
+@attribute [Authorize(Roles = "Admin,Akuntan,StafGudang,Viewer")]
 @inject AppDbContext DbContext
+@inject SettingsService Settings
+@inject IJSRuntime JS
 
-<PageTitle>Laporan Stok - CUAN</PageTitle>
-<div class="cu-flex-between cu-mb-2"><div><h2 style="margin:0;">📦 Laporan Stok</h2></div><button class="cu-btn cu-btn-outline cu-btn-sm">📥 Excel</button></div>
+<PageTitle>Laporan Stok — CUAN</PageTitle>
 
-<div class="cu-grid cu-grid-3 cu-mb-3">
-    <div class="cu-card"><div class="cu-text-muted">TOTAL ITEM</div><div style="font-size:1.5rem;font-weight:700;">@totalItems</div></div>
-    <div class="cu-card"><div class="cu-text-muted">TOTAL NILAI STOK</div><div style="font-size:1.5rem;font-weight:700;color:var(--cu-primary);">@totalValue.ToString("N0")</div></div>
-    <div class="cu-card"><div class="cu-text-muted">ITEM STOK RENDAH</div><div style="font-size:1.5rem;font-weight:700;color:#dc2626;">@lowStockCount ⚠️</div></div>
+<PageHead Section="Laporan" Title="Laporan Stok"
+          Subtitle="@($"{items.Count} barang · nilai persediaan {Settings.Money(totalValue)}")">
+    <Actions>
+        <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="Print">
+            <Icon Name="printer" Size="14" /> Cetak
+        </button>
+        <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportExcel">
+            <Icon Name="download" Size="14" /> Excel
+        </button>
+    </Actions>
+</PageHead>
+
+<div class="cu-grid cu-grid-4 cu-mb-3">
+    <div class="cu-card cu-stat" style="margin-bottom:0;">
+        <div class="cu-stat-label">Jumlah barang</div>
+        <div class="cu-stat-value">@items.Count</div>
+        <div class="cu-stat-foot">@items.Count(i => i.IsService) berupa jasa</div>
+    </div>
+    <div class="cu-card cu-stat cu-stat-primary" style="margin-bottom:0;">
+        <div class="cu-stat-label">Nilai persediaan</div>
+        <div class="cu-stat-value">@Settings.Money(totalValue)</div>
+        <div class="cu-stat-foot">Kuantitas × harga pokok</div>
+    </div>
+    <div class="cu-card cu-stat cu-stat-warning" style="margin-bottom:0;">
+        <div class="cu-stat-label">Stok menipis</div>
+        <div class="cu-stat-value">@lowStockCount</div>
+        <div class="cu-stat-foot">Di bawah stok minimum</div>
+    </div>
+    <div class="cu-card cu-stat cu-stat-credit" style="margin-bottom:0;">
+        <div class="cu-stat-label">Stok kosong</div>
+        <div class="cu-stat-value">@items.Count(i => !i.IsService && i.StockQuantity <= 0)</div>
+        <div class="cu-stat-foot">Perlu segera dibeli</div>
+    </div>
 </div>
 
-<div class="cu-card"><h3>Semua Barang</h3><table class="cu-table"><thead><tr><th>Kode</th><th>Nama</th><th>Kategori</th><th>Harga Beli</th><th>Harga Jual</th><th class="cu-text-right">Stok</th><th class="cu-text-right">Nilai</th><th>Status</th></tr></thead><tbody>@foreach(var i in items){<tr><td style="font-family:monospace;">@i.ItemCode</td><td>@i.ItemName</td><td>@i.Category?.Name</td><td>@i.CostPrice.ToString("N0")</td><td>@i.SellingPrice.ToString("N0")</td><td class="cu-text-right"><span class="@(i.StockQuantity<=i.MinimumStock?"cu-text-danger":"")">@i.StockQuantity</span></td><td class="cu-text-right">@(i.StockQuantity*i.CostPrice).ToString("N0")</td><td><span class="cu-badge @(i.StockQuantity<=i.MinimumStock?"cu-badge-danger":"cu-badge-success")">@(i.StockQuantity<=i.MinimumStock?"⚠️ Low":"OK")</span></td></tr>}</tbody></table></div>
+<div class="cu-filterbar">
+    <div class="cu-search">
+        <span class="cu-search-icon"><Icon Name="search" Size="15" /></span>
+        <input class="cu-form-input" placeholder="Cari kode atau nama barang…" @bind="search" @bind:event="oninput" />
+    </div>
+    <select class="cu-select" style="width:190px;" @bind="statusFilter">
+        <option value="">Semua status</option>
+        <option value="low">Stok menipis</option>
+        <option value="empty">Stok kosong</option>
+        <option value="ok">Stok aman</option>
+    </select>
+</div>
 
-@code {private List<Item> items=new();private int totalItems;private int lowStockCount;private decimal totalValue;protected override async Task OnInitializedAsync(){items=await DbContext.Items.Include(i=>i.Category).OrderBy(i=>i.ItemCode).ToListAsync();totalItems=items.Count;lowStockCount=items.Count(i=>i.StockQuantity<=i.MinimumStock);totalValue=items.Sum(i=>i.StockQuantity*i.CostPrice);}}
+<div class="cu-card cu-card-flush" style="margin-bottom:0;">
+    <div class="cu-table-wrap">
+        <table class="cu-table">
+            <thead>
+                <tr>
+                    <th>Kode</th><th>Nama barang</th><th>Kategori</th>
+                    <th class="cu-text-right">Harga pokok</th><th class="cu-text-right">Harga jual</th>
+                    <th class="cu-text-right">Stok</th><th class="cu-text-right">Min</th>
+                    <th class="cu-text-right">Nilai</th><th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var item in Filtered())
+                {
+                    <tr>
+                        <td class="cu-mono">@item.ItemCode</td>
+                        <td>@item.ItemName</td>
+                        <td class="cu-text-faint">@item.Category?.Name</td>
+                        <td class="cu-text-right">@Settings.Number(item.CostPrice)</td>
+                        <td class="cu-text-right">@Settings.Number(item.SellingPrice)</td>
+                        <td class="cu-text-right" style="font-weight:600;">@Settings.Number(item.StockQuantity)</td>
+                        <td class="cu-text-right cu-text-faint">@Settings.Number(item.MinimumStock)</td>
+                        <td class="cu-text-right">@Settings.Number(item.StockQuantity * item.CostPrice)</td>
+                        <td>
+                            @if (item.IsService)
+                            {
+                                <span class="cu-badge">Jasa</span>
+                            }
+                            else if (item.StockQuantity <= 0)
+                            {
+                                <span class="cu-badge cu-badge-danger">Kosong</span>
+                            }
+                            else if (item.StockQuantity <= item.MinimumStock)
+                            {
+                                <span class="cu-badge cu-badge-warning">Menipis</span>
+                            }
+                            else
+                            {
+                                <span class="cu-badge cu-badge-success">Aman</span>
+                            }
+                        </td>
+                    </tr>
+                }
+                <tr class="cu-total-row">
+                    <td colspan="7">Jumlah nilai persediaan</td>
+                    <td class="cu-text-right">@Settings.Number(Filtered().Sum(i => i.StockQuantity * i.CostPrice))</td>
+                    <td></td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@code {
+    private List<Item> items = new();
+    private int lowStockCount;
+    private decimal totalValue;
+    private string search = "";
+    private string statusFilter = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Settings.EnsureLoadedAsync();
+        items = await DbContext.Items.Include(i => i.Category).OrderBy(i => i.ItemCode).ToListAsync();
+        lowStockCount = items.Count(i => !i.IsService && i.StockQuantity <= i.MinimumStock);
+        totalValue = items.Sum(i => i.StockQuantity * i.CostPrice);
+    }
+
+    private IEnumerable<Item> Filtered() => items
+        .Where(i => statusFilter switch
+        {
+            "low" => !i.IsService && i.StockQuantity <= i.MinimumStock && i.StockQuantity > 0,
+            "empty" => !i.IsService && i.StockQuantity <= 0,
+            "ok" => i.IsService || i.StockQuantity > i.MinimumStock,
+            _ => true
+        })
+        .Where(i => string.IsNullOrWhiteSpace(search)
+                    || i.ItemCode.Contains(search, StringComparison.OrdinalIgnoreCase)
+                    || i.ItemName.Contains(search, StringComparison.OrdinalIgnoreCase));
+
+    private async Task Print() => await JS.InvokeVoidAsync("cuanPrint");
+
+    private async Task ExportExcel()
+    {
+        var data = Filtered().Select(i => new
+        {
+            Kode = i.ItemCode,
+            Nama = i.ItemName,
+            Kategori = i.Category?.Name,
+            HargaPokok = i.CostPrice,
+            HargaJual = i.SellingPrice,
+            Stok = i.StockQuantity,
+            StokMinimum = i.MinimumStock,
+            Nilai = i.StockQuantity * i.CostPrice
+        }).ToList();
+
+        var bytes = ExportService.ExportToExcel(data, "Stok");
+        await JS.InvokeVoidAsync("downloadFileFromBytes", $"laporan-stok-{DateTime.Today:yyyy-MM-dd}.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", Convert.ToBase64String(bytes));
+    }
+}

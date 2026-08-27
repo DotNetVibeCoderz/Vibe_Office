@@ -1,0 +1,345 @@
+@page "/tax/withholding"
+@rendermode @(RenderMode.InteractiveServer)
+@attribute [Authorize(Roles = "Admin,Akuntan")]
+@inject AppDbContext DbContext
+@inject SettingsService Settings
+@inject EfakturExportService Efaktur
+@inject IJSRuntime JS
+
+<PageTitle>Bukti Potong PPh — CUAN</PageTitle>
+
+<PageHead Section="Pajak" Title="Bukti Potong PPh"
+          Subtitle="@($"Masa {TaxPeriodSummary.MonthName(month)} {year} · {slips.Count} bukti potong")">
+    <Actions>
+        <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="Export">
+            <Icon Name="download" Size="14" /> Rekap CSV
+        </button>
+        <button class="cu-btn cu-btn-primary cu-btn-sm" @onclick="() => OpenForm(null)">
+            <Icon Name="plus" Size="14" /> Bukti potong baru
+        </button>
+    </Actions>
+</PageHead>
+
+@if (message is not null)
+{
+    <div class="cu-alert @messageClass">@message</div>
+}
+
+<div class="cu-filterbar">
+    <select class="cu-select" style="width:150px;" value="@month" @onchange="OnMonthChanged">
+        @for (var m = 1; m <= 12; m++)
+        {
+            var value = m;
+            <option value="@value">@TaxPeriodSummary.MonthName(value)</option>
+        }
+    </select>
+    <select class="cu-select" style="width:110px;" value="@year" @onchange="OnYearChanged">
+        @foreach (var y in years)
+        {
+            <option value="@y">@y</option>
+        }
+    </select>
+    <select class="cu-select" style="width:160px;" @bind="typeFilter">
+        <option value="">Semua jenis</option>
+        <option value="PPh21">PPh Pasal 21</option>
+        <option value="PPh23">PPh Pasal 23</option>
+        <option value="PPh4-2">PPh Pasal 4(2)</option>
+        <option value="PPh22">PPh Pasal 22</option>
+    </select>
+    <div class="cu-search">
+        <span class="cu-search-icon"><Icon Name="search" Size="15" /></span>
+        <input class="cu-form-input" placeholder="Cari nomor atau nama pihak…" @bind="search" @bind:event="oninput" />
+    </div>
+</div>
+
+<div class="cu-grid cu-grid-4 cu-mb-3">
+    @foreach (var type in new[] { "PPh21", "PPh23", "PPh4-2", "PPh22" })
+    {
+        <div class="cu-card cu-stat" style="margin-bottom:0;">
+            <div class="cu-stat-label">@Label(type)</div>
+            <div class="cu-stat-value">@Settings.Money(slips.Where(s => s.TaxType == type).Sum(s => s.TaxAmount))</div>
+            <div class="cu-stat-foot">@slips.Count(s => s.TaxType == type) bukti potong</div>
+        </div>
+    }
+</div>
+
+<div class="cu-card cu-card-flush" style="margin-bottom:0;">
+    <div class="cu-card-header">
+        <span class="cu-card-title">Daftar bukti potong</span>
+        <span class="cu-text-muted">Batas setor tanggal 10 bulan berikutnya</span>
+    </div>
+
+    @if (!Filtered().Any())
+    {
+        <EmptyState Title="Belum ada bukti potong di masa ini"
+                    Message="Catat setiap pemotongan PPh atas jasa, sewa, atau gaji supaya rekapnya siap saat menyusun SPT.">
+            <Action>
+                <button class="cu-btn cu-btn-primary cu-btn-sm" @onclick="() => OpenForm(null)">
+                    <Icon Name="plus" Size="14" /> Bukti potong baru
+                </button>
+            </Action>
+        </EmptyState>
+    }
+    else
+    {
+        <div class="cu-table-wrap">
+            <table class="cu-table">
+                <thead>
+                    <tr>
+                        <th>Nomor</th><th>Jenis</th><th>Tanggal</th><th>Pihak</th><th>NPWP</th>
+                        <th class="cu-text-right">DPP</th><th class="cu-text-right">Tarif</th>
+                        <th class="cu-text-right">PPh</th><th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var slip in Filtered())
+                    {
+                        <tr>
+                            <td class="cu-mono">@slip.SlipNumber</td>
+                            <td><span class="cu-badge cu-badge-info">@Label(slip.TaxType)</span></td>
+                            <td class="cu-mono">@Settings.FormatDate(slip.SlipDate)</td>
+                            <td>@slip.PartyName</td>
+                            <td class="cu-mono cu-text-faint">@(string.IsNullOrWhiteSpace(slip.PartyNpwp) ? "—" : slip.PartyNpwp)</td>
+                            <td class="cu-text-right">@Settings.Number(slip.Dpp)</td>
+                            <td class="cu-text-right cu-text-faint">@slip.Rate.ToString("0.##")%</td>
+                            <td class="cu-text-right cu-col-credit">@Settings.Number(slip.TaxAmount)</td>
+                            <td class="cu-text-right">
+                                <div class="cu-row-actions">
+                                    <button class="cu-btn cu-btn-outline cu-btn-icon" title="Ubah" @onclick="() => OpenForm(slip)">
+                                        <Icon Name="edit" Size="13" />
+                                    </button>
+                                    <button class="cu-btn cu-btn-danger cu-btn-icon" title="Hapus" @onclick="() => Delete(slip)">
+                                        <Icon Name="trash" Size="13" />
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                    <tr class="cu-total-row">
+                        <td colspan="5">Total masa @TaxPeriodSummary.MonthName(month) @year</td>
+                        <td class="cu-text-right">@Settings.Number(Filtered().Sum(s => s.Dpp))</td>
+                        <td></td>
+                        <td class="cu-text-right">@Settings.Number(Filtered().Sum(s => s.TaxAmount))</td>
+                        <td></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@if (showForm)
+{
+    <div class="cu-modal-overlay" @onclick="() => showForm = false">
+        <div class="cu-modal" @onclick:stopPropagation="true">
+            <div class="cu-modal-head">
+                <div>
+                    <span class="cu-eyebrow">Pajak</span>
+                    <h3>@(editing.Id == 0 ? "Bukti potong baru" : $"Ubah {editing.SlipNumber}")</h3>
+                </div>
+                <button class="cu-icon-btn" @onclick="() => showForm = false" aria-label="Tutup">
+                    <Icon Name="close" Size="17" />
+                </button>
+            </div>
+
+            <div class="cu-grid cu-grid-2">
+                <div class="cu-form-group">
+                    <label class="cu-form-label">Nomor bukti potong</label>
+                    <input class="cu-form-input cu-mono" @bind="editing.SlipNumber" />
+                </div>
+                <div class="cu-form-group">
+                    <label class="cu-form-label">Jenis pajak</label>
+                    <select class="cu-select" value="@editing.TaxType" @onchange="OnTypeChanged">
+                        <option value="PPh21">PPh Pasal 21 — gaji</option>
+                        <option value="PPh23">PPh Pasal 23 — jasa</option>
+                        <option value="PPh4-2">PPh Pasal 4(2) — final</option>
+                        <option value="PPh22">PPh Pasal 22</option>
+                    </select>
+                </div>
+                <div class="cu-form-group">
+                    <label class="cu-form-label">Tanggal</label>
+                    <input type="date" class="cu-form-input" @bind="editing.SlipDate" />
+                </div>
+                <div class="cu-form-group">
+                    <label class="cu-form-label">Nama pihak yang dipotong</label>
+                    <input class="cu-form-input" @bind="editing.PartyName" />
+                </div>
+                <div class="cu-form-group">
+                    <label class="cu-form-label">NPWP pihak</label>
+                    <input class="cu-form-input cu-mono" @bind="editing.PartyNpwp" placeholder="00.000.000.0-000.000" />
+                </div>
+                <div class="cu-form-group">
+                    <label class="cu-form-label">Keterangan</label>
+                    <input class="cu-form-input" @bind="editing.Description" />
+                </div>
+                <div class="cu-form-group">
+                    <label class="cu-form-label">DPP</label>
+                    <input type="number" class="cu-form-input cu-num" @bind="editing.Dpp" @bind:event="oninput" />
+                </div>
+                <div class="cu-form-group">
+                    <label class="cu-form-label">Tarif (%)</label>
+                    <input type="number" step="any" class="cu-form-input cu-num" @bind="editing.Rate" @bind:event="oninput" />
+                </div>
+            </div>
+
+            @* PPh dihitung dari DPP dan tarif, jadi tidak ada peluang salah ketik. *@
+            <div class="cu-balance is-balanced">
+                <div class="cu-balance-side">
+                    <span class="cu-stat-label">DPP</span>
+                    <span class="cu-balance-fig">@Settings.Number(editing.Dpp)</span>
+                </div>
+                <div class="cu-balance-side">
+                    <span class="cu-stat-label">Tarif</span>
+                    <span class="cu-balance-fig">@editing.Rate.ToString("0.##")%</span>
+                </div>
+                <div class="cu-balance-side">
+                    <span class="cu-stat-label">PPh dipotong</span>
+                    <span class="cu-balance-fig cu-text-credit">@Settings.Money(ComputedTax)</span>
+                </div>
+            </div>
+
+            <div class="cu-modal-foot">
+                <button class="cu-btn cu-btn-outline" @onclick="() => showForm = false">Batal</button>
+                <button class="cu-btn cu-btn-primary" @onclick="Save">
+                    <Icon Name="save" Size="14" /> Simpan
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private int month = DateTime.Today.Month;
+    private int year = DateTime.Today.Year;
+    private int[] years = Array.Empty<int>();
+
+    private List<WithholdingTax> slips = new();
+    private WithholdingTax editing = new();
+    private bool showForm;
+
+    private string search = "";
+    private string typeFilter = "";
+    private string? message;
+    private string messageClass = "cu-alert-success";
+
+    private decimal ComputedTax => Math.Round(editing.Dpp * editing.Rate / 100m, 0);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Settings.EnsureLoadedAsync();
+        var current = DateTime.Today.Year;
+        years = Enumerable.Range(current - 3, 5).ToArray();
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync() => slips = await DbContext.WithholdingTaxes
+        .Where(w => w.TaxPeriodMonth == month && w.TaxPeriodYear == year)
+        .OrderByDescending(w => w.SlipDate)
+        .ToListAsync();
+
+    private IEnumerable<WithholdingTax> Filtered() => slips
+        .Where(s => string.IsNullOrEmpty(typeFilter) || s.TaxType == typeFilter)
+        .Where(s => string.IsNullOrWhiteSpace(search)
+                    || s.SlipNumber.Contains(search, StringComparison.OrdinalIgnoreCase)
+                    || s.PartyName.Contains(search, StringComparison.OrdinalIgnoreCase));
+
+    private async Task OnMonthChanged(ChangeEventArgs e)
+    {
+        month = int.Parse(e.Value?.ToString() ?? "1");
+        await LoadAsync();
+    }
+
+    private async Task OnYearChanged(ChangeEventArgs e)
+    {
+        year = int.Parse(e.Value?.ToString() ?? DateTime.Today.Year.ToString());
+        await LoadAsync();
+    }
+
+    private void OnTypeChanged(ChangeEventArgs e)
+    {
+        editing.TaxType = e.Value?.ToString() ?? "PPh23";
+        // Tarif bawaan diambil dari Pengaturan → Pajak.
+        editing.Rate = editing.TaxType switch
+        {
+            "PPh21" => Settings.GetDecimal(SettingsCatalog.Pph21Rate, 5),
+            "PPh23" => Settings.GetDecimal(SettingsCatalog.Pph23Rate, 2),
+            "PPh4-2" => Settings.GetDecimal(SettingsCatalog.Pph42Rate, 10),
+            _ => editing.Rate
+        };
+    }
+
+    private void OpenForm(WithholdingTax? slip)
+    {
+        if (slip is null)
+        {
+            var seq = slips.Count + 1;
+            editing = new WithholdingTax
+            {
+                SlipNumber = $"BP23-{year}{month:00}-{seq:0000}",
+                TaxType = "PPh23",
+                Rate = Settings.GetDecimal(SettingsCatalog.Pph23Rate, 2),
+                SlipDate = DateTime.Today,
+                TaxPeriodMonth = month,
+                TaxPeriodYear = year,
+                IsWithholder = true
+            };
+        }
+        else
+        {
+            editing = slip;
+        }
+        showForm = true;
+    }
+
+    private async Task Save()
+    {
+        if (string.IsNullOrWhiteSpace(editing.PartyName))
+        {
+            Say("Nama pihak yang dipotong belum diisi.", false);
+            return;
+        }
+
+        editing.TaxAmount = ComputedTax;
+        editing.TaxPeriodMonth = editing.SlipDate.Month;
+        editing.TaxPeriodYear = editing.SlipDate.Year;
+
+        if (editing.Id == 0) DbContext.WithholdingTaxes.Add(editing);
+        await DbContext.SaveChangesAsync();
+
+        showForm = false;
+        Say($"Bukti potong {editing.SlipNumber} tersimpan.", true);
+        await LoadAsync();
+    }
+
+    private async Task Delete(WithholdingTax slip)
+    {
+        if (!await JS.InvokeAsync<bool>("cuanConfirm", $"Hapus bukti potong {slip.SlipNumber}?")) return;
+        DbContext.WithholdingTaxes.Remove(slip);
+        await DbContext.SaveChangesAsync();
+        Say($"Bukti potong {slip.SlipNumber} dihapus.", true);
+        await LoadAsync();
+    }
+
+    private async Task Export()
+    {
+        var bytes = await Efaktur.ExportWithholdingCsvAsync(month, year);
+        await JS.InvokeVoidAsync("downloadFileFromBytes",
+            $"bukti-potong-{year}-{month:00}.csv", "text/csv", Convert.ToBase64String(bytes));
+        Say("Rekap bukti potong diunduh.", true);
+    }
+
+    private void Say(string text, bool ok)
+    {
+        message = text;
+        messageClass = ok ? "cu-alert-success" : "cu-alert-warning";
+    }
+
+    private static string Label(string type) => type switch
+    {
+        "PPh21" => "PPh 21",
+        "PPh23" => "PPh 23",
+        "PPh4-2" => "PPh 4(2)",
+        "PPh22" => "PPh 22",
+        _ => type
+    };
+}

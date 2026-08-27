@@ -5,7 +5,7 @@
 @inject IJSRuntime JS
 
 <PageTitle>Audit Trail - CUAN</PageTitle>
-<div class="cu-flex-between cu-mb-2"><div><h2 style="margin:0;">📋 Audit Trail</h2></div></div>
+<div class="cu-flex-between cu-mb-2"><div><h1 class="cu-page-title">Audit Trail</h1></div></div>
 
 <div class="cu-card cu-mb-2">
     <div class="cu-flex cu-gap-2" style="flex-wrap:wrap;">
@@ -37,9 +37,9 @@
 <div class="cu-card"><div class="cu-table-wrap"><table class="cu-table"><thead><tr><th>Waktu</th><th>User</th><th>Aksi</th><th>Entity</th><th>Deskripsi</th></tr></thead><tbody>@foreach (var a in auditLogs){<tr><td>@a.CreatedAt.ToString("dd/MM/yyyy HH:mm")</td><td>@a.UserName</td><td><span class="cu-badge cu-badge-info">@a.Action</span></td><td>@a.EntityName</td><td>@a.Description</td></tr>}</tbody></table></div></div>
 
 <div class="cu-flex cu-gap-1" style="justify-content:flex-end;">
-    <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="PrevPage" disabled="@(pageIndex==1)">◀ Prev</button>
+    <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="PrevPage" disabled="@(pageIndex==1)"><Icon Name="chevron-left" Size="13" /> Sebelumnya</button>
     <span class="cu-text-muted">Page @pageIndex / @totalPages</span>
-    <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="NextPage" disabled="@(pageIndex==totalPages)">Next ▶</button>
+    <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="NextPage" disabled="@(pageIndex==totalPages)">Berikutnya <Icon Name="chevron-right" Size="13" /></button>
 </div>
 
 @code {

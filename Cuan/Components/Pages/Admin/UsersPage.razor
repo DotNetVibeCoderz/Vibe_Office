@@ -9,19 +9,19 @@
 
 <PageTitle>User & Role - CUAN</PageTitle>
 <div class="cu-flex-between cu-mb-2">
-    <div><h2 style="margin:0;">👤 Manajemen User & Role</h2></div>
+    <div><h1 class="cu-page-title">Manajemen User & Role</h1></div>
     <div class="cu-flex cu-gap-1">
-        <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportExcel">📥 Excel</button>
-        <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportCsv">📄 CSV</button>
-        <button class="cu-btn cu-btn-primary cu-btn-sm" @onclick="() => ShowModal(null)">+ User Baru</button>
+        <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportExcel"><Icon Name="download" Size="14" /> Excel</button>
+        <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportCsv"><Icon Name="download" Size="14" /> CSV</button>
+        <button class="cu-btn cu-btn-primary cu-btn-sm" @onclick="() => ShowModal(null)"><Icon Name="plus" Size="14" /> User Baru</button>
     </div>
 </div>
 
 <div class="cu-card cu-mb-2">
-    <input class="cu-form-input" @bind="searchTerm" @bind:event="oninput" placeholder="🔍 Cari email, nama, role..." />
+    <input class="cu-form-input" @bind="searchTerm" @bind:event="oninput" placeholder="Cari email, nama, role..." />
 </div>
 
-<div class="cu-card"><table class="cu-table"><thead><tr><th>Email</th><th>Nama</th><th>Role</th><th>Status</th><th>Last Login</th><th></th></tr></thead><tbody>@foreach (var user in filteredUsers){<tr><td>@user.Email</td><td>@user.FullName</td><td>@string.Join(", ", userRoles.GetValueOrDefault(user.Id, new List<string>()))</td><td><span class="cu-badge @(user.IsActive ? "cu-badge-success" : "cu-badge-danger")">@(user.IsActive ? "Active" : "Inactive")</span></td><td>@(user.LastLoginAt?.ToString("dd/MM/yyyy HH:mm") ?? "-")</td><td><button class="cu-btn cu-btn-sm cu-btn-outline" @onclick="() => ShowModal(user)">✏️</button><button class="cu-btn cu-btn-sm cu-btn-danger" @onclick="() => DeleteUser(user)">🗑️</button></td></tr>}</tbody></table></div>
+<div class="cu-card cu-card-flush"><div class="cu-table-wrap"><table class="cu-table"><thead><tr><th>Email</th><th>Nama</th><th>Role</th><th>Status</th><th>Last Login</th><th></th></tr></thead><tbody>@foreach (var user in filteredUsers){<tr><td>@user.Email</td><td>@user.FullName</td><td>@string.Join(", ", userRoles.GetValueOrDefault(user.Id, new List<string>()))</td><td><span class="cu-badge @(user.IsActive ? "cu-badge-success" : "cu-badge-danger")">@(user.IsActive ? "Active" : "Inactive")</span></td><td>@(user.LastLoginAt?.ToString("dd/MM/yyyy HH:mm") ?? "-")</td><td><button class="cu-btn cu-btn-sm cu-btn-outline" @onclick="() => ShowModal(user)"><Icon Name="edit" Size="13" /></button><button class="cu-btn cu-btn-sm cu-btn-danger" @onclick="() => DeleteUser(user)"><Icon Name="trash" Size="13" /></button></td></tr>}</tbody></table></div></div>
 
 @if(showModal)
 {
@@ -54,7 +54,7 @@
         }
         <div class="cu-flex cu-gap-1" style="justify-content:flex-end;">
             <button class="cu-btn cu-btn-outline" @onclick="HideModal">Batal</button>
-            <button class="cu-btn cu-btn-primary" @onclick="SaveUser">💾 Simpan</button>
+            <button class="cu-btn cu-btn-primary" @onclick="SaveUser"><Icon Name="save" Size="14" /> Simpan</button>
         </div>
     </div></div>
 }
@@ -232,5 +232,5 @@
     }
 
     private async Task<bool> ConfirmAsync(string message) =>
-        await JS.InvokeAsync<bool>("confirm", message);
+        await JS.InvokeAsync<bool>("cuanConfirm", message);
 }

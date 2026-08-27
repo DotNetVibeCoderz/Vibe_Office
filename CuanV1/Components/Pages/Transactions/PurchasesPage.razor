@@ -1,0 +1,170 @@
+@page "/transactions/purchases"
+@rendermode @(RenderMode.InteractiveServer)
+@attribute [Authorize(Roles = "Admin,Akuntan,Purchasing")]
+@inject AppDbContext DbContext
+@inject NotificationService Notif
+@inject IJSRuntime JS
+
+<PageTitle>Pembelian - CUAN</PageTitle>
+<div class="cu-flex-between cu-mb-2"><div><h2 style="margin:0;">📥 Pembelian</h2></div><div class="cu-flex cu-gap-1"><button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportExcel">📥 Excel</button><button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportCsv">📄 CSV</button><button class="cu-btn cu-btn-primary cu-btn-sm" @onclick="CreateNew">+ Pembelian Baru</button></div></div>
+
+<div class="cu-card cu-mb-2">
+    <input class="cu-form-input" @bind="searchTerm" @bind:event="oninput" placeholder="🔍 Cari no, supplier..." />
+</div>
+
+<div class="cu-card"><table class="cu-table"><thead><tr><th>No</th><th>Tgl</th><th>Supplier</th><th>Jatuh Tempo</th><th class="cu-text-right">Total</th><th>Status</th><th></th></tr></thead>
+<tbody>@foreach(var p in filteredInvoices){<tr><td style="font-family:monospace;">@p.InvoiceNumber</td><td>@p.InvoiceDate.ToString("dd/MM/yy")</td><td>@p.Supplier?.Name</td><td>@p.DueDate.ToString("dd/MM/yy")</td><td class="cu-text-right">@p.GrandTotal.ToString("N0")</td><td>@p.Status</td><td><button class="cu-btn cu-btn-sm cu-btn-outline" @onclick="() => EditInvoice(p)">✏️</button><button class="cu-btn cu-btn-sm cu-btn-danger" @onclick="() => DeleteInvoice(p)">🗑️</button></td></tr>}</tbody></table></div>
+
+@if(showCreate){<div class="cu-modal-overlay" @onclick="()=>showCreate=false"><div class="cu-modal" style="min-width:650px;" @onclick:stopPropagation="true">
+<h3 style="margin-top:0;">@(isEditing?"Edit Pembelian":"Pembelian Baru")</h3>
+<div class="cu-grid cu-grid-2"><div class="cu-form-group"><label class="cu-form-label">Supplier</label><select class="cu-select" @bind="newInvoice.SupplierId">@foreach(var s in suppliers){<option value="@s.Id">@s.Name</option>}</select></div><div class="cu-form-group"><label class="cu-form-label">Tanggal</label><InputDate @bind-Value="newInvoice.InvoiceDate" class="cu-form-input"/></div></div>
+<div class="cu-grid cu-grid-2"><div class="cu-form-group"><label class="cu-form-label">Jatuh Tempo</label><InputDate @bind-Value="newInvoice.DueDate" class="cu-form-input"/></div><div class="cu-form-group"><label class="cu-form-label">Gudang</label><select class="cu-select" @bind="newInvoice.WarehouseId">@foreach(var w in warehouses){<option value="@w.Id">@w.Name</option>}</select></div></div>
+<table class="cu-table" style="margin-bottom:1rem;"><thead><tr><th>Item</th><th class="cu-text-right">Qty</th><th class="cu-text-right">Harga</th><th class="cu-text-right">Total</th><th></th></tr></thead>
+<tbody>@for(int i=0;i<newLines.Count;i++){var line=newLines[i];var idx=i;<tr><td style="min-width:150px;"><select class="cu-select" @bind="line.ItemId" style="font-size:0.75rem;">@foreach(var it in items){<option value="@it.Id">@it.ItemName (@it.CostPrice.ToString("N0"))</option>}</select></td><td style="width:80px;"><InputNumber @bind-Value="line.Quantity" class="cu-form-input" style="font-size:0.75rem;"/></td><td style="width:120px;"><InputNumber @bind-Value="line.UnitPrice" class="cu-form-input" style="font-size:0.75rem;"/></td><td class="cu-text-right" style="font-weight:600;">@((line.Quantity*line.UnitPrice).ToString("N0"))</td><td><button class="cu-btn cu-btn-sm cu-btn-danger" @onclick="()=>RemoveLine(idx)">✕</button></td></tr>}</tbody></table>
+<button class="cu-btn cu-btn-sm cu-btn-outline" @onclick="AddLine">+ Barang</button>
+<div class="cu-text-muted" style="margin-top:0.5rem;">Grand Total: <strong>@total.ToString("N0")</strong></div>
+<div class="cu-flex cu-gap-1" style="justify-content:flex-end;margin-top:1rem;"><button class="cu-btn cu-btn-outline" @onclick="()=>showCreate=false">Batal</button><button class="cu-btn cu-btn-primary" @onclick="SaveInvoice">💾 Simpan</button></div></div></div>}
+
+@code {
+    private List<PurchaseInvoice> invoices=new();private List<Supplier> suppliers=new();private List<Item> items=new();private List<Warehouse> warehouses=new();
+    private bool showCreate;private bool isEditing;private PurchaseInvoice newInvoice=new(){InvoiceDate=DateTime.Today,DueDate=DateTime.Today.AddDays(30)};
+    private List<LineInv> newLines=new(){new LineInv{ItemId=1,Quantity=1,UnitPrice=0}};
+    private string searchTerm="";
+    private decimal total=>newLines.Sum(l=>l.Quantity*l.UnitPrice);
+    public class LineInv{public int ItemId;public decimal Quantity=1;public decimal UnitPrice;}
+
+    private IEnumerable<PurchaseInvoice> filteredInvoices => invoices
+        .Where(p => string.IsNullOrEmpty(searchTerm)
+            || p.InvoiceNumber.Contains(searchTerm, StringComparison.OrdinalIgnoreCase)
+            || (p.Supplier?.Name ?? "").Contains(searchTerm, StringComparison.OrdinalIgnoreCase))
+        .OrderByDescending(p => p.InvoiceDate);
+
+    protected override async Task OnInitializedAsync(){await LoadData();}
+
+    private async Task LoadData()
+    {
+        invoices=await DbContext.PurchaseInvoices.Include(p=>p.Supplier).Include(p=>p.Details).OrderByDescending(p=>p.InvoiceDate).Take(200).ToListAsync();
+        suppliers=await DbContext.Suppliers.Where(s=>s.IsActive).ToListAsync();
+        items=await DbContext.Items.Where(i=>i.IsActive).ToListAsync();
+        warehouses=await DbContext.Warehouses.ToListAsync();
+    }
+
+    private void CreateNew(){newInvoice=new PurchaseInvoice{InvoiceDate=DateTime.Today,DueDate=DateTime.Today.AddDays(30)};newLines=new List<LineInv>{new LineInv{ItemId=items.FirstOrDefault()?.Id??1,Quantity=1,UnitPrice=items.FirstOrDefault()?.CostPrice??0}};showCreate=true;isEditing=false;}
+
+    private void EditInvoice(PurchaseInvoice inv)
+    {
+        newInvoice = new PurchaseInvoice
+        {
+            Id = inv.Id,
+            InvoiceNumber = inv.InvoiceNumber,
+            InvoiceDate = inv.InvoiceDate,
+            DueDate = inv.DueDate,
+            SupplierId = inv.SupplierId,
+            WarehouseId = inv.WarehouseId,
+            Description = inv.Description,
+            Status = inv.Status
+        };
+
+        newLines = inv.Details.Select(d => new LineInv
+        {
+            ItemId = d.ItemId,
+            Quantity = d.Quantity,
+            UnitPrice = d.UnitPrice
+        }).ToList();
+
+        if (newLines.Count == 0) newLines.Add(new LineInv{ItemId=items.FirstOrDefault()?.Id??1,Quantity=1,UnitPrice=items.FirstOrDefault()?.CostPrice??0});
+        showCreate = true;
+        isEditing = true;
+    }
+
+    private void AddLine(){newLines.Add(new LineInv{ItemId=items.FirstOrDefault()?.Id??1,Quantity=1,UnitPrice=0});}
+    private void RemoveLine(int i){if(newLines.Count>1)newLines.RemoveAt(i);}
+
+    private async Task SaveInvoice(){
+        if (!isEditing)
+        {
+            newInvoice.CreatedAt=DateTime.UtcNow;var count=await DbContext.PurchaseInvoices.CountAsync();newInvoice.InvoiceNumber=$"PO-{DateTime.UtcNow.Year}-{count+1:D4}";
+            newInvoice.SubTotal=total;newInvoice.GrandTotal=total;
+            newInvoice.Details=newLines.Where(l=>l.Quantity>0).Select(l=>new PurchaseInvoiceDetail{ItemId=l.ItemId,Quantity=l.Quantity,UnitPrice=l.UnitPrice,LineTotal=l.Quantity*l.UnitPrice}).ToList();
+            DbContext.PurchaseInvoices.Add(newInvoice);
+            var sup=await DbContext.Suppliers.FindAsync(newInvoice.SupplierId);if(sup!=null)sup.Balance+=newInvoice.GrandTotal;
+        }
+        else
+        {
+            var existing = await DbContext.PurchaseInvoices.Include(p=>p.Details).FirstOrDefaultAsync(p=>p.Id==newInvoice.Id);
+            if (existing != null)
+            {
+                var supOld = await DbContext.Suppliers.FindAsync(existing.SupplierId);
+                if (supOld != null) supOld.Balance -= existing.GrandTotal;
+
+                existing.SupplierId = newInvoice.SupplierId;
+                existing.InvoiceDate = newInvoice.InvoiceDate;
+                existing.DueDate = newInvoice.DueDate;
+                existing.WarehouseId = newInvoice.WarehouseId;
+                existing.SubTotal = total;
+                existing.GrandTotal = total;
+
+                DbContext.PurchaseInvoiceDetails.RemoveRange(existing.Details);
+                existing.Details = newLines.Where(l=>l.Quantity>0).Select(l=>new PurchaseInvoiceDetail{ItemId=l.ItemId,Quantity=l.Quantity,UnitPrice=l.UnitPrice,LineTotal=l.Quantity*l.UnitPrice}).ToList();
+
+                var supNew = await DbContext.Suppliers.FindAsync(existing.SupplierId);
+                if (supNew != null) supNew.Balance += existing.GrandTotal;
+            }
+        }
+
+        await DbContext.SaveChangesAsync();
+        await Notif.NotifyAsync("📥 Pembelian",$"PO #{newInvoice.InvoiceNumber} — Rp {total:N0}","Info");
+        showCreate=false;isEditing=false;await LoadData();
+    }
+
+    private async Task DeleteInvoice(PurchaseInvoice inv)
+    {
+        if (!await ConfirmAsync($"Hapus pembelian {inv.InvoiceNumber}?") ) return;
+        var sup = await DbContext.Suppliers.FindAsync(inv.SupplierId);
+        if (sup != null) sup.Balance -= inv.GrandTotal;
+        DbContext.PurchaseInvoices.Remove(inv);
+        await DbContext.SaveChangesAsync();
+        await LoadData();
+    }
+
+    private async Task ExportCsv()
+    {
+        var data = filteredInvoices.Select(p => new
+        {
+            p.InvoiceNumber,
+            p.InvoiceDate,
+            Supplier = p.Supplier?.Name,
+            p.DueDate,
+            p.GrandTotal,
+            p.Status
+        });
+
+        var bytes = ExportService.ExportToCsv(data);
+        await DownloadAsync(bytes, "purchases.csv", "text/csv");
+    }
+
+    private async Task ExportExcel()
+    {
+        var data = filteredInvoices.Select(p => new
+        {
+            p.InvoiceNumber,
+            p.InvoiceDate,
+            Supplier = p.Supplier?.Name,
+            p.DueDate,
+            p.GrandTotal,
+            p.Status
+        });
+
+        var bytes = ExportService.ExportToExcel(data, "Purchases");
+        await DownloadAsync(bytes, "purchases.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    }
+
+    private async Task DownloadAsync(byte[] data, string fileName, string contentType)
+    {
+        var base64 = Convert.ToBase64String(data);
+        await JS.InvokeVoidAsync("downloadFileFromBytes", fileName, contentType, base64);
+    }
+
+    private async Task<bool> ConfirmAsync(string message) =>
+        await JS.InvokeAsync<bool>("confirm", message);
+}

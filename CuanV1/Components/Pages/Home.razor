@@ -1,0 +1,81 @@
+@page "/"
+@rendermode @(RenderMode.InteractiveServer)
+@attribute [Authorize]
+@inject AppDbContext DbContext
+
+<PageTitle>Dashboard - CUAN Accounting</PageTitle>
+
+<div class="cu-mb-3">
+    <h2 style="margin:0; font-size:1.5rem;">👋 Selamat Datang di CUAN</h2>
+    <p class="cu-text-muted">Sistem Akuntansi - PT. CUAN MAKMUR SENTOSA</p>
+</div>
+
+<div class="cu-grid cu-grid-4 cu-mb-3">
+    <div class="cu-card">
+        <div class="cu-text-muted">TOTAL PENDAPATAN</div>
+        <div style="font-size:1.5rem; font-weight:700; color:#059669;">@FormatCurrency(totalRevenue)</div>
+    </div>
+    <div class="cu-card">
+        <div class="cu-text-muted">TOTAL BIAYA</div>
+        <div style="font-size:1.5rem; font-weight:700; color:#dc2626;">@FormatCurrency(totalExpense)</div>
+    </div>
+    <div class="cu-card">
+        <div class="cu-text-muted">LABA BERSIH</div>
+        <div style="font-size:1.5rem; font-weight:700; color:var(--cu-primary);">@FormatCurrency(netProfit)</div>
+    </div>
+    <div class="cu-card">
+        <div class="cu-text-muted">PIUTANG</div>
+        <div style="font-size:1.5rem; font-weight:700; color:#f59e0b;">@FormatCurrency(totalReceivable)</div>
+    </div>
+</div>
+
+<div class="cu-grid cu-grid-2">
+    <div class="cu-card">
+        <div class="cu-card-header"><span class="cu-card-title">🕐 Transaksi Terakhir</span><a href="/transactions/journal" class="cu-btn cu-btn-sm cu-btn-outline">Lihat Semua</a></div>
+        <table class="cu-table">
+            <thead><tr><th>No</th><th>Tanggal</th><th>Deskripsi</th><th>Jumlah</th><th>Status</th></tr></thead>
+            <tbody>
+                @foreach (var j in recentJournals){
+                <tr><td>@j.JournalNumber</td><td>@j.TransactionDate.ToString("dd/MM/yyyy")</td><td>@j.Description</td><td class="cu-text-right">@FormatCurrency(j.Details.Sum(d=>d.Debit))</td><td><span class="cu-badge @(j.IsPosted?"cu-badge-success":"cu-badge-warning")">@(j.IsPosted?"Posted":"Draft")</span></td></tr>
+                }
+            </tbody>
+        </table>
+    </div>
+    <div class="cu-card">
+        <div class="cu-card-header"><span class="cu-card-title">⚡ Quick Actions</span></div>
+        <div class="cu-grid cu-grid-2" style="margin-top:1rem;">
+            <a href="/transactions/sales" class="cu-btn cu-btn-primary" style="width:100%;">🛒 Penjualan Baru</a>
+            <a href="/transactions/purchases" class="cu-btn cu-btn-outline" style="width:100%;">📥 Pembelian Baru</a>
+            <a href="/transactions/cash" class="cu-btn cu-btn-outline" style="width:100%;">💵 Kas Masuk</a>
+            <a href="/transactions/journal" class="cu-btn cu-btn-outline" style="width:100%;">📝 Jurnal Baru</a>
+        </div>
+        <hr style="margin:1.5rem 0; border-color:var(--cu-border);" />
+        <div class="cu-card-header"><span class="cu-card-title">📦 Info Stok Rendah</span></div>
+        <table class="cu-table">
+            <thead><tr><th>Barang</th><th>Stok</th><th>Status</th></tr></thead>
+            <tbody>
+                @foreach (var item in lowStockItems){
+                <tr><td>@item.ItemName</td><td>@item.StockQuantity</td><td><span class="cu-badge @(item.StockQuantity<=item.MinimumStock?"cu-badge-danger":"cu-badge-warning")">@(item.StockQuantity<=item.MinimumStock?"⚠️ Low":"OK")</span></td></tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@code {
+    private decimal totalRevenue, totalExpense, netProfit, totalReceivable;
+    private List<JournalEntry> recentJournals = new();
+    private List<Item> lowStockItems = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        recentJournals = await DbContext.JournalEntries.Include(j=>j.Details).OrderByDescending(j=>j.TransactionDate).Take(5).ToListAsync();
+        lowStockItems = await DbContext.Items.Where(i=>i.StockQuantity<=i.MaximumStock*0.3m).OrderBy(i=>i.StockQuantity).Take(5).ToListAsync();
+        totalRevenue = await DbContext.ChartOfAccounts.Where(c=>c.AccountType==4&&!c.IsHeader).SumAsync(c=>c.CurrentBalance);
+        totalExpense = await DbContext.ChartOfAccounts.Where(c=>c.AccountType==5&&!c.IsHeader).SumAsync(c=>c.CurrentBalance);
+        netProfit = totalRevenue - totalExpense;
+        totalReceivable = await DbContext.Customers.SumAsync(c=>c.Balance);
+    }
+
+    private string FormatCurrency(decimal amount) => amount.ToString("N0");
+}

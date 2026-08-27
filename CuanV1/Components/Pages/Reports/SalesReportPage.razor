@@ -1,0 +1,20 @@
+@page "/reports/sales"
+@rendermode @(RenderMode.InteractiveServer)
+@attribute [Authorize(Roles = "Admin,Akuntan,Sales")]
+@inject AppDbContext DbContext
+
+<PageTitle>Laporan Penjualan - CUAN</PageTitle>
+<div class="cu-flex-between cu-mb-2"><div><h2 style="margin:0;">📊 Laporan Penjualan</h2></div><button class="cu-btn cu-btn-outline cu-btn-sm">📥 Excel</button></div>
+
+<div class="cu-grid cu-grid-4 cu-mb-3">
+    <div class="cu-card"><div class="cu-text-muted">TOTAL INVOICE</div><div style="font-size:1.5rem;font-weight:700;">@totalInvoices</div></div>
+    <div class="cu-card"><div class="cu-text-muted">TOTAL PENJUALAN</div><div style="font-size:1.5rem;font-weight:700;color:#059669;">@totalSales.ToString("N0")</div></div>
+    <div class="cu-card"><div class="cu-text-muted">RATA-RATA / INVOICE</div><div style="font-size:1.5rem;font-weight:700;">@(totalInvoices>0?(totalSales/totalInvoices).ToString("N0"):"0")</div></div>
+    <div class="cu-card"><div class="cu-text-muted">PIUTANG OUTSTANDING</div><div style="font-size:1.5rem;font-weight:700;color:#f59e0b;">@outstanding.ToString("N0")</div></div>
+</div>
+
+<div class="cu-card"><h3>Top 5 Customer</h3><table class="cu-table"><thead><tr><th>Customer</th><th class="cu-text-right">Total Pembelian</th><th class="cu-text-right">Piutang</th></tr></thead><tbody>@foreach(var c in topCustomers){<tr><td>@c.Name</td><td class="cu-text-right">@c.Balance.ToString("N0")</td><td class="cu-text-right">@c.Balance.ToString("N0")</td></tr>}</tbody></table></div>
+
+<div class="cu-card cu-mb-0" style="margin-top:1rem;"><h3>Invoice Terakhir</h3><table class="cu-table"><thead><tr><th>No</th><th>Tgl</th><th>Customer</th><th class="cu-text-right">Total</th><th class="cu-text-right">Sisa</th><th>Status</th></tr></thead><tbody>@foreach(var s in recentInvoices){<tr><td style="font-family:monospace;">@s.InvoiceNumber</td><td>@s.InvoiceDate.ToString("dd/MM/yy")</td><td>@s.Customer?.Name</td><td class="cu-text-right">@s.GrandTotal.ToString("N0")</td><td class="cu-text-right">@s.RemainingAmount.ToString("N0")</td><td><span class="cu-badge @(s.Status==InvoiceStatus.Paid?"cu-badge-success":"cu-badge-warning")">@s.Status</span></td></tr>}</tbody></table></div>
+
+@code {private decimal totalSales;private int totalInvoices;private decimal outstanding;private List<Customer> topCustomers=new();private List<SalesInvoice> recentInvoices=new();protected override async Task OnInitializedAsync(){totalInvoices=await DbContext.SalesInvoices.CountAsync();totalSales=await DbContext.SalesInvoices.Where(s=>s.Status!=InvoiceStatus.Canceled).SumAsync(s=>s.GrandTotal);outstanding=await DbContext.SalesInvoices.Where(s=>s.Status!=InvoiceStatus.Paid&&s.Status!=InvoiceStatus.Canceled).SumAsync(s=>s.RemainingAmount);topCustomers=await DbContext.Customers.OrderByDescending(c=>c.Balance).Take(5).ToListAsync();recentInvoices=await DbContext.SalesInvoices.Include(s=>s.Customer).OrderByDescending(s=>s.InvoiceDate).Take(10).ToListAsync();}}

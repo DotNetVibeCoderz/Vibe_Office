@@ -1,0 +1,16 @@
+@page "/reports/profit-loss"
+@attribute [Authorize(Roles = "Admin,Akuntan")]
+@inject AppDbContext DbContext
+<PageTitle>Laba Rugi - CUAN</PageTitle>
+<div class="cu-flex-between cu-mb-2"><div><h2 style="margin:0;">📉 Laporan Laba Rugi</h2></div><div class="cu-flex cu-gap-1"><button class="cu-btn cu-btn-outline cu-btn-sm">📥 Excel</button><button class="cu-btn cu-btn-outline cu-btn-sm">🖨️ Print</button></div></div>
+<div class="cu-card"><h3 style="margin:0 0 1rem 0;">PT. CUAN MAKMUR SENTOSA</h3><p class="cu-text-muted">Laporan Laba Rugi - Tahun 2024</p>
+<table class="cu-table" style="max-width:600px;"><thead><tr><th>Keterangan</th><th class="cu-text-right">Jumlah (Rp)</th></tr></thead><tbody>
+<tr><td colspan="2"><strong>PENDAPATAN</strong></td></tr>
+@foreach (var r in revenueAccounts){<tr><td style="padding-left:20px;">@r.AccountName</td><td class="cu-text-right">@r.CurrentBalance.ToString("N0")</td></tr>}
+<tr style="font-weight:bold; border-top:2px solid var(--cu-border);"><td>Total Pendapatan</td><td class="cu-text-right">@totalRevenue.ToString("N0")</td></tr>
+<tr><td colspan="2" style="padding-top:10px;"><strong>BEBAN</strong></td></tr>
+@foreach (var e in expenseAccounts){<tr><td style="padding-left:20px;">@e.AccountName</td><td class="cu-text-right">@e.CurrentBalance.ToString("N0")</td></tr>}
+<tr style="font-weight:bold; border-top:2px solid var(--cu-border);"><td>Total Beban</td><td class="cu-text-right">@totalExpense.ToString("N0")</td></tr>
+<tr style="font-weight:bold; font-size:1.1rem; border-top:3px double var(--cu-border);"><td>LABA / (RUGI) BERSIH</td><td class="cu-text-right" style="color:@(netProfit >= 0 ? "#059669" : "#dc2626")">@netProfit.ToString("N0")</td></tr>
+</tbody></table></div>
+@code { private List<ChartOfAccount> revenueAccounts = new(); private List<ChartOfAccount> expenseAccounts = new(); private decimal totalRevenue; private decimal totalExpense; private decimal netProfit; protected override async Task OnInitializedAsync() { revenueAccounts = await DbContext.ChartOfAccounts.Where(c => c.AccountType == 4 && !c.IsHeader).ToListAsync(); expenseAccounts = await DbContext.ChartOfAccounts.Where(c => c.AccountType == 5 && !c.IsHeader).ToListAsync(); totalRevenue = revenueAccounts.Sum(c => c.CurrentBalance); totalExpense = expenseAccounts.Sum(c => c.CurrentBalance); netProfit = totalRevenue - totalExpense; } }

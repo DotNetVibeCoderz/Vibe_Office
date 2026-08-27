@@ -1,0 +1,8 @@
+@page "/admin/apikeys"
+@rendermode @(RenderMode.InteractiveServer)
+@attribute [Authorize(Roles = "Admin")]
+@inject AppDbContext DbContext
+<PageTitle>API Keys - CUAN</PageTitle>
+<div class="cu-flex-between cu-mb-2"><div><h2 style="margin:0;">🔑 API Keys</h2></div><button class="cu-btn cu-btn-primary cu-btn-sm" @onclick="GenerateKey">+ Generate Key</button></div>
+<div class="cu-card"><table class="cu-table"><thead><tr><th>Key Name</th><th>Key Value</th><th>Status</th><th>Expires</th></tr></thead><tbody>@foreach (var k in apiKeys){<tr><td>@k.KeyName</td><td style="font-family:monospace;">@k.KeyValue</td><td><span class="cu-badge @(k.IsActive ? "cu-badge-success" : "cu-badge-danger")">@(k.IsActive ? "Active" : "Inactive")</span></td><td>@(k.ExpiresAt?.ToString("dd/MM/yyyy") ?? "Never")</td></tr>}</tbody></table></div>
+@code { private List<ApiKey> apiKeys = new(); protected override async Task OnInitializedAsync() { apiKeys = await DbContext.ApiKeys.OrderByDescending(a => a.CreatedAt).ToListAsync(); } private async Task GenerateKey() { DbContext.ApiKeys.Add(new ApiKey { KeyName = $"API-Key-{DateTime.UtcNow:yyyyMMddHHmmss}", KeyValue = Guid.NewGuid().ToString("N"), IsActive = true, ExpiresAt = DateTime.UtcNow.AddYears(1) }); await DbContext.SaveChangesAsync(); await OnInitializedAsync(); } }

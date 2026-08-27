@@ -2,22 +2,23 @@
 @rendermode @(RenderMode.InteractiveServer)
 @attribute [Authorize(Roles = "Admin,Akuntan,Sales")]
 @inject AppDbContext DbContext
+@inject MasterImportPlans ImportPlans
 @inject IJSRuntime JS
 
 <PageTitle>Master Customer - CUAN</PageTitle>
 
 <div class="cu-flex-between cu-mb-2">
-    <div><h2 style="margin:0;">👥 Master Customer</h2><span class="cu-text-muted">@totalCustomers pelanggan terdaftar</span></div>
+    <div><h1 class="cu-page-title">Master Customer</h1><span class="cu-text-muted">@totalCustomers pelanggan terdaftar</span></div>
     <div class="cu-flex cu-gap-1">
-        <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportToExcel">📥 Excel</button>
-        <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportToCsv">📄 CSV</button>
-        <button class="cu-btn cu-btn-primary cu-btn-sm" @onclick="() => ShowModal(null)">+ Customer Baru</button>
+        <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportToExcel"><Icon Name="download" Size="14" /> Excel</button>
+        <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportToCsv"><Icon Name="download" Size="14" /> CSV</button>
+        <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="OpenImport"><Icon Name="upload" Size="14" /> Impor Excel</button><button class="cu-btn cu-btn-primary cu-btn-sm" @onclick="() => ShowModal(null)"><Icon Name="plus" Size="14" /> Customer Baru</button>
     </div>
 </div>
 
 <div class="cu-card cu-mb-2">
     <div class="cu-flex cu-gap-2">
-        <div style="flex:1;"><input class="cu-form-input" @bind="searchTerm" @bind:event="oninput" placeholder="🔍 Cari kode, nama, kota..." /></div>
+        <div style="flex:1;"><input class="cu-form-input" @bind="searchTerm" @bind:event="oninput" placeholder="Cari kode, nama, kota..." /></div>
     </div>
 </div>
 
@@ -32,10 +33,10 @@
                     <td>@c.Name</td><td>@c.City</td><td>@c.Phone</td>
                     <td style="font-size:0.75rem;">@c.TaxNumber</td>
                     <td class="cu-text-right" style="font-weight:600;">@FormatCurrency(c.Balance)</td>
-                    <td><span class="cu-badge @(c.IsActive ? "cu-badge-success" : "cu-badge-danger")">@(c.IsActive ? "Active" : "Inactive")</span></td>
+                    <td><span class="cu-badge @(c.IsActive ? "cu-badge-success" : "cu-badge-danger")">@(c.IsActive ? "Aktif" : "Nonaktif")</span></td>
                     <td>
-                        <button class="cu-btn cu-btn-sm cu-btn-outline" @onclick="() => ShowModal(c)">✏️</button>
-                        <button class="cu-btn cu-btn-sm cu-btn-danger" title="Hapus" @onclick="() => DeleteCustomer(c)">🗑️</button>
+                        <button class="cu-btn cu-btn-sm cu-btn-outline" @onclick="() => ShowModal(c)"><Icon Name="edit" Size="13" /></button>
+                        <button class="cu-btn cu-btn-sm cu-btn-danger" title="Hapus" @onclick="() => DeleteCustomer(c)"><Icon Name="trash" Size="13" /></button>
                     </td>
                 </tr>
             }
@@ -66,13 +67,31 @@
             <div class="cu-form-group"><label class="cu-form-label"><input type="checkbox" @bind="editingCustomer.IsActive" /> Aktif?</label></div>
             <div class="cu-flex cu-gap-1" style="justify-content:flex-end; margin-top:1rem;">
                 <button type="button" class="cu-btn cu-btn-outline" @onclick="HideModal">Batal</button>
-                <button type="submit" class="cu-btn cu-btn-primary">💾 Simpan</button>
+                <button type="submit" class="cu-btn cu-btn-primary"><Icon Name="save" Size="14" /> Simpan</button>
             </div>
         </EditForm>
     </div></div>
 }
 
+@if (importPlan is not null)
+{
+    <ImportDialog TEntity="Customer" Plan="importPlan"
+                  OnImported="OnImported" OnClose="() => importPlan = null" />
+}
+
 @code {
+    private ImportPlan<Customer>? importPlan;
+
+    // Rencana impor disusun saat dialog dibuka, karena sebagian kolom
+    // perlu mencocokkan teks dengan data acuan yang ada saat itu.
+    private async Task OpenImport() => importPlan = await ImportPlans.CustomersAsync();
+
+    private async Task OnImported()
+    {
+        await LoadData();
+        StateHasChanged();
+    }
+
     private List<Customer> allCustomers = new();
     private string searchTerm = "";
     private int totalCustomers;
@@ -146,5 +165,5 @@
     }
 
     private async Task<bool> ConfirmAsync(string message) =>
-        await JS.InvokeAsync<bool>("confirm", message);
+        await JS.InvokeAsync<bool>("cuanConfirm", message);
 }

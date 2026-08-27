@@ -2,22 +2,23 @@
 @rendermode @(RenderMode.InteractiveServer)
 @attribute [Authorize(Roles = "Admin,Akuntan")]
 @inject AppDbContext DbContext
+@inject MasterImportPlans ImportPlans
 @inject IJSRuntime JS
 
 <PageTitle>Gudang & Cabang - CUAN</PageTitle>
 
 <div class="cu-flex-between cu-mb-2">
-    <div><h2 style="margin:0;">🏗️ Gudang & Cabang</h2><span class="cu-text-muted">@totalWarehouses lokasi terdaftar</span></div>
+    <div><h1 class="cu-page-title">Gudang & Cabang</h1><span class="cu-text-muted">@totalWarehouses lokasi terdaftar</span></div>
     <div class="cu-flex cu-gap-1">
-        <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportExcel">📥 Excel</button>
-        <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportCsv">📄 CSV</button>
-        <button class="cu-btn cu-btn-primary cu-btn-sm" @onclick="() => ShowModal(null)">+ Lokasi</button>
+        <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportExcel"><Icon Name="download" Size="14" /> Excel</button>
+        <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportCsv"><Icon Name="download" Size="14" /> CSV</button>
+        <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="OpenImport"><Icon Name="upload" Size="14" /> Impor Excel</button><button class="cu-btn cu-btn-primary cu-btn-sm" @onclick="() => ShowModal(null)"><Icon Name="plus" Size="14" /> Lokasi</button>
     </div>
 </div>
 
 <div class="cu-card cu-mb-2">
     <div class="cu-flex cu-gap-2">
-        <div style="flex:1;"><input class="cu-form-input" @bind="searchTerm" @bind:event="oninput" placeholder="🔍 Cari kode/nama/alamat..." /></div>
+        <div style="flex:1;"><input class="cu-form-input" @bind="searchTerm" @bind:event="oninput" placeholder="Cari kode/nama/alamat..." /></div>
     </div>
 </div>
 
@@ -32,10 +33,10 @@
                     <td>@w.Name</td>
                     <td>@w.Address</td>
                     <td>@(w.IsBranch ? "🏢 Cabang" : "📦 Gudang")</td>
-                    <td><span class="cu-badge @(w.IsActive ? "cu-badge-success" : "cu-badge-danger")">@(w.IsActive ? "Active" : "Inactive")</span></td>
+                    <td><span class="cu-badge @(w.IsActive ? "cu-badge-success" : "cu-badge-danger")">@(w.IsActive ? "Aktif" : "Nonaktif")</span></td>
                     <td>
-                        <button class="cu-btn cu-btn-sm cu-btn-outline" @onclick="() => ShowModal(w)">✏️</button>
-                        <button class="cu-btn cu-btn-sm cu-btn-danger" title="Hapus" @onclick="() => DeleteWarehouse(w)">🗑️</button>
+                        <button class="cu-btn cu-btn-sm cu-btn-outline" @onclick="() => ShowModal(w)"><Icon Name="edit" Size="13" /></button>
+                        <button class="cu-btn cu-btn-sm cu-btn-danger" title="Hapus" @onclick="() => DeleteWarehouse(w)"><Icon Name="trash" Size="13" /></button>
                     </td>
                 </tr>
             }
@@ -60,14 +61,32 @@
                 </div>
                 <div class="cu-flex cu-gap-1" style="justify-content:flex-end;margin-top:1rem;">
                     <button type="button" class="cu-btn cu-btn-outline" @onclick="HideModal">Batal</button>
-                    <button type="submit" class="cu-btn cu-btn-primary">💾 Simpan</button>
+                    <button type="submit" class="cu-btn cu-btn-primary"><Icon Name="save" Size="14" /> Simpan</button>
                 </div>
             </EditForm>
         </div>
     </div>
 }
 
+@if (importPlan is not null)
+{
+    <ImportDialog TEntity="Warehouse" Plan="importPlan"
+                  OnImported="OnImported" OnClose="() => importPlan = null" />
+}
+
 @code {
+    private ImportPlan<Warehouse>? importPlan;
+
+    // Rencana impor disusun saat dialog dibuka, karena sebagian kolom
+    // perlu mencocokkan teks dengan data acuan yang ada saat itu.
+    private async Task OpenImport() => importPlan = await ImportPlans.WarehousesAsync();
+
+    private async Task OnImported()
+    {
+        await LoadData();
+        StateHasChanged();
+    }
+
     private List<Warehouse> warehouses = new();
     private string searchTerm = "";
     private int totalWarehouses;
@@ -171,5 +190,5 @@
     }
 
     private async Task<bool> ConfirmAsync(string message) =>
-        await JS.InvokeAsync<bool>("confirm", message);
+        await JS.InvokeAsync<bool>("cuanConfirm", message);
 }

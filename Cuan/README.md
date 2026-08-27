@@ -1,164 +1,211 @@
-# 💰 CUAN - Sistem Akuntansi Berbasis Web
+# CUAN — Sistem Akuntansi Berbasis Web
 
-**CUAN** adalah sistem akuntansi modern berbasis **Blazor Server** yang menggabungkan fitur lengkap ala Accurate dengan kesederhanaan ala Zahir. Cocok untuk UMKM kecil hingga bisnis menengah/kompleks.
+Pembukuan berpasangan untuk usaha di Indonesia. Jurnal, faktur, kas, bank, giro,
+stok, sampai faktur pajak dan SPT Masa PPN — dalam satu buku yang selalu seimbang.
 
----
+Dibangun dengan **Blazor Server (.NET 10)**, antarmuka Bahasa Indonesia, mata uang
+dasar Rupiah.
 
-## 🚀 Fitur Utama
-
-| Fitur | Deskripsi |
-|-------|-----------|
-| 📒 **Chart of Accounts** | COA bertingkat dengan saldo real-time |
-| 📦 **Manajemen Barang** | Multi satuan, multi kategori, kontrol stok min/max |
-| 👥 **Customer & Supplier** | Manajemen piutang/hutang, credit limit, NPWP |
-| 🏗️ **Multi Gudang & Cabang** | Stok per lokasi, mutasi antar gudang |
-| 💱 **Multi Mata Uang** | Kurs otomatis, transaksi internasional |
-| 🧾 **Integrasi Pajak** | PPN, PPh 21/23/25, perhitungan otomatis |
-| 📝 **Jurnal Umum** | Double-entry accounting, auto-posting |
-| 🛒 **Penjualan & Pembelian** | Faktur, PO, tracking pembayaran |
-| 💵 **Kas & Bank** | Kas masuk/keluar, bank in/out, transfer |
-| 📜 **Giro** | Cek/giro masuk & keluar, tracking status |
-| 📊 **Dashboard** | Stat cards, tren, info stok rendah |
-| 📈 **Laporan Keuangan** | Laba Rugi, Neraca, Arus Kas, Pajak |
-| 🔑 **API REST** | 14+ endpoint dengan Swagger + ApiKey auth |
-| 👤 **Role-Based Access** | 7 role: Admin, Akuntan, Kasir, StafGudang, Sales, Purchasing, Viewer |
-| 🌓 **Dark/Light Theme** | UI ala Claude AI, modern dan clean |
-| 📋 **Audit Trail** | Catatan perubahan transaksi |
-| ⚙️ **System Settings** | Konfigurasi dari UI & appsettings |
+![Dasbor CUAN](docs/screenshots/dashboard.png)
 
 ---
 
-## 🛠️ Tech Stack
+## Menjalankan
 
-- **.NET 10** (Blazor Server, ASP.NET Core)
-- **Entity Framework Core** (SQLite)
-- **ASP.NET Identity** (Auth & Role)
-- **Swagger** (API Documentation)
-- **SignalR** (Real-time notifications)
-- **ClosedXML** (Excel export)
-- **CsvHelper** (CSV export)
-- **Blazor-ApexCharts** (Dashboard charts)
-
----
-
-## 📦 Instalasi & Menjalankan
-
-### Prasyarat
-- .NET 10 SDK
-- Visual Studio 2022+ / VS Code / Rider
-
-### Langkah-langkah
 ```bash
-# Clone / buka folder project
-cd Cuan
-
-# Restore packages
 dotnet restore
-
-# Build
 dotnet build
-
-# Run
-dotnet run
+dotnet run                        # http://localhost:5081
+dotnet run --launch-profile https # https://localhost:7223
 ```
 
-Buka browser ke `https://localhost:5001` atau `http://localhost:5000`
+Buka `http://localhost:5081`, masuk dengan `admin@cuan.id` / `Cuan@123`.
 
-Swagger UI: `https://localhost:5001/swagger`
+Basis data SQLite (`Cuan.db`) dibuat otomatis pada boot pertama beserta data
+contoh: 12 bulan transaksi bergulir yang berakhir di bulan berjalan, jadi
+dasbor dan laporan pajak tidak pernah kosong tahun berapa pun aplikasi ini
+dijalankan.
 
----
-
-## 👤 Sample Accounts
-
-| Email | Password | Role |
-|-------|----------|------|
-| admin@cuan.id | Cuan@123 | Admin (Full Access) |
-| akuntan@cuan.id | Cuan@123 | Akuntan |
-| kasir@cuan.id | Cuan@123 | Kasir |
-| gudang@cuan.id | Cuan@123 | Staf Gudang |
-| sales@cuan.id | Cuan@123 | Sales |
-| purchasing@cuan.id | Cuan@123 | Purchasing |
-| viewer@cuan.id | Cuan@123 | Viewer (Read-only) |
+Dokumentasi API tersedia di `/swagger` (hanya di lingkungan Development).
 
 ---
 
-## 🔑 API Access
+## Yang membedakan
 
-Default API Key: `cu4n-4p1-k3y-2024-d3f4ult`
+**Buku yang benar-benar seimbang.** Setiap faktur, penerimaan kas, mutasi bank,
+giro, dan penyesuaian stok membentuk jurnal berpasangan, dan setiap jurnal yang
+diposting menggerakkan saldo akun. Neraca Saldo memverifikasi debit sama dengan
+kredit; Neraca memverifikasi aktiva sama dengan kewajiban ditambah modal. Kalau
+timpang, angkanya terlihat langsung — tidak disembunyikan.
 
-Gunakan header `X-Api-Key` untuk mengakses REST API.
+**Tidak ada angka yang ditanam di dalam kode.** Tarif PPN, tarif PPh, pemetaan
+akun, awalan nomor dokumen, termin pembayaran, format mata uang, sampai kredensial
+DJP — semuanya parameter yang bisa diubah dari halaman Pengaturan dan langsung
+berlaku tanpa restart.
 
-### Contoh:
+**Perpajakan Indonesia sebagai warga kelas satu.** Faktur pajak dengan penomoran
+NSFP, bukti potong PPh 21/23/4(2), SPT Masa PPN beserta pembetulannya, ekspor
+e-Faktur (CSV) dan Coretax (XML), serta jalur host-to-host ke DJP yang tinggal
+diisi kredensialnya.
+
+---
+
+## Tur singkat
+
+### Jurnal umum
+
+Debit di kiri, kredit di kanan, masing-masing dengan warna tintanya sendiri.
+Bilah keseimbangan di bawah formulir berubah dari garis putus-putus merah menjadi
+garis ganda hijau begitu debit sama dengan kredit — dan tombol simpan baru
+terbuka setelah itu.
+
+![Jurnal umum](docs/screenshots/journal.png)
+
+### Faktur pajak
+
+Faktur penjualan ber-PPN yang belum diterbitkan faktur pajaknya ditampilkan di
+panel atas, lengkap dengan tombol terbitkan massal. Nomor seri diambil dari jatah
+NSFP, dan sisa jatah diingatkan sebelum habis.
+
+![Faktur pajak](docs/screenshots/tax-faktur.png)
+
+### SPT Masa PPN
+
+Dua belas masa pajak dalam satu tabel: DPP dan PPN keluaran di kolom debit, PPN
+masukan di kolom kredit, posisi kurang/lebih bayar, batas lapor, dan status SPT.
+Masa yang lewat tenggat dan belum dilaporkan ditandai merah.
+
+![SPT Masa PPN](docs/screenshots/tax-spt.png)
+
+### Neraca saldo
+
+![Neraca saldo](docs/screenshots/trial-balance.png)
+
+### Impor Excel
+
+Setiap halaman data induk punya tombol **Impor Excel**. Templatnya dibuat dari
+definisi kolom yang sama dengan yang membaca berkasnya, jadi keduanya selalu
+cocok. Berkas diperiksa lebih dulu: baris yang lolos dipisahkan dari yang
+bermasalah, lengkap dengan alasan per baris, dan tidak ada yang tersimpan
+sebelum tombol impor ditekan. Baris dengan kunci yang sudah ada memperbarui data
+lama alih-alih menambah duplikat.
+
+![Unduh template impor](docs/screenshots/import-template.png)
+
+Setelah berkas diunggah, tampilan berganti menjadi pratinjau:
+
+![Pratinjau impor](docs/screenshots/import-preview.png)
+
+### Pengaturan
+
+95 parameter dalam sepuluh kelompok. Setiap parameter menyebut kunci teknisnya,
+menjelaskan akibat perubahannya, dan menandai dirinya "diubah" sebelum disimpan.
+
+![Pengaturan](docs/screenshots/settings.png)
+
+### Tema gelap
+
+Seluruh halaman punya padanan gelap; pilihan tema tersimpan di perangkat
+masing-masing pengguna.
+
+![Tema gelap](docs/screenshots/journal-dark.png)
+
+**[Lihat seluruh tangkapan layar →](docs/README.md)**
+
+---
+
+## Fitur
+
+| Modul | Isi |
+|-------|-----|
+| **Data induk** | Chart of Accounts bertingkat, barang multi-satuan, pelanggan & pemasok, gudang & cabang, mata uang & kurs, jenis pajak, rekening bank |
+| **Transaksi** | Jurnal umum, faktur penjualan, faktur pembelian, kas masuk/keluar, bank masuk/keluar, giro, penyesuaian stok |
+| **Pajak** | Faktur pajak + NSFP, bukti potong PPh 21/23/4(2), SPT Masa PPN + pembetulan, ekspor e-Faktur & Coretax, integrasi DJP |
+| **Laporan** | Buku besar, neraca saldo, laba rugi, neraca, arus kas (metode langsung), penjualan, stok, pajak, dasbor eksekutif |
+| **Impor** | Setiap data induk bisa diisi massal dari Excel: unduh template, isi, unggah, periksa pratinjau, impor |
+| **Administrasi** | Pengguna & 7 peran, pengaturan 95 parameter, jejak audit otomatis, kunci API |
+| **Integrasi** | REST API 24 endpoint dengan kunci API, Swagger, notifikasi real-time SignalR, ekspor CSV/Excel/PDF |
+
+---
+
+## Peran
+
+Tujuh peran, dan menu di sisi kiri hanya menampilkan halaman yang boleh dibuka
+peran yang sedang masuk.
+
+| Akun | Peran | Akses |
+|------|-------|-------|
+| admin@cuan.id | Admin | Seluruh fitur |
+| akuntan@cuan.id | Akuntan | Jurnal, laporan, pajak |
+| kasir@cuan.id | Kasir | Kas, bank, giro |
+| gudang@cuan.id | StafGudang | Barang dan stok |
+| sales@cuan.id | Sales | Penjualan dan pelanggan |
+| purchasing@cuan.id | Purchasing | Pembelian dan pemasok |
+| viewer@cuan.id | Viewer | Laporan saja |
+
+Kata sandi seluruh akun contoh: `Cuan@123`.
+Matikan panel akun contoh di halaman masuk lewat **Pengaturan → Tampilan →
+Tampilkan akun contoh di halaman masuk** sebelum dipakai sungguhan.
+
+---
+
+## REST API
+
+Autentikasi memakai header `X-Api-Key`. Kunci bawaan: `cu4n-4p1-k3y-2024-d3f4ult`
+(kelola di `/admin/apikeys`).
+
 ```bash
-curl -H "X-Api-Key: cu4n-4p1-k3y-2024-d3f4ult" https://localhost:5001/api/v1/items
+curl -H "X-Api-Key: cu4n-4p1-k3y-2024-d3f4ult" \
+     http://localhost:5081/api/v1/items
 ```
 
-### Endpoints:
-- `GET /api/v1/coa` - Chart of Accounts
-- `GET /api/v1/items` - Items (with pagination)
-- `GET /api/v1/customers` - Customers
-- `GET /api/v1/suppliers` - Suppliers
-- `GET /api/v1/journals` - Journal Entries
-- `GET /api/v1/sales-invoices` - Sales Invoices
-- `GET /api/v1/purchase-invoices` - Purchase Invoices
-- `GET /api/v1/cash-transactions` - Cash Transactions
-- `GET /api/v1/bank-transactions` - Bank Transactions
-- `GET /api/v1/stock-movements` - Stock Movements
-- `GET /api/v1/dashboard/summary` - Dashboard Summary
-- `GET /api/v1/export/coa/csv` - Export COA to CSV
-- `GET /api/v1/export/items/csv` - Export Items to CSV
-- `POST /api/v1/journals` - Create Journal Entry
+| Endpoint | Keterangan |
+|----------|------------|
+| `GET /api/v1/coa` · `GET /api/v1/coa/{id}` · `POST /api/v1/coa` | Chart of Accounts |
+| `GET /api/v1/items` · `/items/{id}` · `/items/low-stock` · `/items/{id}/stock` | Barang dan stok |
+| `GET /api/v1/customers` · `/customers/{id}` · `/suppliers` | Mitra usaha |
+| `GET /api/v1/journals` · `/journals/{id}` · `POST /api/v1/journals` | Jurnal umum |
+| `GET /api/v1/sales-invoices` · `/purchase-invoices` | Faktur |
+| `GET /api/v1/cash-transactions` · `/bank-transactions` · `/stock-movements` | Mutasi |
+| `GET /api/v1/dashboard/summary` | Ringkasan dasbor |
+| `GET /api/v1/export/coa/csv` · `/export/items/csv` | Ekspor CSV |
+
+Daftar lengkap beserta parameternya ada di `/swagger`.
 
 ---
 
-## 📁 Struktur Proyek
+## Konfigurasi
 
-```
-Cuan/
-├── Models/              # Domain Entities (15+ models)
-│   ├── ChartOfAccount.cs
-│   ├── Item.cs
-│   ├── CustomerSupplier.cs
-│   ├── MasterData.cs
-│   ├── JournalEntry.cs
-│   ├── SalesPurchaseInvoice.cs
-│   ├── Transactions.cs
-│   └── SystemModels.cs
-├── Data/                # EF Core DbContext & Seeder
-│   ├── AppDbContext.cs
-│   └── DataSeeder.cs
-├── Api/                 # REST API Controllers
-│   └── ApiController.cs
-├── Components/
-│   ├── Layout/          # MainLayout (Claude AI Style)
-│   ├── Pages/
-│   │   ├── Master/      # COA, Items, Customers, etc.
-│   │   ├── Transactions/# Journal, Sales, Purchases, etc.
-│   │   ├── Reports/     # Profit/Loss, Balance Sheet, etc.
-│   │   └── Admin/       # Users, Settings, Audit, API Keys
-│   └── _Imports.razor
-├── wwwroot/             # CSS, JS, assets
-│   └── app.css          # Claude-style UI theme
-├── Program.cs           # App configuration
-├── appsettings.json     # Connection strings & settings
-└── PLAN.md              # Development plan checklist
-```
+Dua lapis, dengan pembagian tugas yang jelas:
+
+- **`appsettings.json`** — hal yang dibutuhkan sebelum basis data bisa dibuka:
+  penyedia basis data, connection string, kunci API bawaan.
+- **Halaman `/admin/settings`** — segala sesuatu yang berubah saat aplikasi
+  berjalan. Nilainya tersimpan di tabel `SystemSettings`, dibaca lewat cache,
+  dan berlaku seketika begitu disimpan.
+
+Berpindah dari SQLite ke SQL Server atau MySQL cukup lewat `Database:Provider`;
+paket dan konfigurasinya sudah tersedia.
 
 ---
 
-## ⚙️ Konfigurasi
+## Dokumentasi lain
 
-Semua pengaturan dapat diubah melalui:
-1. **File `appsettings.json`** - Connection string, company info, feature flags
-2. **Halaman UI** (`/admin/settings`) - Konfigurasi real-time dari web
-
----
-
-## 🏗️ Dibuat Oleh
-
-**Gravicode Studios** — dipimpin oleh kang Fadhil  
-https://studios.gravicode.com
+- **[docs/README.md](docs/README.md)** — galeri tangkapan layar seluruh halaman
+- **[docs/PAJAK.md](docs/PAJAK.md)** — alur perpajakan dan integrasi DJP
+- **[CLAUDE.md](CLAUDE.md)** — catatan arsitektur untuk pengembang
 
 ---
 
-*CUAN - Akuntansi Jadi Gampang! 💰*
+## Tumpukan teknologi
+
+.NET 10 · Blazor Server · Entity Framework Core (SQLite / SQL Server / MySQL) ·
+ASP.NET Identity · SignalR · Swashbuckle · ClosedXML · CsvHelper · QuestPDF ·
+Blazor-ApexCharts
+
+---
+
+## Dibuat oleh
+
+**Gravicode Studios** — dipimpin oleh kang Fadhil
+<https://studios.gravicode.com>

@@ -1,19 +1,172 @@
 @page "/reports/balance-sheet"
-@attribute [Authorize(Roles = "Admin,Akuntan")]
+@rendermode @(RenderMode.InteractiveServer)
+@attribute [Authorize(Roles = "Admin,Akuntan,Viewer")]
 @inject AppDbContext DbContext
-<PageTitle>Neraca - CUAN</PageTitle>
-<div class="cu-flex-between cu-mb-2"><div><h2 style="margin:0;">⚖️ Neraca / Balance Sheet</h2></div></div>
-<div class="cu-card"><h3>PT. CUAN MAKMUR SENTOSA</h3><p class="cu-text-muted">Neraca per @DateTime.Now.ToString("dd MMMM yyyy")</p>
-<table class="cu-table" style="max-width:600px;"><thead><tr><th>Keterangan</th><th class="cu-text-right">Jumlah (Rp)</th></tr></thead><tbody>
-<tr><td colspan="2"><strong>AKTIVA</strong></td></tr>
-@foreach (var a in assetAccounts){<tr><td style="padding-left:20px;">@a.AccountName</td><td class="cu-text-right">@a.CurrentBalance.ToString("N0")</td></tr>}
-<tr style="font-weight:bold;"><td>Total Aktiva</td><td class="cu-text-right">@totalAsset.ToString("N0")</td></tr>
-<tr><td colspan="2"><strong>KEWAJIBAN</strong></td></tr>
-@foreach (var l in liabilityAccounts){<tr><td style="padding-left:20px;">@l.AccountName</td><td class="cu-text-right">@l.CurrentBalance.ToString("N0")</td></tr>}
-<tr style="font-weight:bold;"><td>Total Kewajiban</td><td class="cu-text-right">@totalLiability.ToString("N0")</td></tr>
-<tr><td colspan="2"><strong>MODAL</strong></td></tr>
-@foreach (var e in equityAccounts){<tr><td style="padding-left:20px;">@e.AccountName</td><td class="cu-text-right">@e.CurrentBalance.ToString("N0")</td></tr>}
-<tr style="font-weight:bold;"><td>Total Modal</td><td class="cu-text-right">@totalEquity.ToString("N0")</td></tr>
-<tr style="font-weight:bold; font-size:1.1rem; border-top:3px double var(--cu-border);"><td>TOTAL KEWAJIBAN + MODAL</td><td class="cu-text-right">@((totalLiability + totalEquity).ToString("N0"))</td></tr>
-</tbody></table></div>
-@code { private List<ChartOfAccount> assetAccounts = new(); private List<ChartOfAccount> liabilityAccounts = new(); private List<ChartOfAccount> equityAccounts = new(); private decimal totalAsset; private decimal totalLiability; private decimal totalEquity; protected override async Task OnInitializedAsync() { assetAccounts = await DbContext.ChartOfAccounts.Where(c => c.AccountType == 1 && !c.IsHeader).ToListAsync(); liabilityAccounts = await DbContext.ChartOfAccounts.Where(c => c.AccountType == 2 && !c.IsHeader).ToListAsync(); equityAccounts = await DbContext.ChartOfAccounts.Where(c => c.AccountType == 3 && !c.IsHeader).ToListAsync(); totalAsset = assetAccounts.Sum(c => c.CurrentBalance); totalLiability = liabilityAccounts.Sum(c => c.CurrentBalance); totalEquity = equityAccounts.Sum(c => c.CurrentBalance); } }
+@inject SettingsService Settings
+@inject IJSRuntime JS
+
+<PageTitle>Neraca — CUAN</PageTitle>
+
+<PageHead Section="Laporan" Title="Neraca"
+          Subtitle="@($"{Settings.CompanyName} · per {Settings.FormatDate(DateTime.Today)}")">
+    <Actions>
+        <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="Print">
+            <Icon Name="printer" Size="14" /> Cetak
+        </button>
+        <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportCsv">
+            <Icon Name="download" Size="14" /> CSV
+        </button>
+    </Actions>
+</PageHead>
+
+<div class="cu-balance @(IsBalanced ? "is-balanced" : "") cu-mb-3">
+    <div class="cu-balance-side">
+        <span class="cu-stat-label">Aktiva</span>
+        <span class="cu-balance-fig cu-text-debit">@Settings.Money(totalAsset)</span>
+    </div>
+    <div class="cu-balance-side">
+        <span class="cu-stat-label">Kewajiban</span>
+        <span class="cu-balance-fig cu-text-credit">@Settings.Money(totalLiability)</span>
+    </div>
+    <div class="cu-balance-side">
+        <span class="cu-stat-label">Modal</span>
+        <span class="cu-balance-fig cu-text-credit">@Settings.Money(EquityTotal)</span>
+    </div>
+    <div class="cu-balance-state">
+        <Icon Name="@(IsBalanced ? "check" : "alert")" Size="15" />
+        @(IsBalanced
+            ? "Aktiva = Kewajiban + Modal"
+            : $"Selisih {Settings.Money(Math.Abs(totalAsset - totalLiability - EquityTotal))}")
+    </div>
+</div>
+
+<div class="cu-grid cu-grid-2">
+    <div class="cu-card cu-card-flush">
+        <div class="cu-card-header"><span class="cu-card-title">Aktiva</span></div>
+        <div class="cu-table-wrap">
+            <table class="cu-table">
+                <thead><tr><th>Akun</th><th class="cu-text-right">Jumlah</th></tr></thead>
+                <tbody>
+                    @foreach (var account in assets)
+                    {
+                        <tr>
+                            <td>
+                                <span class="cu-mono cu-text-faint">@account.AccountCode</span> @account.AccountName
+                            </td>
+                            <td class="cu-text-right">@Settings.Number(account.CurrentBalance)</td>
+                        </tr>
+                    }
+                    <tr class="cu-total-row">
+                        <td>JUMLAH AKTIVA</td>
+                        <td class="cu-text-right">@Settings.Number(totalAsset)</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="cu-card cu-card-flush">
+        <div class="cu-card-header"><span class="cu-card-title">Kewajiban &amp; Modal</span></div>
+        <div class="cu-table-wrap">
+            <table class="cu-table">
+                <thead><tr><th>Akun</th><th class="cu-text-right">Jumlah</th></tr></thead>
+                <tbody>
+                    <tr class="cu-subtotal-row"><td colspan="2">KEWAJIBAN</td></tr>
+                    @foreach (var account in liabilities)
+                    {
+                        <tr>
+                            <td style="padding-left:1.4rem;">
+                                <span class="cu-mono cu-text-faint">@account.AccountCode</span> @account.AccountName
+                            </td>
+                            <td class="cu-text-right">@Settings.Number(account.CurrentBalance)</td>
+                        </tr>
+                    }
+                    <tr class="cu-subtotal-row">
+                        <td>Jumlah kewajiban</td>
+                        <td class="cu-text-right">@Settings.Number(totalLiability)</td>
+                    </tr>
+
+                    <tr class="cu-subtotal-row"><td colspan="2">MODAL</td></tr>
+                    @foreach (var account in equity)
+                    {
+                        <tr>
+                            <td style="padding-left:1.4rem;">
+                                <span class="cu-mono cu-text-faint">@account.AccountCode</span> @account.AccountName
+                            </td>
+                            <td class="cu-text-right">@Settings.Number(account.CurrentBalance)</td>
+                        </tr>
+                    }
+                    <tr>
+                        <td style="padding-left:1.4rem;">
+                            <span class="cu-mono cu-text-faint">—</span> Laba (rugi) berjalan
+                        </td>
+                        <td class="cu-text-right @(currentResult >= 0 ? "" : "cu-text-danger")">
+                            @Settings.Number(currentResult)
+                        </td>
+                    </tr>
+                    <tr class="cu-subtotal-row">
+                        <td>Jumlah modal</td>
+                        <td class="cu-text-right">@Settings.Number(EquityTotal)</td>
+                    </tr>
+
+                    <tr class="cu-total-row">
+                        <td>JUMLAH KEWAJIBAN &amp; MODAL</td>
+                        <td class="cu-text-right">@Settings.Number(totalLiability + EquityTotal)</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<ChartOfAccount> assets = new(), liabilities = new(), equity = new();
+    private decimal totalAsset, totalLiability, totalEquity, currentResult;
+
+    // Laba berjalan periode ini belum ditutup ke Laba Ditahan, jadi disajikan
+    // sebagai baris modal tersendiri seperti lazimnya neraca interim.
+    private decimal EquityTotal => totalEquity + currentResult;
+    private bool IsBalanced => Math.Abs(totalAsset - totalLiability - EquityTotal) < 1m;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Settings.EnsureLoadedAsync();
+
+        var accounts = await DbContext.ChartOfAccounts
+            .Where(c => !c.IsHeader && c.AccountType <= 3)
+            .OrderBy(c => c.AccountCode)
+            .ToListAsync();
+
+        assets = accounts.Where(a => a.AccountType == 1).ToList();
+        liabilities = accounts.Where(a => a.AccountType == 2).ToList();
+        equity = accounts.Where(a => a.AccountType == 3).ToList();
+
+        totalAsset = assets.Sum(a => a.CurrentBalance);
+        totalLiability = liabilities.Sum(a => a.CurrentBalance);
+        totalEquity = equity.Sum(a => a.CurrentBalance);
+
+        var temporary = await DbContext.ChartOfAccounts
+            .Where(c => !c.IsHeader && (c.AccountType == 4 || c.AccountType == 5))
+            .Select(c => new { c.AccountType, c.CurrentBalance })
+            .ToListAsync();
+        currentResult = temporary.Where(a => a.AccountType == 4).Sum(a => a.CurrentBalance)
+                        - temporary.Where(a => a.AccountType == 5).Sum(a => a.CurrentBalance);
+    }
+
+    private async Task Print() => await JS.InvokeVoidAsync("cuanPrint");
+
+    private async Task ExportCsv()
+    {
+        var data = assets.Concat(liabilities).Concat(equity).Select(a => new
+        {
+            Kode = a.AccountCode,
+            Akun = a.AccountName,
+            Kelompok = a.AccountType switch { 1 => "Aktiva", 2 => "Kewajiban", _ => "Modal" },
+            Jumlah = a.CurrentBalance
+        }).ToList();
+
+        var bytes = ExportService.ExportToCsv(data);
+        await JS.InvokeVoidAsync("downloadFileFromBytes",
+            $"neraca-{DateTime.Today:yyyy-MM-dd}.csv", "text/csv", Convert.ToBase64String(bytes));
+    }
+}

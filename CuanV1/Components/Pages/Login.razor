@@ -1,0 +1,81 @@
+@page "/login"
+@using Microsoft.AspNetCore.Mvc
+
+<PageTitle>Login - CUAN Accounting</PageTitle>
+
+<div style="display:flex; align-items:center; justify-content:center; min-height:80vh;">
+    <div class="cu-card" style="width:400px; max-width:100%;">
+        <div style="text-align:center; margin-bottom:1.5rem;">
+            <span style="font-size:3rem;">💰</span>
+            <h2 style="margin:0.5rem 0; font-size:1.5rem;">CUAN Accounting</h2>
+            <p class="cu-text-muted">Sistem Akuntansi Bisnis</p>
+        </div>
+
+        @if (!string.IsNullOrEmpty(errorMessage))
+        {
+            <div class="cu-alert cu-alert-error">@errorMessage</div>
+        }
+
+        @* Login via endpoint agar Set-Cookie berjalan normal (bukan via event Blazor) *@
+        <form method="post" action="/account/login">
+            <AntiforgeryToken />
+            <input type="hidden" name="ReturnUrl" value="@SafeReturnUrl" />
+
+            <div class="cu-form-group">
+                <label class="cu-form-label">Email</label>
+                <input name="Email" class="cu-form-input" placeholder="admin@cuan.id" required />
+            </div>
+            <div class="cu-form-group">
+                <label class="cu-form-label">Password</label>
+                <input name="Password" type="password" class="cu-form-input" placeholder="••••••••" required />
+            </div>
+            <button type="submit" class="cu-btn cu-btn-primary" style="width:100%; margin-top:0.5rem;">
+                🔐 Login
+            </button>
+        </form>
+
+        <div style="margin-top:1rem; font-size:0.75rem; color:var(--cu-text-secondary); text-align:center;">
+            <p style="margin:0.25rem;">Sample accounts (password: <strong>Cuan@123</strong>):</p>
+            <p style="margin:0.25rem;">admin@cuan.id | akuntan@cuan.id | kasir@cuan.id</p>
+            <p style="margin:0.25rem;">gudang@cuan.id | sales@cuan.id | viewer@cuan.id</p>
+        </div>
+    </div>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "ReturnUrl")]
+    public string? ReturnUrl { get; set; }
+
+    [SupplyParameterFromQuery(Name = "error")]
+    public string? Error { get; set; }
+
+    private string? errorMessage;
+
+    private string SafeReturnUrl => GetSafeReturnUrl(ReturnUrl);
+
+    protected override void OnParametersSet()
+    {
+        errorMessage = Error switch
+        {
+            "locked" => "Akun terkunci. Coba lagi nanti.",
+            "invalid" => "Email atau password salah.",
+            _ => null
+        };
+    }
+
+    private static string GetSafeReturnUrl(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return "/";
+        }
+
+        // Hindari open redirect
+        if (url.StartsWith("/", StringComparison.Ordinal) && !url.StartsWith("//", StringComparison.Ordinal))
+        {
+            return url;
+        }
+
+        return "/";
+    }
+}

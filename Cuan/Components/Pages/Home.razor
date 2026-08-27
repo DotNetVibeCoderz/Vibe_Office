@@ -2,80 +2,266 @@
 @rendermode @(RenderMode.InteractiveServer)
 @attribute [Authorize]
 @inject AppDbContext DbContext
+@inject SettingsService Settings
+@inject TaxService Tax
 
-<PageTitle>Dashboard - CUAN Accounting</PageTitle>
+<PageTitle>Dasbor — CUAN</PageTitle>
 
-<div class="cu-mb-3">
-    <h2 style="margin:0; font-size:1.5rem;">👋 Selamat Datang di CUAN</h2>
-    <p class="cu-text-muted">Sistem Akuntansi - PT. CUAN MAKMUR SENTOSA</p>
-</div>
+<PageHead Section="Ringkasan" Title="Dasbor"
+          Subtitle="@($"{Settings.CompanyName} · {periodLabel}")">
+    <Actions>
+        <a href="/transactions/journal" class="cu-btn cu-btn-outline cu-btn-sm">
+            <Icon Name="journal" Size="14" /> Jurnal baru
+        </a>
+        <a href="/transactions/sales" class="cu-btn cu-btn-primary cu-btn-sm">
+            <Icon Name="plus" Size="14" /> Faktur penjualan
+        </a>
+    </Actions>
+</PageHead>
 
 <div class="cu-grid cu-grid-4 cu-mb-3">
-    <div class="cu-card">
-        <div class="cu-text-muted">TOTAL PENDAPATAN</div>
-        <div style="font-size:1.5rem; font-weight:700; color:#059669;">@FormatCurrency(totalRevenue)</div>
+    <div class="cu-card cu-stat cu-stat-primary" style="margin-bottom:0;">
+        <div class="cu-stat-label">Pendapatan</div>
+        <div class="cu-stat-value">@Settings.Money(totalRevenue)</div>
+        <div class="cu-stat-foot">Saldo akun pendapatan tahun berjalan</div>
     </div>
-    <div class="cu-card">
-        <div class="cu-text-muted">TOTAL BIAYA</div>
-        <div style="font-size:1.5rem; font-weight:700; color:#dc2626;">@FormatCurrency(totalExpense)</div>
+    <div class="cu-card cu-stat cu-stat-credit" style="margin-bottom:0;">
+        <div class="cu-stat-label">Beban</div>
+        <div class="cu-stat-value">@Settings.Money(totalExpense)</div>
+        <div class="cu-stat-foot">Termasuk harga pokok penjualan</div>
     </div>
-    <div class="cu-card">
-        <div class="cu-text-muted">LABA BERSIH</div>
-        <div style="font-size:1.5rem; font-weight:700; color:var(--cu-primary);">@FormatCurrency(netProfit)</div>
+    <div class="cu-card cu-stat @(netProfit >= 0 ? "cu-stat-primary" : "cu-stat-credit")" style="margin-bottom:0;">
+        <div class="cu-stat-label">Laba bersih</div>
+        <div class="cu-stat-value">@Settings.Money(netProfit)</div>
+        <div class="cu-stat-foot">
+            @(totalRevenue == 0 ? "Belum ada pendapatan tercatat"
+                                : $"Marjin {(netProfit / totalRevenue * 100):N1}%")
+        </div>
     </div>
-    <div class="cu-card">
-        <div class="cu-text-muted">PIUTANG</div>
-        <div style="font-size:1.5rem; font-weight:700; color:#f59e0b;">@FormatCurrency(totalReceivable)</div>
+    <div class="cu-card cu-stat cu-stat-debit" style="margin-bottom:0;">
+        <div class="cu-stat-label">Kas & bank</div>
+        <div class="cu-stat-value">@Settings.Money(cashAndBank)</div>
+        <div class="cu-stat-foot">Piutang @Settings.Money(totalReceivable)</div>
+    </div>
+</div>
+
+@* Neraca berjalan dalam satu baris: aktiva harus sama dengan kewajiban
+   ditambah modal. Kalau timpang, angkanya langsung terlihat di sini. *@
+<div class="cu-card cu-mb-3">
+    <div class="cu-card-header">
+        <span class="cu-card-title">Persamaan akuntansi</span>
+        <a href="/reports/balance-sheet" class="cu-btn cu-btn-ghost cu-btn-sm">
+            Neraca <Icon Name="chevron-right" Size="13" />
+        </a>
+    </div>
+    <div class="cu-balance @(IsEquationBalanced ? "is-balanced" : "")">
+        <div class="cu-balance-side">
+            <span class="cu-stat-label">Aktiva</span>
+            <span class="cu-balance-fig cu-text-debit">@Settings.Money(totalAsset)</span>
+        </div>
+        <div class="cu-balance-side">
+            <span class="cu-stat-label">Kewajiban</span>
+            <span class="cu-balance-fig cu-text-credit">@Settings.Money(totalLiability)</span>
+        </div>
+        <div class="cu-balance-side">
+            <span class="cu-stat-label">Modal + laba berjalan</span>
+            <span class="cu-balance-fig cu-text-credit">@Settings.Money(EquityWithResult)</span>
+        </div>
+        <div class="cu-balance-state">
+            <Icon Name="@(IsEquationBalanced ? "check" : "alert")" Size="15" />
+            @(IsEquationBalanced
+                ? "Seimbang"
+                : $"Selisih {Settings.Money(Math.Abs(totalAsset - totalLiability - EquityWithResult))}")
+        </div>
     </div>
 </div>
 
 <div class="cu-grid cu-grid-2">
-    <div class="cu-card">
-        <div class="cu-card-header"><span class="cu-card-title">🕐 Transaksi Terakhir</span><a href="/transactions/journal" class="cu-btn cu-btn-sm cu-btn-outline">Lihat Semua</a></div>
-        <table class="cu-table">
-            <thead><tr><th>No</th><th>Tanggal</th><th>Deskripsi</th><th>Jumlah</th><th>Status</th></tr></thead>
-            <tbody>
-                @foreach (var j in recentJournals){
-                <tr><td>@j.JournalNumber</td><td>@j.TransactionDate.ToString("dd/MM/yyyy")</td><td>@j.Description</td><td class="cu-text-right">@FormatCurrency(j.Details.Sum(d=>d.Debit))</td><td><span class="cu-badge @(j.IsPosted?"cu-badge-success":"cu-badge-warning")">@(j.IsPosted?"Posted":"Draft")</span></td></tr>
-                }
-            </tbody>
-        </table>
-    </div>
-    <div class="cu-card">
-        <div class="cu-card-header"><span class="cu-card-title">⚡ Quick Actions</span></div>
-        <div class="cu-grid cu-grid-2" style="margin-top:1rem;">
-            <a href="/transactions/sales" class="cu-btn cu-btn-primary" style="width:100%;">🛒 Penjualan Baru</a>
-            <a href="/transactions/purchases" class="cu-btn cu-btn-outline" style="width:100%;">📥 Pembelian Baru</a>
-            <a href="/transactions/cash" class="cu-btn cu-btn-outline" style="width:100%;">💵 Kas Masuk</a>
-            <a href="/transactions/journal" class="cu-btn cu-btn-outline" style="width:100%;">📝 Jurnal Baru</a>
+    <div class="cu-card cu-card-flush">
+        <div class="cu-card-header">
+            <span class="cu-card-title">Jurnal terakhir</span>
+            <a href="/transactions/journal" class="cu-btn cu-btn-ghost cu-btn-sm">
+                Semua <Icon Name="chevron-right" Size="13" />
+            </a>
         </div>
-        <hr style="margin:1.5rem 0; border-color:var(--cu-border);" />
-        <div class="cu-card-header"><span class="cu-card-title">📦 Info Stok Rendah</span></div>
-        <table class="cu-table">
-            <thead><tr><th>Barang</th><th>Stok</th><th>Status</th></tr></thead>
-            <tbody>
-                @foreach (var item in lowStockItems){
-                <tr><td>@item.ItemName</td><td>@item.StockQuantity</td><td><span class="cu-badge @(item.StockQuantity<=item.MinimumStock?"cu-badge-danger":"cu-badge-warning")">@(item.StockQuantity<=item.MinimumStock?"⚠️ Low":"OK")</span></td></tr>
-                }
-            </tbody>
-        </table>
+        @if (recentJournals.Count == 0)
+        {
+            <EmptyState Title="Belum ada jurnal"
+                        Message="Setiap faktur, kas, dan giro yang disimpan akan membentuk jurnalnya sendiri." />
+        }
+        else
+        {
+            <div class="cu-table-wrap">
+                <table class="cu-table">
+                    <thead>
+                        <tr>
+                            <th>Nomor</th><th>Tanggal</th><th>Keterangan</th>
+                            <th class="cu-text-right">Nilai</th><th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var j in recentJournals)
+                        {
+                            <tr>
+                                <td class="cu-mono">@j.JournalNumber</td>
+                                <td class="cu-mono">@Settings.FormatDate(j.TransactionDate)</td>
+                                <td>@j.Description</td>
+                                <td class="cu-text-right">@Settings.Number(j.Details.Sum(d => d.Debit))</td>
+                                <td>
+                                    <span class="cu-badge @(j.IsPosted ? "cu-badge-success" : "cu-badge-warning")">
+                                        @(j.IsPosted ? "Diposting" : "Draf")
+                                    </span>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+
+    <div>
+        @* Pengingat pajak dinaikkan ke dasbor karena tenggatnya keras dan
+           terlewatnya berbuntut denda. *@
+        <div class="cu-card">
+            <div class="cu-card-header">
+                <span class="cu-card-title">Masa pajak berjalan</span>
+                <a href="/tax/spt" class="cu-btn cu-btn-ghost cu-btn-sm">
+                    SPT <Icon Name="chevron-right" Size="13" />
+                </a>
+            </div>
+
+            <div class="cu-grid cu-grid-2" style="gap:0.6rem;">
+                <div>
+                    <div class="cu-stat-label">PPN keluaran</div>
+                    <div class="cu-mono" style="font-size:0.98rem;font-weight:550;color:var(--cu-credit);">
+                        @Settings.Money(taxSummary?.OutputTax ?? 0)
+                    </div>
+                </div>
+                <div>
+                    <div class="cu-stat-label">PPN masukan</div>
+                    <div class="cu-mono" style="font-size:0.98rem;font-weight:550;color:var(--cu-debit);">
+                        @Settings.Money(taxSummary?.InputTax ?? 0)
+                    </div>
+                </div>
+            </div>
+
+            <div class="cu-divider"></div>
+
+            <div class="cu-flex-between">
+                <span class="cu-text-muted">
+                    @((taxSummary?.PpnPayable ?? 0) >= 0 ? "Kurang bayar" : "Lebih bayar")
+                    · @Tax.PpnPercent.ToString("0.##")%
+                </span>
+                <strong class="cu-mono">@Settings.Money(Math.Abs(taxSummary?.PpnPayable ?? 0))</strong>
+            </div>
+
+            @if (taxSummary is { UninvoicedSales: > 0 })
+            {
+                <div class="cu-alert cu-alert-warning" style="margin:0.7rem 0 0;">
+                    @taxSummary.UninvoicedSales faktur penjualan masa ini belum diterbitkan faktur pajaknya.
+                    <a href="/tax/faktur">Terbitkan sekarang</a>.
+                </div>
+            }
+            <div class="cu-form-hint" style="margin-top:0.55rem;">
+                Batas lapor SPT Masa PPN: @Settings.FormatDate(ppnDue).
+            </div>
+        </div>
+
+        <div class="cu-card cu-card-flush" style="margin-bottom:0;">
+            <div class="cu-card-header">
+                <span class="cu-card-title">Stok menipis</span>
+                <a href="/reports/stock" class="cu-btn cu-btn-ghost cu-btn-sm">
+                    Laporan <Icon Name="chevron-right" Size="13" />
+                </a>
+            </div>
+            @if (lowStockItems.Count == 0)
+            {
+                <EmptyState Title="Semua stok aman" Message="Tidak ada barang di bawah stok minimum." />
+            }
+            else
+            {
+                <div class="cu-table-wrap">
+                    <table class="cu-table">
+                        <thead>
+                            <tr><th>Barang</th><th class="cu-text-right">Stok</th><th class="cu-text-right">Min</th><th></th></tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var item in lowStockItems)
+                            {
+                                <tr>
+                                    <td>@item.ItemName</td>
+                                    <td class="cu-text-right">@Settings.Number(item.StockQuantity)</td>
+                                    <td class="cu-text-right cu-text-faint">@Settings.Number(item.MinimumStock)</td>
+                                    <td>
+                                        <span class="cu-badge @(item.StockQuantity <= item.MinimumStock ? "cu-badge-danger" : "cu-badge-warning")">
+                                            @(item.StockQuantity <= item.MinimumStock ? "Habis" : "Menipis")
+                                        </span>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
     </div>
 </div>
 
 @code {
     private decimal totalRevenue, totalExpense, netProfit, totalReceivable;
+    private decimal totalAsset, totalLiability, totalEquity, cashAndBank;
     private List<JournalEntry> recentJournals = new();
     private List<Item> lowStockItems = new();
+    private TaxPeriodSummary? taxSummary;
+    private string periodLabel = "";
+    private DateTime ppnDue;
+
+    // Pendapatan dan beban adalah akun sementara yang bermuara ke modal, jadi
+    // laba berjalan ikut dihitung di sisi kanan persamaan.
+    private decimal EquityWithResult => totalEquity + netProfit;
+    private bool IsEquationBalanced => Math.Abs(totalAsset - totalLiability - EquityWithResult) < 1m;
 
     protected override async Task OnInitializedAsync()
     {
-        recentJournals = await DbContext.JournalEntries.Include(j=>j.Details).OrderByDescending(j=>j.TransactionDate).Take(5).ToListAsync();
-        lowStockItems = await DbContext.Items.Where(i=>i.StockQuantity<=i.MaximumStock*0.3m).OrderBy(i=>i.StockQuantity).Take(5).ToListAsync();
-        totalRevenue = await DbContext.ChartOfAccounts.Where(c=>c.AccountType==4&&!c.IsHeader).SumAsync(c=>c.CurrentBalance);
-        totalExpense = await DbContext.ChartOfAccounts.Where(c=>c.AccountType==5&&!c.IsHeader).SumAsync(c=>c.CurrentBalance);
-        netProfit = totalRevenue - totalExpense;
-        totalReceivable = await DbContext.Customers.SumAsync(c=>c.Balance);
-    }
+        await Settings.EnsureLoadedAsync();
 
-    private string FormatCurrency(decimal amount) => amount.ToString("N0");
+        var today = DateTime.Today;
+        periodLabel = $"{TaxPeriodSummary.MonthName(today.Month)} {today.Year}";
+        ppnDue = TaxService.PpnDueDate(today.Month, today.Year);
+
+        var accounts = await DbContext.ChartOfAccounts
+            .Where(c => !c.IsHeader)
+            .Select(c => new { c.AccountType, c.AccountCode, c.CurrentBalance })
+            .ToListAsync();
+
+        totalRevenue = accounts.Where(a => a.AccountType == 4).Sum(a => a.CurrentBalance);
+        totalExpense = accounts.Where(a => a.AccountType == 5).Sum(a => a.CurrentBalance);
+        netProfit = totalRevenue - totalExpense;
+        totalAsset = accounts.Where(a => a.AccountType == 1).Sum(a => a.CurrentBalance);
+        totalLiability = accounts.Where(a => a.AccountType == 2).Sum(a => a.CurrentBalance);
+        totalEquity = accounts.Where(a => a.AccountType == 3).Sum(a => a.CurrentBalance);
+
+        // Kas dan setara kas: akun kas di Pengaturan ditambah seluruh rekening bank.
+        var cashCode = Settings.Get(SettingsCatalog.AccountCash);
+        cashAndBank = accounts.Where(a => a.AccountCode == cashCode).Sum(a => a.CurrentBalance)
+                      + await DbContext.BankAccounts.Where(b => b.IsActive).SumAsync(b => b.Balance);
+
+        totalReceivable = await DbContext.Customers.SumAsync(c => c.Balance);
+
+        recentJournals = await DbContext.JournalEntries
+            .Include(j => j.Details)
+            .OrderByDescending(j => j.TransactionDate).ThenByDescending(j => j.Id)
+            .Take(7)
+            .ToListAsync();
+
+        var lowStockCount = Settings.GetInt(SettingsCatalog.LowStockTileCount, 6);
+        lowStockItems = await DbContext.Items
+            .Where(i => i.IsActive && !i.IsService && i.StockQuantity <= i.MinimumStock)
+            .OrderBy(i => i.StockQuantity)
+            .Take(lowStockCount)
+            .ToListAsync();
+
+        taxSummary = await Tax.SummarizeAsync(today.Month, today.Year);
+    }
 }

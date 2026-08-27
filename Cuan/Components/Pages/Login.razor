@@ -1,43 +1,84 @@
 @page "/login"
+@layout BlankLayout
 @using Microsoft.AspNetCore.Mvc
+@inject SettingsService Settings
 
-<PageTitle>Login - CUAN Accounting</PageTitle>
+<PageTitle>Masuk — CUAN</PageTitle>
 
-<div style="display:flex; align-items:center; justify-content:center; min-height:80vh;">
-    <div class="cu-card" style="width:400px; max-width:100%;">
-        <div style="text-align:center; margin-bottom:1.5rem;">
-            <span style="font-size:3rem;">💰</span>
-            <h2 style="margin:0.5rem 0; font-size:1.5rem;">CUAN Accounting</h2>
-            <p class="cu-text-muted">Sistem Akuntansi Bisnis</p>
+<div class="cu-auth">
+    @* Panel kiri bergaris seperti kertas buku besar: pengantar sekaligus penanda
+       bahwa yang dibuka adalah pembukuan, bukan sekadar dasbor. *@
+    <div class="cu-auth-aside">
+        <div class="cu-flex cu-gap-1">
+            <span class="cu-logo-icon" style="background:rgba(255,255,255,0.16);color:#fff;">Rp</span>
+            <strong style="font-size:1.05rem;letter-spacing:-0.02em;">CUAN</strong>
         </div>
 
-        @if (!string.IsNullOrEmpty(errorMessage))
-        {
-            <div class="cu-alert cu-alert-error">@errorMessage</div>
-        }
+        <div>
+            <h1>Setiap rupiah punya dua sisi.</h1>
+            <p>
+                Pembukuan berpasangan untuk usaha di Indonesia — jurnal, faktur, kas, giro,
+                sampai faktur pajak dan SPT Masa, dalam satu buku yang selalu seimbang.
+            </p>
+        </div>
 
-        @* Login via endpoint agar Set-Cookie berjalan normal (bukan via event Blazor) *@
-        <form method="post" action="/account/login">
-            <AntiforgeryToken />
-            <input type="hidden" name="ReturnUrl" value="@SafeReturnUrl" />
+        <div class="cu-mono" style="font-size:0.68rem;letter-spacing:0.1em;color:rgba(255,255,255,0.6);">
+            @Settings.CompanyName.ToUpperInvariant()
+        </div>
+    </div>
 
-            <div class="cu-form-group">
-                <label class="cu-form-label">Email</label>
-                <input name="Email" class="cu-form-input" placeholder="admin@cuan.id" required />
+    <div class="cu-auth-form">
+        <div class="cu-auth-card">
+            <div class="cu-mb-3">
+                <span class="cu-eyebrow">Masuk</span>
+                <h2 style="margin:0;">Buka buku besar</h2>
+                <p class="cu-text-muted" style="margin:0.3rem 0 0;">
+                    Gunakan surel dan kata sandi yang diberikan administrator.
+                </p>
             </div>
-            <div class="cu-form-group">
-                <label class="cu-form-label">Password</label>
-                <input name="Password" type="password" class="cu-form-input" placeholder="••••••••" required />
-            </div>
-            <button type="submit" class="cu-btn cu-btn-primary" style="width:100%; margin-top:0.5rem;">
-                🔐 Login
-            </button>
-        </form>
 
-        <div style="margin-top:1rem; font-size:0.75rem; color:var(--cu-text-secondary); text-align:center;">
-            <p style="margin:0.25rem;">Sample accounts (password: <strong>Cuan@123</strong>):</p>
-            <p style="margin:0.25rem;">admin@cuan.id | akuntan@cuan.id | kasir@cuan.id</p>
-            <p style="margin:0.25rem;">gudang@cuan.id | sales@cuan.id | viewer@cuan.id</p>
+            @if (!string.IsNullOrEmpty(errorMessage))
+            {
+                <div class="cu-alert cu-alert-error">@errorMessage</div>
+            }
+
+            @* Masuk lewat endpoint tersendiri supaya Set-Cookie berjalan normal,
+               bukan lewat event Blazor di dalam circuit. *@
+            <form method="post" action="/account/login">
+                <AntiforgeryToken />
+                <input type="hidden" name="ReturnUrl" value="@SafeReturnUrl" />
+
+                <div class="cu-form-group">
+                    <label class="cu-form-label" for="email">Surel</label>
+                    <input id="email" name="Email" type="email" class="cu-form-input"
+                           placeholder="nama@perusahaan.id" autocomplete="username" required />
+                </div>
+
+                <div class="cu-form-group">
+                    <label class="cu-form-label" for="password">Kata sandi</label>
+                    <input id="password" name="Password" type="password" class="cu-form-input"
+                           placeholder="••••••••" autocomplete="current-password" required />
+                </div>
+
+                <button type="submit" class="cu-btn cu-btn-primary" style="width:100%;margin-top:0.35rem;">
+                    Masuk
+                </button>
+            </form>
+
+            @if (showDemo)
+            {
+                <div class="cu-card cu-mt-2" style="background:var(--cu-surface-sunken);margin-bottom:0;">
+                    <div class="cu-eyebrow" style="margin-bottom:0.45rem;">Akun contoh</div>
+                    <div class="cu-mono" style="font-size:0.72rem;line-height:1.7;color:var(--cu-text-secondary);">
+                        admin@cuan.id · akuntan@cuan.id · kasir@cuan.id<br />
+                        gudang@cuan.id · sales@cuan.id · viewer@cuan.id<br />
+                        <span style="color:var(--cu-text);">kata sandi: Cuan@@123</span>
+                    </div>
+                    <div class="cu-form-hint" style="margin-top:0.5rem;">
+                        Panel ini dimatikan dari Pengaturan → Tampilan.
+                    </div>
+                </div>
+            }
         </div>
     </div>
 </div>
@@ -50,31 +91,33 @@
     public string? Error { get; set; }
 
     private string? errorMessage;
+    private bool showDemo = true;
 
     private string SafeReturnUrl => GetSafeReturnUrl(ReturnUrl);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Settings.EnsureLoadedAsync();
+        showDemo = Settings.GetBool(SettingsCatalog.ShowDemoCredentials, true);
+    }
 
     protected override void OnParametersSet()
     {
         errorMessage = Error switch
         {
-            "locked" => "Akun terkunci. Coba lagi nanti.",
-            "invalid" => "Email atau password salah.",
+            "locked" => "Akun terkunci sementara karena terlalu banyak percobaan. Coba lagi beberapa menit lagi.",
+            "invalid" => "Surel atau kata sandi tidak cocok.",
             _ => null
         };
     }
 
     private static string GetSafeReturnUrl(string? url)
     {
-        if (string.IsNullOrWhiteSpace(url))
-        {
-            return "/";
-        }
+        if (string.IsNullOrWhiteSpace(url)) return "/";
 
-        // Hindari open redirect
+        // Hindari open redirect: hanya terima path relatif.
         if (url.StartsWith("/", StringComparison.Ordinal) && !url.StartsWith("//", StringComparison.Ordinal))
-        {
             return url;
-        }
 
         return "/";
     }

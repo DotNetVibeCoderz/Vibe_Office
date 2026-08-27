@@ -1,0 +1,169 @@
+@page "/master/coa"
+@rendermode @(RenderMode.InteractiveServer)
+@attribute [Authorize(Roles = "Admin,Akuntan")]
+@inject AppDbContext DbContext
+@inject IJSRuntime JS
+
+<PageTitle>Chart of Accounts - CUAN</PageTitle>
+
+<div class="cu-flex-between cu-mb-2">
+    <div>
+        <h2 style="margin:0;">📒 Chart of Accounts</h2>
+        <span class="cu-text-muted">Daftar Akun (COA) - @totalAccounts akun</span>
+    </div>
+    <div class="cu-flex cu-gap-1">
+        <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportExcel">📥 Excel</button>
+        <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportCsv">📄 CSV</button>
+        <button class="cu-btn cu-btn-primary cu-btn-sm" @onclick="() => ShowModal(null)">+ Akun Baru</button>
+    </div>
+</div>
+
+<div class="cu-card cu-mb-2">
+    <div class="cu-flex cu-gap-2">
+        <div style="flex:1;"><input class="cu-form-input" @bind="searchTerm" @bind:event="oninput" placeholder="🔍 Cari kode atau nama akun..." /></div>
+        <select class="cu-select" style="width:200px;" @bind="filterType">
+            <option value="0">Semua Tipe</option><option value="1">Aktiva</option><option value="2">Kewajiban</option><option value="3">Modal</option><option value="4">Pendapatan</option><option value="5">Beban</option>
+        </select>
+    </div>
+</div>
+
+<div class="cu-card">
+    <table class="cu-table">
+        <thead><tr><th>Kode Akun</th><th>Nama Akun</th><th>Tipe</th><th>Header</th><th>Saldo Awal</th><th>Saldo Saat Ini</th><th>Status</th><th></th></tr></thead>
+        <tbody>
+            @foreach (var coa in filteredAccounts){
+                <tr>
+                    <td style="font-weight:600;font-family:monospace;">@coa.AccountCode</td>
+                    <td style="padding-left:@(GetIndent(coa)*20)px;">@(coa.IsHeader?"📁 ":"📄 ")@coa.AccountName</td>
+                    <td>@GetAccountTypeName(coa.AccountType)</td><td>@(coa.IsHeader?"✅":"")</td>
+                    <td class="cu-text-right">@FormatCurrency(coa.OpeningBalance)</td>
+                    <td class="cu-text-right" style="font-weight:600;">@FormatCurrency(coa.CurrentBalance)</td>
+                    <td><span class="cu-badge @(coa.IsActive?"cu-badge-success":"cu-badge-danger")">@(coa.IsActive?"Active":"Inactive")</span></td>
+                    <td>
+                        <button class="cu-btn cu-btn-sm cu-btn-outline" @onclick="()=>ShowModal(coa)">✏️</button>
+                        <button class="cu-btn cu-btn-sm cu-btn-danger" title="Hapus" @onclick="()=>DeleteAccount(coa)">🗑️</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@if (showModal){
+    <div class="cu-modal-overlay" @onclick="HideModal">
+        <div class="cu-modal" @onclick:stopPropagation="true">
+            <h3 style="margin-top:0;">@(editingAccount.Id==0?"Tambah Akun Baru":"Edit Akun")</h3>
+            <EditForm Model="editingAccount" OnValidSubmit="SaveAccount">
+                <div class="cu-grid cu-grid-2">
+                    <div class="cu-form-group"><label class="cu-form-label">Kode Akun *</label><InputText @bind-Value="editingAccount.AccountCode" class="cu-form-input" /></div>
+                    <div class="cu-form-group"><label class="cu-form-label">Nama Akun *</label><InputText @bind-Value="editingAccount.AccountName" class="cu-form-input" /></div>
+                </div>
+                <div class="cu-grid cu-grid-2">
+                    <div class="cu-form-group"><label class="cu-form-label">Tipe Akun</label><InputSelect @bind-Value="editingAccount.AccountType" class="cu-select"><option value="1">Aktiva</option><option value="2">Kewajiban</option><option value="3">Modal</option><option value="4">Pendapatan</option><option value="5">Beban</option></InputSelect></div>
+                    <div class="cu-form-group"><label class="cu-form-label">Parent</label><InputSelect @bind-Value="editingAccount.ParentId" class="cu-select"><option value="">-- Tidak Ada --</option>@foreach(var h in headerAccounts){<option value="@h.Id">@h.AccountCode - @h.AccountName</option>}</InputSelect></div>
+                </div>
+                <div class="cu-grid cu-grid-3">
+                    <div class="cu-form-group"><label class="cu-form-label">Saldo Awal</label><InputNumber @bind-Value="editingAccount.OpeningBalance" class="cu-form-input" /></div>
+                    <div class="cu-form-group"><label class="cu-form-label"><input type="checkbox" @bind="editingAccount.IsHeader" /> Header?</label></div>
+                    <div class="cu-form-group"><label class="cu-form-label"><input type="checkbox" @bind="editingAccount.IsActive" /> Aktif?</label></div>
+                </div>
+                <div class="cu-flex cu-gap-1" style="justify-content:flex-end;margin-top:1rem;">
+                    <button type="button" class="cu-btn cu-btn-outline" @onclick="HideModal">Batal</button>
+                    <button type="submit" class="cu-btn cu-btn-primary">💾 Simpan</button>
+                </div>
+            </EditForm>
+        </div>
+    </div>
+}
+
+@code {
+    private List<ChartOfAccount> allAccounts = new();
+    private List<ChartOfAccount> headerAccounts = new();
+    private string searchTerm = "";
+    private int filterType = 0;
+    private int totalAccounts;
+    private bool showModal;
+    private ChartOfAccount editingAccount = new();
+
+    private IEnumerable<ChartOfAccount> filteredAccounts => allAccounts
+        .Where(c => (filterType == 0 || c.AccountType == filterType)
+            && (string.IsNullOrEmpty(searchTerm)
+                || c.AccountCode.Contains(searchTerm, StringComparison.OrdinalIgnoreCase)
+                || c.AccountName.Contains(searchTerm, StringComparison.OrdinalIgnoreCase)))
+        .OrderBy(c => c.AccountCode);
+
+    protected override async Task OnInitializedAsync() { await LoadData(); }
+    private async Task LoadData() { allAccounts = await DbContext.ChartOfAccounts.OrderBy(c => c.AccountCode).ToListAsync(); headerAccounts = allAccounts.Where(c => c.IsHeader).ToList(); totalAccounts = allAccounts.Count(c => !c.IsHeader); }
+    private void ShowModal(ChartOfAccount? existing) { editingAccount = existing != null ? new ChartOfAccount { Id = existing.Id, AccountCode = existing.AccountCode, AccountName = existing.AccountName, AccountType = existing.AccountType, ParentId = existing.ParentId, IsHeader = existing.IsHeader, IsActive = existing.IsActive, OpeningBalance = existing.OpeningBalance } : new ChartOfAccount { IsActive = true }; showModal = true; }
+    private void HideModal() { showModal = false; }
+    private async Task SaveAccount() { if (editingAccount.Id == 0) { editingAccount.CreatedAt = DateTime.UtcNow; DbContext.ChartOfAccounts.Add(editingAccount); } else { var existing = await DbContext.ChartOfAccounts.FindAsync(editingAccount.Id); if (existing != null) { existing.AccountCode = editingAccount.AccountCode; existing.AccountName = editingAccount.AccountName; existing.AccountType = editingAccount.AccountType; existing.ParentId = editingAccount.ParentId; existing.IsHeader = editingAccount.IsHeader; existing.IsActive = editingAccount.IsActive; existing.OpeningBalance = editingAccount.OpeningBalance; existing.UpdatedAt = DateTime.UtcNow; } } await DbContext.SaveChangesAsync(); showModal = false; await LoadData(); }
+
+    private async Task DeleteAccount(ChartOfAccount account)
+    {
+        if (allAccounts.Any(a => a.ParentId == account.Id))
+        {
+            await JS.InvokeVoidAsync("alert", "Akun ini punya sub-akun. Hapus sub-akun dulu.");
+            return;
+        }
+
+        if (!await ConfirmAsync($"Hapus akun {account.AccountCode} - {account.AccountName}?") ) return;
+        DbContext.ChartOfAccounts.Remove(account);
+
+        try
+        {
+            await DbContext.SaveChangesAsync();
+        }
+        catch (DbUpdateException)
+        {
+            await JS.InvokeVoidAsync("alert", "Gagal menghapus akun. Pastikan tidak dipakai di transaksi.");
+        }
+        await LoadData();
+    }
+
+    private int GetIndent(ChartOfAccount coa) { int indent = 0; var parent = coa.ParentId.HasValue ? allAccounts.FirstOrDefault(a => a.Id == coa.ParentId.Value) : null; while (parent != null) { indent++; parent = parent.ParentId.HasValue ? allAccounts.FirstOrDefault(a => a.Id == parent.ParentId.Value) : null; } return Math.Min(indent, 4); }
+    private string GetAccountTypeName(int type) => type switch { 1 => "Aktiva", 2 => "Kewajiban", 3 => "Modal", 4 => "Pendapatan", 5 => "Beban", _ => "?" };
+    private string FormatCurrency(decimal amount) => amount.ToString("N0");
+
+    private async Task ExportCsv()
+    {
+        var data = filteredAccounts.Select(c => new
+        {
+            c.AccountCode,
+            c.AccountName,
+            AccountType = GetAccountTypeName(c.AccountType),
+            c.IsHeader,
+            c.OpeningBalance,
+            c.CurrentBalance,
+            c.IsActive
+        });
+
+        var bytes = ExportService.ExportToCsv(data);
+        await DownloadAsync(bytes, "chart_of_accounts.csv", "text/csv");
+    }
+
+    private async Task ExportExcel()
+    {
+        var data = filteredAccounts.Select(c => new
+        {
+            c.AccountCode,
+            c.AccountName,
+            AccountType = GetAccountTypeName(c.AccountType),
+            c.IsHeader,
+            c.OpeningBalance,
+            c.CurrentBalance,
+            c.IsActive
+        });
+
+        var bytes = ExportService.ExportToExcel(data, "COA");
+        await DownloadAsync(bytes, "chart_of_accounts.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    }
+
+    private async Task DownloadAsync(byte[] data, string fileName, string contentType)
+    {
+        var base64 = Convert.ToBase64String(data);
+        await JS.InvokeVoidAsync("downloadFileFromBytes", fileName, contentType, base64);
+    }
+
+    private async Task<bool> ConfirmAsync(string message) =>
+        await JS.InvokeAsync<bool>("confirm", message);
+}

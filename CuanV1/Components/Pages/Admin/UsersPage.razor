@@ -1,0 +1,236 @@
+@page "/admin/users"
+@rendermode @(RenderMode.InteractiveServer)
+@attribute [Authorize(Roles = "Admin")]
+@inject AppDbContext DbContext
+@inject UserManager<ApplicationUser> UserManager
+@inject RoleManager<ApplicationRole> RoleManager
+@inject IJSRuntime JS
+@using Microsoft.AspNetCore.Identity
+
+<PageTitle>User & Role - CUAN</PageTitle>
+<div class="cu-flex-between cu-mb-2">
+    <div><h2 style="margin:0;">👤 Manajemen User & Role</h2></div>
+    <div class="cu-flex cu-gap-1">
+        <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportExcel">📥 Excel</button>
+        <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportCsv">📄 CSV</button>
+        <button class="cu-btn cu-btn-primary cu-btn-sm" @onclick="() => ShowModal(null)">+ User Baru</button>
+    </div>
+</div>
+
+<div class="cu-card cu-mb-2">
+    <input class="cu-form-input" @bind="searchTerm" @bind:event="oninput" placeholder="🔍 Cari email, nama, role..." />
+</div>
+
+<div class="cu-card"><table class="cu-table"><thead><tr><th>Email</th><th>Nama</th><th>Role</th><th>Status</th><th>Last Login</th><th></th></tr></thead><tbody>@foreach (var user in filteredUsers){<tr><td>@user.Email</td><td>@user.FullName</td><td>@string.Join(", ", userRoles.GetValueOrDefault(user.Id, new List<string>()))</td><td><span class="cu-badge @(user.IsActive ? "cu-badge-success" : "cu-badge-danger")">@(user.IsActive ? "Active" : "Inactive")</span></td><td>@(user.LastLoginAt?.ToString("dd/MM/yyyy HH:mm") ?? "-")</td><td><button class="cu-btn cu-btn-sm cu-btn-outline" @onclick="() => ShowModal(user)">✏️</button><button class="cu-btn cu-btn-sm cu-btn-danger" @onclick="() => DeleteUser(user)">🗑️</button></td></tr>}</tbody></table></div>
+
+@if(showModal)
+{
+    <div class="cu-modal-overlay" @onclick="HideModal"><div class="cu-modal" style="min-width:500px;" @onclick:stopPropagation="true">
+        <h3 style="margin-top:0;">@(editingUser.Id == null ? "Tambah User" : "Edit User")</h3>
+        <div class="cu-grid cu-grid-2">
+            <div class="cu-form-group"><label class="cu-form-label">Email *</label><InputText @bind-Value="editingUser.Email" class="cu-form-input" /></div>
+            <div class="cu-form-group"><label class="cu-form-label">Nama *</label><InputText @bind-Value="editingUser.FullName" class="cu-form-input" /></div>
+        </div>
+        <div class="cu-grid cu-grid-2">
+            <div class="cu-form-group"><label class="cu-form-label">Role</label>
+                <select class="cu-select" @bind="editingUser.Role">
+                    @foreach (var r in roles){<option value="@r">@r</option>}
+                </select>
+            </div>
+            <div class="cu-form-group"><label class="cu-form-label">Status</label>
+                <select class="cu-select" @bind="editingUser.IsActive">
+                    <option value="true">Active</option>
+                    <option value="false">Inactive</option>
+                </select>
+            </div>
+        </div>
+        <div class="cu-form-group">
+            <label class="cu-form-label">Password @(editingUser.Id == null ? "*" : "(opsional)")</label>
+            <InputText type="password" @bind-Value="editingUser.Password" class="cu-form-input" />
+        </div>
+        @if(!string.IsNullOrEmpty(formError))
+        {
+            <div class="cu-alert cu-alert-error">@formError</div>
+        }
+        <div class="cu-flex cu-gap-1" style="justify-content:flex-end;">
+            <button class="cu-btn cu-btn-outline" @onclick="HideModal">Batal</button>
+            <button class="cu-btn cu-btn-primary" @onclick="SaveUser">💾 Simpan</button>
+        </div>
+    </div></div>
+}
+
+@code {
+    private List<ApplicationUser> users = new();
+    private Dictionary<string, List<string>> userRoles = new();
+    private List<string> roles = new();
+    private string searchTerm = "";
+    private bool showModal;
+    private string formError = "";
+
+    private UserForm editingUser = new();
+
+    public class UserForm
+    {
+        public string? Id { get; set; }
+        public string Email { get; set; } = string.Empty;
+        public string FullName { get; set; } = string.Empty;
+        public string Role { get; set; } = "Viewer";
+        public bool IsActive { get; set; } = true;
+        public string Password { get; set; } = string.Empty;
+    }
+
+    private IEnumerable<ApplicationUser> filteredUsers => users
+        .Where(u => string.IsNullOrEmpty(searchTerm)
+            || (u.Email ?? "").Contains(searchTerm, StringComparison.OrdinalIgnoreCase)
+            || (u.FullName ?? "").Contains(searchTerm, StringComparison.OrdinalIgnoreCase)
+            || string.Join(",", userRoles.GetValueOrDefault(u.Id, new List<string>())).Contains(searchTerm, StringComparison.OrdinalIgnoreCase))
+        .OrderBy(u => u.Email);
+
+    protected override async Task OnInitializedAsync()
+    {
+        roles = await RoleManager.Roles.OrderBy(r => r.Name).Select(r => r.Name ?? "").ToListAsync();
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        users = await DbContext.Users.OrderBy(u => u.Email).ToListAsync();
+        userRoles = new Dictionary<string, List<string>>();
+        foreach (var u in users)
+        {
+            var r = await UserManager.GetRolesAsync(u);
+            userRoles[u.Id] = r.ToList();
+        }
+    }
+
+    private void ShowModal(ApplicationUser? user)
+    {
+        formError = "";
+        if (user == null)
+        {
+            editingUser = new UserForm { Role = roles.FirstOrDefault() ?? "Viewer", IsActive = true };
+        }
+        else
+        {
+            editingUser = new UserForm
+            {
+                Id = user.Id,
+                Email = user.Email ?? "",
+                FullName = user.FullName,
+                Role = userRoles.GetValueOrDefault(user.Id, new List<string>()).FirstOrDefault() ?? roles.FirstOrDefault() ?? "Viewer",
+                IsActive = user.IsActive
+            };
+        }
+
+        showModal = true;
+    }
+
+    private void HideModal() { showModal = false; }
+
+    private async Task SaveUser()
+    {
+        formError = "";
+        if (string.IsNullOrWhiteSpace(editingUser.Email) || string.IsNullOrWhiteSpace(editingUser.FullName))
+        {
+            formError = "Email dan nama wajib diisi.";
+            return;
+        }
+
+        if (editingUser.Id == null)
+        {
+            if (string.IsNullOrWhiteSpace(editingUser.Password))
+            {
+                formError = "Password wajib diisi untuk user baru.";
+                return;
+            }
+
+            var newUser = new ApplicationUser
+            {
+                UserName = editingUser.Email,
+                Email = editingUser.Email,
+                FullName = editingUser.FullName,
+                IsActive = editingUser.IsActive
+            };
+
+            var result = await UserManager.CreateAsync(newUser, editingUser.Password);
+            if (!result.Succeeded)
+            {
+                formError = string.Join("; ", result.Errors.Select(e => e.Description));
+                return;
+            }
+
+            await UserManager.AddToRoleAsync(newUser, editingUser.Role);
+        }
+        else
+        {
+            var user = await UserManager.FindByIdAsync(editingUser.Id);
+            if (user == null) return;
+
+            user.Email = editingUser.Email;
+            user.UserName = editingUser.Email;
+            user.FullName = editingUser.FullName;
+            user.IsActive = editingUser.IsActive;
+
+            await UserManager.UpdateAsync(user);
+
+            var currentRoles = await UserManager.GetRolesAsync(user);
+            await UserManager.RemoveFromRolesAsync(user, currentRoles);
+            await UserManager.AddToRoleAsync(user, editingUser.Role);
+
+            if (!string.IsNullOrWhiteSpace(editingUser.Password))
+            {
+                var token = await UserManager.GeneratePasswordResetTokenAsync(user);
+                await UserManager.ResetPasswordAsync(user, token, editingUser.Password);
+            }
+        }
+
+        showModal = false;
+        await LoadData();
+    }
+
+    private async Task DeleteUser(ApplicationUser user)
+    {
+        if (!await ConfirmAsync($"Hapus user {user.Email}?") ) return;
+        await UserManager.DeleteAsync(user);
+        await LoadData();
+    }
+
+    private async Task ExportCsv()
+    {
+        var data = filteredUsers.Select(u => new
+        {
+            u.Email,
+            u.FullName,
+            Roles = string.Join(", ", userRoles.GetValueOrDefault(u.Id, new List<string>())),
+            u.IsActive,
+            LastLogin = u.LastLoginAt
+        });
+
+        var bytes = ExportService.ExportToCsv(data);
+        await DownloadAsync(bytes, "users.csv", "text/csv");
+    }
+
+    private async Task ExportExcel()
+    {
+        var data = filteredUsers.Select(u => new
+        {
+            u.Email,
+            u.FullName,
+            Roles = string.Join(", ", userRoles.GetValueOrDefault(u.Id, new List<string>())),
+            u.IsActive,
+            LastLogin = u.LastLoginAt
+        });
+
+        var bytes = ExportService.ExportToExcel(data, "Users");
+        await DownloadAsync(bytes, "users.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    }
+
+    private async Task DownloadAsync(byte[] data, string fileName, string contentType)
+    {
+        var base64 = Convert.ToBase64String(data);
+        await JS.InvokeVoidAsync("downloadFileFromBytes", fileName, contentType, base64);
+    }
+
+    private async Task<bool> ConfirmAsync(string message) =>
+        await JS.InvokeAsync<bool>("confirm", message);
+}

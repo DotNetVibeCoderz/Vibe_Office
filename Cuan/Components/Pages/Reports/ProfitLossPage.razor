@@ -1,16 +1,138 @@
 @page "/reports/profit-loss"
-@attribute [Authorize(Roles = "Admin,Akuntan")]
+@rendermode @(RenderMode.InteractiveServer)
+@attribute [Authorize(Roles = "Admin,Akuntan,Viewer")]
 @inject AppDbContext DbContext
-<PageTitle>Laba Rugi - CUAN</PageTitle>
-<div class="cu-flex-between cu-mb-2"><div><h2 style="margin:0;">📉 Laporan Laba Rugi</h2></div><div class="cu-flex cu-gap-1"><button class="cu-btn cu-btn-outline cu-btn-sm">📥 Excel</button><button class="cu-btn cu-btn-outline cu-btn-sm">🖨️ Print</button></div></div>
-<div class="cu-card"><h3 style="margin:0 0 1rem 0;">PT. CUAN MAKMUR SENTOSA</h3><p class="cu-text-muted">Laporan Laba Rugi - Tahun 2024</p>
-<table class="cu-table" style="max-width:600px;"><thead><tr><th>Keterangan</th><th class="cu-text-right">Jumlah (Rp)</th></tr></thead><tbody>
-<tr><td colspan="2"><strong>PENDAPATAN</strong></td></tr>
-@foreach (var r in revenueAccounts){<tr><td style="padding-left:20px;">@r.AccountName</td><td class="cu-text-right">@r.CurrentBalance.ToString("N0")</td></tr>}
-<tr style="font-weight:bold; border-top:2px solid var(--cu-border);"><td>Total Pendapatan</td><td class="cu-text-right">@totalRevenue.ToString("N0")</td></tr>
-<tr><td colspan="2" style="padding-top:10px;"><strong>BEBAN</strong></td></tr>
-@foreach (var e in expenseAccounts){<tr><td style="padding-left:20px;">@e.AccountName</td><td class="cu-text-right">@e.CurrentBalance.ToString("N0")</td></tr>}
-<tr style="font-weight:bold; border-top:2px solid var(--cu-border);"><td>Total Beban</td><td class="cu-text-right">@totalExpense.ToString("N0")</td></tr>
-<tr style="font-weight:bold; font-size:1.1rem; border-top:3px double var(--cu-border);"><td>LABA / (RUGI) BERSIH</td><td class="cu-text-right" style="color:@(netProfit >= 0 ? "#059669" : "#dc2626")">@netProfit.ToString("N0")</td></tr>
-</tbody></table></div>
-@code { private List<ChartOfAccount> revenueAccounts = new(); private List<ChartOfAccount> expenseAccounts = new(); private decimal totalRevenue; private decimal totalExpense; private decimal netProfit; protected override async Task OnInitializedAsync() { revenueAccounts = await DbContext.ChartOfAccounts.Where(c => c.AccountType == 4 && !c.IsHeader).ToListAsync(); expenseAccounts = await DbContext.ChartOfAccounts.Where(c => c.AccountType == 5 && !c.IsHeader).ToListAsync(); totalRevenue = revenueAccounts.Sum(c => c.CurrentBalance); totalExpense = expenseAccounts.Sum(c => c.CurrentBalance); netProfit = totalRevenue - totalExpense; } }
+@inject SettingsService Settings
+@inject IJSRuntime JS
+
+<PageTitle>Laba Rugi — CUAN</PageTitle>
+
+<PageHead Section="Laporan" Title="Laba Rugi"
+          Subtitle="@($"{Settings.CompanyName} · periode berjalan")">
+    <Actions>
+        <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="Print">
+            <Icon Name="printer" Size="14" /> Cetak
+        </button>
+        <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportCsv">
+            <Icon Name="download" Size="14" /> CSV
+        </button>
+    </Actions>
+</PageHead>
+
+<div class="cu-grid cu-grid-3 cu-mb-3">
+    <div class="cu-card cu-stat cu-stat-primary" style="margin-bottom:0;">
+        <div class="cu-stat-label">Pendapatan</div>
+        <div class="cu-stat-value">@Settings.Money(totalRevenue)</div>
+    </div>
+    <div class="cu-card cu-stat cu-stat-credit" style="margin-bottom:0;">
+        <div class="cu-stat-label">Beban</div>
+        <div class="cu-stat-value">@Settings.Money(totalExpense)</div>
+    </div>
+    <div class="cu-card cu-stat @(netProfit >= 0 ? "cu-stat-primary" : "cu-stat-credit")" style="margin-bottom:0;">
+        <div class="cu-stat-label">@(netProfit >= 0 ? "Laba bersih" : "Rugi bersih")</div>
+        <div class="cu-stat-value">@Settings.Money(Math.Abs(netProfit))</div>
+        <div class="cu-stat-foot">
+            @(totalRevenue == 0 ? "Belum ada pendapatan" : $"Marjin {(netProfit / totalRevenue * 100):N1}%")
+        </div>
+    </div>
+</div>
+
+<div class="cu-card cu-card-flush" style="margin-bottom:0;">
+    <div class="cu-table-wrap">
+        <table class="cu-table">
+            <thead>
+                <tr>
+                    <th>Akun</th>
+                    <th class="cu-text-right" style="width:180px;">Jumlah</th>
+                    <th class="cu-text-right" style="width:110px;">% pendapatan</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr class="cu-subtotal-row"><td colspan="3">PENDAPATAN</td></tr>
+                @foreach (var account in revenue)
+                {
+                    <tr>
+                        <td style="padding-left:1.4rem;">
+                            <span class="cu-mono cu-text-faint">@account.AccountCode</span> @account.AccountName
+                        </td>
+                        <td class="cu-text-right">@Settings.Number(account.CurrentBalance)</td>
+                        <td class="cu-text-right cu-text-faint">@Share(account.CurrentBalance)</td>
+                    </tr>
+                }
+                <tr class="cu-subtotal-row">
+                    <td>Jumlah pendapatan</td>
+                    <td class="cu-text-right">@Settings.Number(totalRevenue)</td>
+                    <td class="cu-text-right">100,0%</td>
+                </tr>
+
+                <tr class="cu-subtotal-row"><td colspan="3">BEBAN</td></tr>
+                @foreach (var account in expense)
+                {
+                    <tr>
+                        <td style="padding-left:1.4rem;">
+                            <span class="cu-mono cu-text-faint">@account.AccountCode</span> @account.AccountName
+                        </td>
+                        <td class="cu-text-right">@Settings.Number(account.CurrentBalance)</td>
+                        <td class="cu-text-right cu-text-faint">@Share(account.CurrentBalance)</td>
+                    </tr>
+                }
+                <tr class="cu-subtotal-row">
+                    <td>Jumlah beban</td>
+                    <td class="cu-text-right">@Settings.Number(totalExpense)</td>
+                    <td class="cu-text-right">@Share(totalExpense)</td>
+                </tr>
+
+                @* Garis ganda akuntan menutup angka terakhir. *@
+                <tr class="cu-total-row">
+                    <td>@(netProfit >= 0 ? "LABA BERSIH" : "RUGI BERSIH")</td>
+                    <td class="cu-text-right @(netProfit >= 0 ? "cu-text-success" : "cu-text-danger")">
+                        @Settings.Number(netProfit)
+                    </td>
+                    <td class="cu-text-right">@Share(netProfit)</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@code {
+    private List<ChartOfAccount> revenue = new();
+    private List<ChartOfAccount> expense = new();
+    private decimal totalRevenue, totalExpense, netProfit;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Settings.EnsureLoadedAsync();
+
+        var accounts = await DbContext.ChartOfAccounts
+            .Where(c => !c.IsHeader && (c.AccountType == 4 || c.AccountType == 5))
+            .OrderBy(c => c.AccountCode)
+            .ToListAsync();
+
+        revenue = accounts.Where(a => a.AccountType == 4).ToList();
+        expense = accounts.Where(a => a.AccountType == 5).ToList();
+        totalRevenue = revenue.Sum(a => a.CurrentBalance);
+        totalExpense = expense.Sum(a => a.CurrentBalance);
+        netProfit = totalRevenue - totalExpense;
+    }
+
+    private string Share(decimal amount)
+        => totalRevenue == 0 ? "—" : (amount / totalRevenue * 100).ToString("N1", Settings.Culture) + "%";
+
+    private async Task Print() => await JS.InvokeVoidAsync("cuanPrint");
+
+    private async Task ExportCsv()
+    {
+        var data = revenue.Concat(expense).Select(a => new
+        {
+            Kode = a.AccountCode,
+            Akun = a.AccountName,
+            Kelompok = a.AccountType == 4 ? "Pendapatan" : "Beban",
+            Jumlah = a.CurrentBalance
+        }).ToList();
+
+        var bytes = ExportService.ExportToCsv(data);
+        await JS.InvokeVoidAsync("downloadFileFromBytes",
+            $"laba-rugi-{DateTime.Today:yyyy-MM-dd}.csv", "text/csv", Convert.ToBase64String(bytes));
+    }
+}

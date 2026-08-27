@@ -1,0 +1,136 @@
+@page "/transactions/stock"
+@rendermode @(RenderMode.InteractiveServer)
+@attribute [Authorize(Roles = "Admin,Akuntan,StafGudang")]
+@inject AppDbContext DbContext
+@inject IJSRuntime JS
+<PageTitle>Stok - CUAN</PageTitle>
+<div class="cu-flex-between cu-mb-2"><div><h2 style="margin:0;">🔄 Mutasi Stok</h2></div><div class="cu-flex cu-gap-1"><button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportExcel">📥 Excel</button><button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportCsv">📄 CSV</button><button class="cu-btn cu-btn-primary cu-btn-sm" @onclick="CreateNew">+ Adjustment</button></div></div>
+
+<div class="cu-card cu-mb-2">
+    <input class="cu-form-input" @bind="searchTerm" @bind:event="oninput" placeholder="🔍 Cari item, gudang, tipe..." />
+</div>
+
+<div class="cu-card"><table class="cu-table"><thead><tr><th>Tanggal</th><th>Item</th><th>Gudang</th><th>Tipe</th><th class="cu-text-right">Qty</th><th>Ket</th><th></th></tr></thead>
+<tbody>@foreach(var m in filteredMovements){<tr><td>@m.MovementDate.ToString("dd/MM/yy")</td><td>@m.Item?.ItemName</td><td>@m.Warehouse?.Name</td><td>@m.Type</td><td class="cu-text-right" style="font-weight:600;color:@(m.Quantity>=0?"#059669":"#dc2626")">@m.Quantity</td><td>@m.Description</td><td><button class="cu-btn cu-btn-sm cu-btn-outline" @onclick="() => EditMovement(m)">✏️</button><button class="cu-btn cu-btn-sm cu-btn-danger" @onclick="() => DeleteMovement(m)">🗑️</button></td></tr>}</tbody></table></div>
+
+@if(showCreate){<div class="cu-modal-overlay" @onclick="()=>showCreate=false"><div class="cu-modal" style="min-width:450px;" @onclick:stopPropagation="true"><h3>@(newMov.Id==0?"Penyesuaian Stok":"Edit Mutasi Stok")</h3>
+<div class="cu-form-group"><label class="cu-form-label">Item</label><select class="cu-select" @bind="newMov.ItemId">@foreach(var it in items){<option value="@it.Id">@it.ItemName (Stok:@it.StockQuantity)</option>}</select></div>
+<div class="cu-form-group"><label class="cu-form-label">Gudang</label><select class="cu-select" @bind="newMov.WarehouseId">@foreach(var w in warehouses){<option value="@w.Id">@w.Name</option>}</select></div>
+<div class="cu-grid cu-grid-3"><div class="cu-form-group"><label class="cu-form-label">Tanggal</label><InputDate @bind-Value="newMov.MovementDate" class="cu-form-input"/></div><div class="cu-form-group"><label class="cu-form-label">Qty (+/-)</label><InputNumber @bind-Value="newMov.Quantity" class="cu-form-input"/></div><div class="cu-form-group"><label class="cu-form-label">Unit Cost</label><InputNumber @bind-Value="newMov.UnitCost" class="cu-form-input"/></div></div>
+<div class="cu-form-group"><label class="cu-form-label">Keterangan</label><InputText @bind-Value="newMov.Description" class="cu-form-input"/></div>
+<div class="cu-flex cu-gap-1" style="justify-content:flex-end;"><button class="cu-btn cu-btn-outline" @onclick="()=>showCreate=false">Batal</button><button class="cu-btn cu-btn-primary" @onclick="SaveMovement">💾 Simpan</button></div></div></div>}
+
+@code {
+    private List<StockMovement> movements=new();private List<Item> items=new();private List<Warehouse> warehouses=new();private bool showCreate;private StockMovement newMov=new(){MovementDate=DateTime.Today,Type=StockMovementType.Adjustment};
+    private string searchTerm = "";
+
+    private IEnumerable<StockMovement> filteredMovements => movements
+        .Where(m => string.IsNullOrEmpty(searchTerm)
+            || (m.Item?.ItemName ?? "").Contains(searchTerm, StringComparison.OrdinalIgnoreCase)
+            || (m.Warehouse?.Name ?? "").Contains(searchTerm, StringComparison.OrdinalIgnoreCase)
+            || m.Type.ToString().Contains(searchTerm, StringComparison.OrdinalIgnoreCase))
+        .OrderByDescending(m => m.MovementDate);
+
+    protected override async Task OnInitializedAsync(){await LoadData();}
+
+    private async Task LoadData()
+    {
+        movements=await DbContext.StockMovements.Include(m=>m.Item).Include(m=>m.Warehouse).OrderByDescending(m=>m.MovementDate).Take(200).ToListAsync();
+        items=await DbContext.Items.Where(i=>i.IsActive).ToListAsync();
+        warehouses=await DbContext.Warehouses.ToListAsync();
+    }
+
+    private void CreateNew(){newMov=new StockMovement{MovementDate=DateTime.Today,Type=StockMovementType.Adjustment};showCreate=true;}
+
+    private void EditMovement(StockMovement mov)
+    {
+        newMov = new StockMovement
+        {
+            Id = mov.Id,
+            MovementDate = mov.MovementDate,
+            ItemId = mov.ItemId,
+            WarehouseId = mov.WarehouseId,
+            Quantity = mov.Quantity,
+            UnitCost = mov.UnitCost,
+            Description = mov.Description,
+            Type = StockMovementType.Adjustment
+        };
+        showCreate = true;
+    }
+
+    private async Task SaveMovement(){
+        if (newMov.Id == 0)
+        {
+            newMov.CreatedAt=DateTime.UtcNow;newMov.Type=StockMovementType.Adjustment;DbContext.StockMovements.Add(newMov);
+            var item=await DbContext.Items.FindAsync(newMov.ItemId);if(item!=null)item.StockQuantity+=newMov.Quantity;
+        }
+        else
+        {
+            var existing = await DbContext.StockMovements.AsNoTracking().FirstOrDefaultAsync(m => m.Id == newMov.Id);
+            if (existing != null)
+            {
+                var item = await DbContext.Items.FindAsync(existing.ItemId);
+                if (item != null) item.StockQuantity -= existing.Quantity;
+
+                var newItem = await DbContext.Items.FindAsync(newMov.ItemId);
+                if (newItem != null) newItem.StockQuantity += newMov.Quantity;
+
+                DbContext.StockMovements.Update(newMov);
+            }
+        }
+
+        await DbContext.SaveChangesAsync();
+        showCreate=false;await LoadData();
+    }
+
+    private async Task DeleteMovement(StockMovement mov)
+    {
+        if (!await ConfirmAsync("Hapus mutasi stok ini?") ) return;
+        var item = await DbContext.Items.FindAsync(mov.ItemId);
+        if (item != null) item.StockQuantity -= mov.Quantity;
+        DbContext.StockMovements.Remove(mov);
+        await DbContext.SaveChangesAsync();
+        await LoadData();
+    }
+
+    private async Task ExportCsv()
+    {
+        var data = filteredMovements.Select(m => new
+        {
+            m.MovementDate,
+            Item = m.Item?.ItemName,
+            Warehouse = m.Warehouse?.Name,
+            m.Type,
+            m.Quantity,
+            m.Description
+        });
+
+        var bytes = ExportService.ExportToCsv(data);
+        await DownloadAsync(bytes, "stock_movements.csv", "text/csv");
+    }
+
+    private async Task ExportExcel()
+    {
+        var data = filteredMovements.Select(m => new
+        {
+            m.MovementDate,
+            Item = m.Item?.ItemName,
+            Warehouse = m.Warehouse?.Name,
+            m.Type,
+            m.Quantity,
+            m.Description
+        });
+
+        var bytes = ExportService.ExportToExcel(data, "StockMovements");
+        await DownloadAsync(bytes, "stock_movements.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    }
+
+    private async Task DownloadAsync(byte[] data, string fileName, string contentType)
+    {
+        var base64 = Convert.ToBase64String(data);
+        await JS.InvokeVoidAsync("downloadFileFromBytes", fileName, contentType, base64);
+    }
+
+    private async Task<bool> ConfirmAsync(string message) =>
+        await JS.InvokeAsync<bool>("confirm", message);
+}

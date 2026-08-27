@@ -1,0 +1,87 @@
+@inject AppDbContext DbContext
+@inject SettingsService Settings
+
+@* Baki notifikasi di topbar. Isinya dibaca dari tabel Notification saat dibuka,
+   jadi tetap benar walau circuit baru saja tersambung ulang. *@
+
+@if (_enabled)
+{
+    <button class="cu-icon-btn" @onclick="Toggle" aria-label="Notifikasi" title="Notifikasi">
+        <Icon Name="bell" Size="17" />
+        @if (_unread > 0)
+        {
+            <span class="cu-dot"></span>
+        }
+    </button>
+}
+
+@if (_open)
+{
+    <div class="cu-tray">
+        <div class="cu-tray-head">
+            <span class="cu-card-title">Notifikasi</span>
+            @if (_unread > 0)
+            {
+                <button class="cu-btn cu-btn-ghost cu-btn-sm" @onclick="MarkAllRead">Tandai terbaca</button>
+            }
+        </div>
+
+        @if (_items.Count == 0)
+        {
+            <div class="cu-table-empty">
+                <div class="cu-table-empty-title">Belum ada notifikasi</div>
+                <div class="cu-text-muted">Transaksi baru akan muncul di sini.</div>
+            </div>
+        }
+        else
+        {
+            @foreach (var n in _items)
+            {
+                <div class="cu-tray-item">
+                    <div class="cu-flex-between" style="align-items:flex-start;">
+                        <strong style="font-size:0.82rem;">@n.Title</strong>
+                        <span class="cu-tray-time">@n.CreatedAt.ToLocalTime().ToString("dd/MM HH:mm")</span>
+                    </div>
+                    <div class="cu-text-muted">@n.Message</div>
+                </div>
+            }
+        }
+    </div>
+}
+
+@code {
+    private bool _open;
+    private bool _enabled = true;
+    private int _unread;
+    private List<Notification> _items = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Settings.EnsureLoadedAsync();
+        _enabled = Settings.GetBool(SettingsCatalog.EnableNotifications, true);
+        if (_enabled) await RefreshAsync();
+    }
+
+    private async Task RefreshAsync()
+    {
+        _items = await DbContext.Notifications
+            .OrderByDescending(n => n.CreatedAt)
+            .Take(12)
+            .ToListAsync();
+        _unread = await DbContext.Notifications.CountAsync(n => !n.IsRead);
+    }
+
+    private async Task Toggle()
+    {
+        _open = !_open;
+        if (_open) await RefreshAsync();
+    }
+
+    private async Task MarkAllRead()
+    {
+        var unread = await DbContext.Notifications.Where(n => !n.IsRead).ToListAsync();
+        foreach (var n in unread) n.IsRead = true;
+        await DbContext.SaveChangesAsync();
+        await RefreshAsync();
+    }
+}

@@ -1,20 +1,246 @@
 @page "/reports/sales"
 @rendermode @(RenderMode.InteractiveServer)
-@attribute [Authorize(Roles = "Admin,Akuntan,Sales")]
+@attribute [Authorize(Roles = "Admin,Akuntan,Sales,Viewer")]
 @inject AppDbContext DbContext
+@inject SettingsService Settings
+@inject IJSRuntime JS
 
-<PageTitle>Laporan Penjualan - CUAN</PageTitle>
-<div class="cu-flex-between cu-mb-2"><div><h2 style="margin:0;">📊 Laporan Penjualan</h2></div><button class="cu-btn cu-btn-outline cu-btn-sm">📥 Excel</button></div>
+<PageTitle>Laporan Penjualan — CUAN</PageTitle>
+
+<PageHead Section="Laporan" Title="Laporan Penjualan"
+          Subtitle="@($"{Settings.FormatDate(from)} — {Settings.FormatDate(to)} · {invoices.Count} faktur")">
+    <Actions>
+        <input type="date" class="cu-form-input cu-btn-sm" style="width:150px;" @bind="from" @bind:after="LoadAsync" />
+        <input type="date" class="cu-form-input cu-btn-sm" style="width:150px;" @bind="to" @bind:after="LoadAsync" />
+        <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportExcel">
+            <Icon Name="download" Size="14" /> Excel
+        </button>
+    </Actions>
+</PageHead>
 
 <div class="cu-grid cu-grid-4 cu-mb-3">
-    <div class="cu-card"><div class="cu-text-muted">TOTAL INVOICE</div><div style="font-size:1.5rem;font-weight:700;">@totalInvoices</div></div>
-    <div class="cu-card"><div class="cu-text-muted">TOTAL PENJUALAN</div><div style="font-size:1.5rem;font-weight:700;color:#059669;">@totalSales.ToString("N0")</div></div>
-    <div class="cu-card"><div class="cu-text-muted">RATA-RATA / INVOICE</div><div style="font-size:1.5rem;font-weight:700;">@(totalInvoices>0?(totalSales/totalInvoices).ToString("N0"):"0")</div></div>
-    <div class="cu-card"><div class="cu-text-muted">PIUTANG OUTSTANDING</div><div style="font-size:1.5rem;font-weight:700;color:#f59e0b;">@outstanding.ToString("N0")</div></div>
+    <div class="cu-card cu-stat cu-stat-primary" style="margin-bottom:0;">
+        <div class="cu-stat-label">Nilai penjualan</div>
+        <div class="cu-stat-value">@Settings.Money(totalSales)</div>
+        <div class="cu-stat-foot">Termasuk PPN @Settings.Money(totalTax)</div>
+    </div>
+    <div class="cu-card cu-stat" style="margin-bottom:0;">
+        <div class="cu-stat-label">Jumlah faktur</div>
+        <div class="cu-stat-value">@invoices.Count</div>
+        <div class="cu-stat-foot">
+            Rata-rata @Settings.Money(invoices.Count > 0 ? totalSales / invoices.Count : 0)
+        </div>
+    </div>
+    <div class="cu-card cu-stat cu-stat-warning" style="margin-bottom:0;">
+        <div class="cu-stat-label">Belum dibayar</div>
+        <div class="cu-stat-value">@Settings.Money(outstanding)</div>
+        <div class="cu-stat-foot">@invoices.Count(i => i.RemainingAmount > 0) faktur</div>
+    </div>
+    <div class="cu-card cu-stat cu-stat-credit" style="margin-bottom:0;">
+        <div class="cu-stat-label">Jatuh tempo lewat</div>
+        <div class="cu-stat-value">@Settings.Money(overdue)</div>
+        <div class="cu-stat-foot">Perlu ditagih</div>
+    </div>
 </div>
 
-<div class="cu-card"><h3>Top 5 Customer</h3><table class="cu-table"><thead><tr><th>Customer</th><th class="cu-text-right">Total Pembelian</th><th class="cu-text-right">Piutang</th></tr></thead><tbody>@foreach(var c in topCustomers){<tr><td>@c.Name</td><td class="cu-text-right">@c.Balance.ToString("N0")</td><td class="cu-text-right">@c.Balance.ToString("N0")</td></tr>}</tbody></table></div>
+<div class="cu-grid cu-grid-2">
+    <div class="cu-card cu-card-flush">
+        <div class="cu-card-header"><span class="cu-card-title">Pelanggan teratas</span></div>
+        @if (topCustomers.Count == 0)
+        {
+            <EmptyState Title="Belum ada penjualan di rentang ini" />
+        }
+        else
+        {
+            <div class="cu-table-wrap">
+                <table class="cu-table">
+                    <thead>
+                        <tr><th>Pelanggan</th><th class="cu-text-right">Faktur</th><th class="cu-text-right">Nilai</th><th class="cu-text-right">Porsi</th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var c in topCustomers)
+                        {
+                            <tr>
+                                <td>@c.Name</td>
+                                <td class="cu-text-right cu-text-faint">@c.Count</td>
+                                <td class="cu-text-right">@Settings.Number(c.Total)</td>
+                                <td class="cu-text-right cu-text-faint">
+                                    @((totalSales == 0 ? 0 : c.Total / totalSales * 100).ToString("N1", Settings.Culture))%
+                                </td>
+                            </tr>
+                        }
+                        <tr class="cu-total-row">
+                            <td colspan="2">Sepuluh teratas</td>
+                            <td class="cu-text-right">@Settings.Number(topCustomers.Sum(c => c.Total))</td>
+                            <td></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
 
-<div class="cu-card cu-mb-0" style="margin-top:1rem;"><h3>Invoice Terakhir</h3><table class="cu-table"><thead><tr><th>No</th><th>Tgl</th><th>Customer</th><th class="cu-text-right">Total</th><th class="cu-text-right">Sisa</th><th>Status</th></tr></thead><tbody>@foreach(var s in recentInvoices){<tr><td style="font-family:monospace;">@s.InvoiceNumber</td><td>@s.InvoiceDate.ToString("dd/MM/yy")</td><td>@s.Customer?.Name</td><td class="cu-text-right">@s.GrandTotal.ToString("N0")</td><td class="cu-text-right">@s.RemainingAmount.ToString("N0")</td><td><span class="cu-badge @(s.Status==InvoiceStatus.Paid?"cu-badge-success":"cu-badge-warning")">@s.Status</span></td></tr>}</tbody></table></div>
+    <div class="cu-card cu-card-flush">
+        <div class="cu-card-header"><span class="cu-card-title">Barang terlaris</span></div>
+        @if (topItems.Count == 0)
+        {
+            <EmptyState Title="Belum ada barang terjual di rentang ini" />
+        }
+        else
+        {
+            <div class="cu-table-wrap">
+                <table class="cu-table">
+                    <thead>
+                        <tr><th>Barang</th><th class="cu-text-right">Kuantitas</th><th class="cu-text-right">Nilai</th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var item in topItems)
+                        {
+                            <tr>
+                                <td>@item.Name</td>
+                                <td class="cu-text-right">@Settings.Number(item.Qty)</td>
+                                <td class="cu-text-right">@Settings.Number(item.Total)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>
 
-@code {private decimal totalSales;private int totalInvoices;private decimal outstanding;private List<Customer> topCustomers=new();private List<SalesInvoice> recentInvoices=new();protected override async Task OnInitializedAsync(){totalInvoices=await DbContext.SalesInvoices.CountAsync();totalSales=await DbContext.SalesInvoices.Where(s=>s.Status!=InvoiceStatus.Canceled).SumAsync(s=>s.GrandTotal);outstanding=await DbContext.SalesInvoices.Where(s=>s.Status!=InvoiceStatus.Paid&&s.Status!=InvoiceStatus.Canceled).SumAsync(s=>s.RemainingAmount);topCustomers=await DbContext.Customers.OrderByDescending(c=>c.Balance).Take(5).ToListAsync();recentInvoices=await DbContext.SalesInvoices.Include(s=>s.Customer).OrderByDescending(s=>s.InvoiceDate).Take(10).ToListAsync();}}
+<div class="cu-card cu-card-flush" style="margin-bottom:0;">
+    <div class="cu-card-header">
+        <span class="cu-card-title">Faktur penjualan</span>
+        <a href="/transactions/sales" class="cu-btn cu-btn-ghost cu-btn-sm">
+            Kelola <Icon Name="chevron-right" Size="13" />
+        </a>
+    </div>
+    <div class="cu-table-wrap">
+        <table class="cu-table">
+            <thead>
+                <tr>
+                    <th>Nomor</th><th>Tanggal</th><th>Pelanggan</th>
+                    <th class="cu-text-right">Nilai</th><th class="cu-text-right">Dibayar</th>
+                    <th class="cu-text-right">Sisa</th><th>Jatuh tempo</th><th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var invoice in invoices.Take(50))
+                {
+                    <tr>
+                        <td class="cu-mono">@invoice.InvoiceNumber</td>
+                        <td class="cu-mono">@Settings.FormatDate(invoice.InvoiceDate)</td>
+                        <td>@invoice.Customer?.Name</td>
+                        <td class="cu-text-right">@Settings.Number(invoice.GrandTotal)</td>
+                        <td class="cu-text-right cu-text-success">@Settings.Number(invoice.PaidAmount)</td>
+                        <td class="cu-text-right cu-text-credit">@Settings.Number(invoice.RemainingAmount)</td>
+                        <td class="cu-mono @(IsOverdue(invoice) ? "cu-text-danger" : "cu-text-faint")">
+                            @Settings.FormatDate(invoice.DueDate)
+                        </td>
+                        <td><span class="cu-badge @StatusClass(invoice.Status)">@StatusLabel(invoice.Status)</span></td>
+                    </tr>
+                }
+                <tr class="cu-total-row">
+                    <td colspan="3">Jumlah @invoices.Count faktur</td>
+                    <td class="cu-text-right">@Settings.Number(totalSales)</td>
+                    <td class="cu-text-right">@Settings.Number(invoices.Sum(i => i.PaidAmount))</td>
+                    <td class="cu-text-right">@Settings.Number(outstanding)</td>
+                    <td colspan="2"></td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@code {
+    private sealed record CustomerRow(string Name, int Count, decimal Total);
+    private sealed record ItemRow(string Name, decimal Qty, decimal Total);
+
+    private List<SalesInvoice> invoices = new();
+    private List<CustomerRow> topCustomers = new();
+    private List<ItemRow> topItems = new();
+
+    private DateTime from = new(DateTime.Today.Year, 1, 1);
+    private DateTime to = DateTime.Today;
+    private decimal totalSales, totalTax, outstanding, overdue;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Settings.EnsureLoadedAsync();
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        invoices = await DbContext.SalesInvoices
+            .Include(s => s.Customer)
+            .Include(s => s.Details)!.ThenInclude(d => d.Item)
+            .Where(s => s.InvoiceDate >= from && s.InvoiceDate <= to && s.Status != InvoiceStatus.Canceled)
+            .OrderByDescending(s => s.InvoiceDate)
+            .ToListAsync();
+
+        totalSales = invoices.Sum(i => i.GrandTotal);
+        totalTax = invoices.Sum(i => i.TaxAmount);
+        outstanding = invoices.Sum(i => i.RemainingAmount);
+        overdue = invoices.Where(IsOverdue).Sum(i => i.RemainingAmount);
+
+        topCustomers = invoices
+            .Where(i => i.Customer is not null)
+            .GroupBy(i => i.Customer!.Name)
+            .Select(g => new CustomerRow(g.Key, g.Count(), g.Sum(i => i.GrandTotal)))
+            .OrderByDescending(c => c.Total)
+            .Take(10)
+            .ToList();
+
+        topItems = invoices
+            .SelectMany(i => i.Details)
+            .Where(d => d.Item is not null)
+            .GroupBy(d => d.Item!.ItemName)
+            .Select(g => new ItemRow(g.Key, g.Sum(d => d.Quantity), g.Sum(d => d.LineTotal)))
+            .OrderByDescending(i => i.Total)
+            .Take(10)
+            .ToList();
+    }
+
+    private static bool IsOverdue(SalesInvoice invoice)
+        => invoice.RemainingAmount > 0 && invoice.DueDate < DateTime.Today;
+
+    private static string StatusLabel(InvoiceStatus status) => status switch
+    {
+        InvoiceStatus.Draft => "Draf",
+        InvoiceStatus.Confirmed => "Dikonfirmasi",
+        InvoiceStatus.PartialPaid => "Sebagian",
+        InvoiceStatus.Paid => "Lunas",
+        InvoiceStatus.Canceled => "Batal",
+        _ => status.ToString()
+    };
+
+    private static string StatusClass(InvoiceStatus status) => status switch
+    {
+        InvoiceStatus.Paid => "cu-badge-success",
+        InvoiceStatus.PartialPaid => "cu-badge-warning",
+        InvoiceStatus.Canceled => "cu-badge-danger",
+        _ => "cu-badge-info"
+    };
+
+    private async Task ExportExcel()
+    {
+        var data = invoices.Select(i => new
+        {
+            Nomor = i.InvoiceNumber,
+            Tanggal = i.InvoiceDate.ToString("yyyy-MM-dd"),
+            Pelanggan = i.Customer?.Name,
+            Subtotal = i.SubTotal,
+            Ppn = i.TaxAmount,
+            Total = i.GrandTotal,
+            Dibayar = i.PaidAmount,
+            Sisa = i.RemainingAmount,
+            Status = StatusLabel(i.Status)
+        }).ToList();
+
+        var bytes = ExportService.ExportToExcel(data, "Penjualan");
+        await JS.InvokeVoidAsync("downloadFileFromBytes", $"laporan-penjualan-{DateTime.Today:yyyy-MM-dd}.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", Convert.ToBase64String(bytes));
+    }
+}

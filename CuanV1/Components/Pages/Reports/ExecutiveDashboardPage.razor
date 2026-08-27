@@ -1,0 +1,261 @@
+@page "/reports/executive"
+@rendermode @(RenderMode.InteractiveServer)
+@attribute [Authorize(Roles = "Admin,Akuntan")]
+@inject AppDbContext DbContext
+@inject ReportExportService ReportExportService
+@inject IJSRuntime JS
+
+<PageTitle>Executive Dashboard - CUAN</PageTitle>
+
+<div class="cu-mb-3">
+    <h2 style="margin:0;">📊 Executive Dashboard</h2>
+    <p class="cu-text-muted">Ringkasan kinerja bisnis untuk pengambilan keputusan</p>
+</div>
+
+<div class="cu-card cu-mb-2">
+    <div class="cu-flex cu-gap-2" style="flex-wrap:wrap;">
+        <div style="min-width:160px;">
+            <label class="cu-form-label">Tahun</label>
+            <select class="cu-select" @bind="selectedYear">
+                @foreach (var y in yearOptions){<option value="@y">@y</option>}
+            </select>
+        </div>
+        <div style="min-width:160px;">
+            <label class="cu-form-label">Bulan</label>
+            <select class="cu-select" @bind="selectedMonth">
+                <option value="0">Semua</option>
+                @for (int i = 1; i <= 12; i++)
+                {
+                    <option value="@i">@(new DateTime(2000, i, 1).ToString("MMMM"))</option>
+                }
+            </select>
+        </div>
+        <div style="align-self:end;">
+            <button class="cu-btn cu-btn-primary" @onclick="ApplyFilter">Terapkan</button>
+        </div>
+        <div style="margin-left:auto;align-self:end;" class="cu-flex cu-gap-1">
+            <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportExcel">📥 Excel</button>
+            <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportPdf">📄 PDF</button>
+        </div>
+    </div>
+</div>
+
+<div class="cu-grid cu-grid-4 cu-mb-3">
+    <div class="cu-card"><div class="cu-text-muted">TOTAL PENJUALAN</div><div style="font-size:1.5rem;font-weight:700;color:#059669;">@totalSales.ToString("N0")</div></div>
+    <div class="cu-card"><div class="cu-text-muted">TOTAL PEMBELIAN</div><div style="font-size:1.5rem;font-weight:700;color:#dc2626;">@totalPurchases.ToString("N0")</div></div>
+    <div class="cu-card"><div class="cu-text-muted">LABA KOTOR</div><div style="font-size:1.5rem;font-weight:700;color:var(--cu-primary);">@grossProfit.ToString("N0")</div></div>
+    <div class="cu-card"><div class="cu-text-muted">KAS & BANK</div><div style="font-size:1.5rem;font-weight:700;">@cashBank.ToString("N0")</div></div>
+</div>
+
+<div class="cu-grid cu-grid-2 cu-mb-3">
+    <div class="cu-card cu-chart">
+        <h3 style="margin-top:0;">📈 Penjualan vs Pembelian (Bulanan)</h3>
+        <ApexChart TItem="MonthlyValue" Title="" Height="280">
+            <ApexPointSeries TItem="MonthlyValue" Items="monthlySales" Name="Penjualan" XValue="x=>x.Month" YValue="x=>x.Value" />
+            <ApexPointSeries TItem="MonthlyValue" Items="monthlyPurchases" Name="Pembelian" XValue="x=>x.Month" YValue="x=>x.Value" />
+        </ApexChart>
+    </div>
+    <div class="cu-card cu-chart">
+        <h3 style="margin-top:0;">💸 Arus Kas (Bulanan)</h3>
+        <ApexChart TItem="MonthlyValue" Title="" Height="280">
+            <ApexPointSeries TItem="MonthlyValue" Items="monthlyCashIn" Name="Kas Masuk" XValue="x=>x.Month" YValue="x=>x.Value" />
+            <ApexPointSeries TItem="MonthlyValue" Items="monthlyCashOut" Name="Kas Keluar" XValue="x=>x.Month" YValue="x=>x.Value" />
+        </ApexChart>
+    </div>
+</div>
+
+<div class="cu-grid cu-grid-2 cu-mb-3">
+    <div class="cu-card">
+        <h3 style="margin-top:0;">🏆 Top 5 Customer</h3>
+        <div class="cu-table-wrap">
+            <table class="cu-table"><thead><tr><th>Customer</th><th class="cu-text-right">Total Penjualan</th><th class="cu-text-right">Piutang</th></tr></thead>
+            <tbody>@foreach (var c in topCustomers){<tr><td>@c.Name</td><td class="cu-text-right">@c.TotalSales.ToString("N0")</td><td class="cu-text-right">@c.Balance.ToString("N0")</td></tr>}</tbody></table>
+        </div>
+    </div>
+    <div class="cu-card">
+        <h3 style="margin-top:0;">⚠️ Invoice Jatuh Tempo</h3>
+        <div class="cu-table-wrap">
+            <table class="cu-table"><thead><tr><th>No</th><th>Customer</th><th>Jatuh Tempo</th><th class="cu-text-right">Sisa</th></tr></thead>
+            <tbody>@foreach (var i in overdueInvoices){<tr><td style="font-family:monospace;">@i.InvoiceNumber</td><td>@i.CustomerName</td><td>@i.DueDate.ToString("dd/MM/yy")</td><td class="cu-text-right">@i.RemainingAmount.ToString("N0")</td></tr>}</tbody></table>
+        </div>
+    </div>
+</div>
+
+<div class="cu-card">
+    <h3 style="margin-top:0;">📦 Produk Terlaris</h3>
+    <div class="cu-table-wrap">
+        <table class="cu-table"><thead><tr><th>Barang</th><th class="cu-text-right">Qty Terjual</th><th class="cu-text-right">Omzet</th></tr></thead>
+        <tbody>@foreach (var p in topItems){<tr><td>@p.ItemName</td><td class="cu-text-right">@p.TotalQty</td><td class="cu-text-right">@p.TotalRevenue.ToString("N0")</td></tr>}</tbody></table>
+    </div>
+</div>
+
+@code {
+    private decimal totalSales;
+    private decimal totalPurchases;
+    private decimal grossProfit;
+    private decimal cashBank;
+
+    private List<MonthlyValue> monthlySales = new();
+    private List<MonthlyValue> monthlyPurchases = new();
+    private List<MonthlyValue> monthlyCashIn = new();
+    private List<MonthlyValue> monthlyCashOut = new();
+    private List<CustomerSummary> topCustomers = new();
+    private List<InvoiceSummary> overdueInvoices = new();
+    private List<ItemSummary> topItems = new();
+
+    private List<int> yearOptions = new();
+    private int selectedYear;
+    private int selectedMonth;
+
+    protected override async Task OnInitializedAsync()
+    {
+        yearOptions = await DbContext.SalesInvoices.Select(s => s.InvoiceDate.Year)
+            .Union(DbContext.PurchaseInvoices.Select(p => p.InvoiceDate.Year))
+            .Distinct()
+            .OrderBy(y => y)
+            .ToListAsync();
+
+        if (yearOptions.Count == 0) yearOptions.Add(DateTime.Now.Year);
+        selectedYear = yearOptions.Last();
+        selectedMonth = 0;
+
+        await LoadData();
+    }
+
+    private async Task ApplyFilter() => await LoadData();
+
+    private async Task LoadData()
+    {
+        var salesQuery = DbContext.SalesInvoices
+            .Include(s => s.Customer)
+            .Include(s => s.Details)
+            .ThenInclude(d => d.Item)
+            .AsQueryable();
+
+        var purchaseQuery = DbContext.PurchaseInvoices.AsQueryable();
+        var cashInQuery = DbContext.CashTransactions.Where(t => t.Type == CashTransactionType.CashIn).AsQueryable();
+        var cashOutQuery = DbContext.CashTransactions.Where(t => t.Type == CashTransactionType.CashOut).AsQueryable();
+
+        salesQuery = salesQuery.Where(s => s.InvoiceDate.Year == selectedYear);
+        purchaseQuery = purchaseQuery.Where(p => p.InvoiceDate.Year == selectedYear);
+        cashInQuery = cashInQuery.Where(c => c.TransactionDate.Year == selectedYear);
+        cashOutQuery = cashOutQuery.Where(c => c.TransactionDate.Year == selectedYear);
+
+        if (selectedMonth > 0)
+        {
+            salesQuery = salesQuery.Where(s => s.InvoiceDate.Month == selectedMonth);
+            purchaseQuery = purchaseQuery.Where(p => p.InvoiceDate.Month == selectedMonth);
+            cashInQuery = cashInQuery.Where(c => c.TransactionDate.Month == selectedMonth);
+            cashOutQuery = cashOutQuery.Where(c => c.TransactionDate.Month == selectedMonth);
+        }
+
+        var sales = await salesQuery.ToListAsync();
+        var purchases = await purchaseQuery.ToListAsync();
+        var cashIn = await cashInQuery.ToListAsync();
+        var cashOut = await cashOutQuery.ToListAsync();
+
+        var bank = await DbContext.BankAccounts.SumAsync(b => b.Balance);
+        var kas = await DbContext.ChartOfAccounts.Where(c => c.AccountCode == "1-1100").SumAsync(c => c.CurrentBalance);
+
+        totalSales = sales.Sum(s => s.GrandTotal);
+        totalPurchases = purchases.Sum(p => p.GrandTotal);
+        grossProfit = totalSales - totalPurchases;
+        cashBank = bank + kas;
+
+        monthlySales = BuildMonthlySeries(sales.GroupBy(s => s.InvoiceDate.Month).ToDictionary(g => g.Key, g => g.Sum(x => x.GrandTotal)));
+        monthlyPurchases = BuildMonthlySeries(purchases.GroupBy(p => p.InvoiceDate.Month).ToDictionary(g => g.Key, g => g.Sum(x => x.GrandTotal)));
+        monthlyCashIn = BuildMonthlySeries(cashIn.GroupBy(c => c.TransactionDate.Month).ToDictionary(g => g.Key, g => g.Sum(x => x.Amount)));
+        monthlyCashOut = BuildMonthlySeries(cashOut.GroupBy(c => c.TransactionDate.Month).ToDictionary(g => g.Key, g => g.Sum(x => x.Amount)));
+
+        topCustomers = sales
+            .GroupBy(s => s.Customer?.Name ?? "-")
+            .Select(g => new CustomerSummary
+            {
+                Name = g.Key,
+                TotalSales = g.Sum(x => x.GrandTotal),
+                Balance = g.First().Customer?.Balance ?? 0
+            })
+            .OrderByDescending(x => x.TotalSales)
+            .Take(5)
+            .ToList();
+
+        overdueInvoices = sales
+            .Where(s => s.DueDate < DateTime.Today && s.RemainingAmount > 0)
+            .OrderBy(s => s.DueDate)
+            .Take(10)
+            .Select(s => new InvoiceSummary
+            {
+                InvoiceNumber = s.InvoiceNumber,
+                CustomerName = s.Customer?.Name ?? "-",
+                DueDate = s.DueDate,
+                RemainingAmount = s.RemainingAmount
+            })
+            .ToList();
+
+        topItems = sales
+            .SelectMany(s => s.Details)
+            .GroupBy(d => d.ItemId)
+            .Select(g => new ItemSummary
+            {
+                ItemName = g.First().Item?.ItemName ?? "-",
+                TotalQty = g.Sum(x => x.Quantity),
+                TotalRevenue = g.Sum(x => x.LineTotal)
+            })
+            .OrderByDescending(x => x.TotalQty)
+            .Take(8)
+            .ToList();
+    }
+
+    private async Task ExportExcel()
+    {
+        var report = BuildReportModel();
+        var bytes = ReportExportService.ExportExecutiveDashboardExcel(report);
+        await DownloadAsync(bytes, "executive_dashboard.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    }
+
+    private async Task ExportPdf()
+    {
+        var report = BuildReportModel();
+        var bytes = ReportExportService.ExportExecutiveDashboardPdf(report);
+        await DownloadAsync(bytes, "executive_dashboard.pdf", "application/pdf");
+    }
+
+    private ExecutiveDashboardReport BuildReportModel()
+    {
+        return new ExecutiveDashboardReport
+        {
+            PeriodLabel = selectedMonth > 0 ? $"{new DateTime(selectedYear, selectedMonth, 1):MMMM yyyy}" : $"Tahun {selectedYear}",
+            TotalSales = totalSales,
+            TotalPurchases = totalPurchases,
+            GrossProfit = grossProfit,
+            CashBank = cashBank,
+            MonthlySales = monthlySales,
+            MonthlyPurchases = monthlyPurchases,
+            MonthlyCashIn = monthlyCashIn,
+            MonthlyCashOut = monthlyCashOut,
+            TopCustomers = topCustomers,
+            OverdueInvoices = overdueInvoices,
+            TopItems = topItems
+        };
+    }
+
+    private List<MonthlyValue> BuildMonthlySeries(Dictionary<int, decimal> data)
+    {
+        var result = new List<MonthlyValue>();
+        for (int m = 1; m <= 12; m++)
+        {
+            result.Add(new MonthlyValue
+            {
+                Month = new DateTime(2024, m, 1).ToString("MMM"),
+                Value = data.TryGetValue(m, out var v) ? v : 0
+            });
+        }
+        return result;
+    }
+
+    private async Task DownloadAsync(byte[] data, string fileName, string contentType)
+    {
+        var base64 = Convert.ToBase64String(data);
+        await JS.InvokeVoidAsync("downloadFileFromBytes", fileName, contentType, base64);
+    }
+}

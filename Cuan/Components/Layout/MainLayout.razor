@@ -1,98 +1,240 @@
 @inherits LayoutComponentBase
 @inject NavigationManager Navigation
-
-@* Check auth state in code, not in markup *@
+@inject IJSRuntime JS
+@inject SettingsService Settings
+@implements IDisposable
 
 <div class="cu-layout">
-    <aside class="cu-sidebar">
+    <aside class="cu-sidebar @(_menuOpen ? "is-open" : "")">
         <div class="cu-sidebar-header">
-            <a href="/" class="cu-logo"><span class="cu-logo-icon">💰</span><span class="cu-logo-text">CUAN</span></a>
+            <a href="/" class="cu-logo">
+                <span class="cu-logo-icon">Rp</span>
+                <span>
+                    <span class="cu-logo-text">CUAN</span>
+                    <span class="cu-logo-sub">Buku Besar</span>
+                </span>
+            </a>
         </div>
+
         <nav class="cu-nav">
             @if (_isAuthenticated)
             {
-                <div class="cu-nav-group"><div class="cu-nav-group-title">📊 Dashboard</div><a href="/" class="cu-nav-link"><span class="cu-nav-icon">🏠</span> Dashboard</a></div>
-                <div class="cu-nav-group"><div class="cu-nav-group-title">📋 Master Data</div>
-                    <a href="/master/coa" class="cu-nav-link"><span class="cu-nav-icon">📒</span> Chart of Accounts</a>
-                    <a href="/master/items" class="cu-nav-link"><span class="cu-nav-icon">📦</span> Barang</a>
-                    <a href="/master/customers" class="cu-nav-link"><span class="cu-nav-icon">👥</span> Customer</a>
-                    <a href="/master/suppliers" class="cu-nav-link"><span class="cu-nav-icon">🏭</span> Supplier</a>
-                    <a href="/master/warehouses" class="cu-nav-link"><span class="cu-nav-icon">🏗️</span> Gudang & Cabang</a>
-                    <a href="/master/currencies" class="cu-nav-link"><span class="cu-nav-icon">💱</span> Mata Uang</a>
-                    <a href="/master/taxes" class="cu-nav-link"><span class="cu-nav-icon">🧾</span> Pajak</a>
-                    <a href="/master/banks" class="cu-nav-link"><span class="cu-nav-icon">🏦</span> Bank</a>
-                </div>
-                <div class="cu-nav-group"><div class="cu-nav-group-title">💰 Transaksi</div>
-                    <a href="/transactions/journal" class="cu-nav-link"><span class="cu-nav-icon">📝</span> Jurnal Umum</a>
-                    <a href="/transactions/sales" class="cu-nav-link"><span class="cu-nav-icon">🛒</span> Penjualan</a>
-                    <a href="/transactions/purchases" class="cu-nav-link"><span class="cu-nav-icon">📥</span> Pembelian</a>
-                    <a href="/transactions/cash" class="cu-nav-link"><span class="cu-nav-icon">💵</span> Kas</a>
-                    <a href="/transactions/bank" class="cu-nav-link"><span class="cu-nav-icon">🏦</span> Bank</a>
-                    <a href="/transactions/giro" class="cu-nav-link"><span class="cu-nav-icon">📜</span> Giro</a>
-                    <a href="/transactions/stock" class="cu-nav-link"><span class="cu-nav-icon">🔄</span> Stok</a>
-                </div>
-                <div class="cu-nav-group"><div class="cu-nav-group-title">📈 Laporan</div>
-                    <a href="/reports/executive" class="cu-nav-link"><span class="cu-nav-icon">📊</span> Executive Dashboard</a>
-                    <a href="/reports/profit-loss" class="cu-nav-link"><span class="cu-nav-icon">📉</span> Laba Rugi</a>
-                    <a href="/reports/balance-sheet" class="cu-nav-link"><span class="cu-nav-icon">⚖️</span> Neraca</a>
-                    <a href="/reports/cash-flow" class="cu-nav-link"><span class="cu-nav-icon">💸</span> Arus Kas</a>
-                    <a href="/reports/tax" class="cu-nav-link"><span class="cu-nav-icon">🧾</span> Pajak</a>
-                </div>
-                <div class="cu-nav-group"><div class="cu-nav-group-title">⚙️ Admin</div>
-                    <a href="/admin/users" class="cu-nav-link"><span class="cu-nav-icon">👤</span> User & Role</a>
-                    <a href="/admin/settings" class="cu-nav-link"><span class="cu-nav-icon">🔧</span> Pengaturan</a>
-                    <a href="/admin/audit" class="cu-nav-link"><span class="cu-nav-icon">📋</span> Audit Trail</a>
-                    <a href="/admin/apikeys" class="cu-nav-link"><span class="cu-nav-icon">🔑</span> API Keys</a>
-                </div>
-                <div style="margin-top:auto;padding-top:1rem;">
-                    <a href="/swagger" target="_blank" class="cu-nav-link"><span class="cu-nav-icon">🔌</span> API Swagger</a>
-                </div>
+                @foreach (var group in VisibleGroups())
+                {
+                    <div class="cu-nav-group">
+                        <div class="cu-nav-group-title">@group.Title</div>
+                        @foreach (var link in group.Links)
+                        {
+                            <NavLink class="cu-nav-link" href="@link.Href"
+                                     Match="@(link.Href == "/" ? NavLinkMatch.All : NavLinkMatch.Prefix)">
+                                <Icon Name="@link.Icon" CssClass="cu-nav-icon" />
+                                <span>@link.Label</span>
+                            </NavLink>
+                        }
+                    </div>
+                }
             }
         </nav>
+
         <div class="cu-sidebar-footer">
-            <span style="font-size:0.7rem;color:var(--cu-text-secondary);">CUAN v1.0</span>
+            <span class="cu-mono" style="font-size:0.63rem;color:var(--cu-text-faint);">CUAN v2.0</span>
+            @if (_isAuthenticated)
+            {
+                <a href="/swagger" target="_blank" class="cu-btn cu-btn-ghost cu-btn-sm" title="Dokumentasi API">
+                    <Icon Name="link" Size="13" /> API
+                </a>
+            }
         </div>
     </aside>
 
     <main class="cu-main">
         <header class="cu-topbar">
-            <div class="cu-topbar-left"><span class="cu-breadcrumb">@GetBreadcrumb()</span></div>
+            <div class="cu-topbar-left">
+                <button class="cu-icon-btn cu-burger" @onclick="() => _menuOpen = !_menuOpen" aria-label="Buka menu">
+                    <Icon Name="menu" Size="18" />
+                </button>
+                <span class="cu-breadcrumb">@((MarkupString)Breadcrumb())</span>
+            </div>
+
             <div class="cu-topbar-right">
                 @if (_isAuthenticated)
                 {
-                    <span class="cu-user-info">👤 @_userName</span>
-                    <a href="/logout" class="cu-btn cu-btn-sm cu-btn-outline">🚪 Logout</a>
+                    <NotificationBell />
+
+                    <button class="cu-icon-btn" @onclick="ToggleTheme"
+                            title="@(_theme == "dark" ? "Beralih ke tema terang" : "Beralih ke tema gelap")"
+                            aria-label="Ganti tema">
+                        <Icon Name="@(_theme == "dark" ? "sun" : "moon")" Size="17" />
+                    </button>
+
+                    <span class="cu-user-info" title="@_roleLabel">@_displayName</span>
+                    <a href="/logout" class="cu-btn cu-btn-outline cu-btn-sm">
+                        <Icon Name="logout" Size="14" /> Keluar
+                    </a>
                 }
                 else
                 {
-                    <a href="/login" class="cu-btn cu-btn-sm cu-btn-primary">🔐 Login</a>
+                    <a href="/login" class="cu-btn cu-btn-primary cu-btn-sm">
+                        <Icon Name="login" Size="14" /> Masuk
+                    </a>
                 }
             </div>
         </header>
+
         <div class="cu-content">@Body</div>
     </main>
 </div>
 
 @code {
-    [CascadingParameter]
-    private Task<AuthenticationState>? AuthenticationStateTask { get; set; }
+    [CascadingParameter] private Task<AuthenticationState>? AuthenticationStateTask { get; set; }
+
+    private sealed record NavItem(string Label, string Href, string Icon, params string[] Roles);
+    private sealed record NavGroup(string Title, List<NavItem> Links);
 
     private bool _isAuthenticated;
-    private string _userName = "";
+    private bool _menuOpen;
+    private string _displayName = "";
+    private string _roleLabel = "";
+    private string _theme = "light";
+    private string[] _roles = Array.Empty<string>();
 
-    protected override async Task OnInitializedAsync()
+    // Peran yang boleh melihat tiap tautan. Daftar ini mengikuti [Authorize]
+    // di masing-masing halaman, jadi menu tidak lagi menawarkan halaman yang
+    // ujungnya menolak pengguna.
+    private static readonly NavGroup[] Menu =
     {
-        if (AuthenticationStateTask != null)
+        new("Ringkasan", new()
         {
-            var authState = await AuthenticationStateTask;
-            _isAuthenticated = authState.User.Identity?.IsAuthenticated ?? false;
-            _userName = authState.User.Identity?.Name ?? "";
+            new("Dasbor", "/", "dashboard"),
+            new("Dasbor Eksekutif", "/reports/executive", "sparkle", "Admin", "Akuntan")
+        }),
+        new("Data Induk", new()
+        {
+            new("Daftar Akun", "/master/coa", "book", "Admin", "Akuntan"),
+            new("Barang", "/master/items", "package", "Admin", "Akuntan", "StafGudang"),
+            new("Pelanggan", "/master/customers", "users", "Admin", "Akuntan", "Sales"),
+            new("Pemasok", "/master/suppliers", "factory", "Admin", "Akuntan", "Purchasing"),
+            new("Gudang & Cabang", "/master/warehouses", "warehouse", "Admin", "Akuntan"),
+            new("Mata Uang", "/master/currencies", "currency", "Admin", "Akuntan"),
+            new("Pajak", "/master/taxes", "receipt", "Admin", "Akuntan"),
+            new("Bank", "/master/banks", "bank", "Admin", "Akuntan", "Kasir")
+        }),
+        new("Transaksi", new()
+        {
+            new("Jurnal Umum", "/transactions/journal", "journal", "Admin", "Akuntan"),
+            new("Penjualan", "/transactions/sales", "cart", "Admin", "Akuntan", "Sales"),
+            new("Pembelian", "/transactions/purchases", "inbox", "Admin", "Akuntan", "Purchasing"),
+            new("Kas", "/transactions/cash", "cash", "Admin", "Akuntan", "Kasir"),
+            new("Bank", "/transactions/bank", "bank", "Admin", "Akuntan", "Kasir"),
+            new("Giro", "/transactions/giro", "giro", "Admin", "Akuntan", "Kasir"),
+            new("Stok", "/transactions/stock", "stock", "Admin", "Akuntan", "StafGudang")
+        }),
+        new("Pajak", new()
+        {
+            new("Faktur Pajak", "/tax/faktur", "receipt", "Admin", "Akuntan"),
+            new("Bukti Potong PPh", "/tax/withholding", "list", "Admin", "Akuntan"),
+            new("SPT Masa", "/tax/spt", "send", "Admin", "Akuntan"),
+            new("Integrasi DJP", "/tax/djp", "cloud", "Admin", "Akuntan")
+        }),
+        new("Laporan", new()
+        {
+            new("Buku Besar", "/reports/ledger", "book", "Admin", "Akuntan", "Viewer"),
+            new("Neraca Saldo", "/reports/trial-balance", "calculator", "Admin", "Akuntan", "Viewer"),
+            new("Laba Rugi", "/reports/profit-loss", "trending", "Admin", "Akuntan", "Viewer"),
+            new("Neraca", "/reports/balance-sheet", "scale", "Admin", "Akuntan", "Viewer"),
+            new("Arus Kas", "/reports/cash-flow", "flow", "Admin", "Akuntan", "Viewer"),
+            new("Penjualan", "/reports/sales", "chart", "Admin", "Akuntan", "Sales", "Viewer"),
+            new("Stok", "/reports/stock", "package", "Admin", "Akuntan", "StafGudang", "Viewer"),
+            new("Pajak", "/reports/tax", "receipt", "Admin", "Akuntan", "Viewer")
+        }),
+        new("Administrasi", new()
+        {
+            new("Pengguna & Peran", "/admin/users", "user", "Admin"),
+            new("Pengaturan", "/admin/settings", "settings", "Admin"),
+            new("Jejak Audit", "/admin/audit", "shield", "Admin"),
+            new("Kunci API", "/admin/apikeys", "key", "Admin")
+        })
+    };
+
+    private IEnumerable<NavGroup> VisibleGroups()
+    {
+        foreach (var group in Menu)
+        {
+            var links = group.Links
+                .Where(l => l.Roles.Length == 0 || l.Roles.Any(r => _roles.Contains(r)))
+                .ToList();
+            if (links.Count > 0) yield return group with { Links = links };
         }
     }
 
-    private string GetBreadcrumb()
+    protected override async Task OnInitializedAsync()
     {
-        var path = Navigation.Uri.Replace(Navigation.BaseUri, "/");
-        return path switch { "/" => "Dashboard", _ => path.Replace("/", " > ").Replace("-", " ").TrimStart(' ', '>') };
+        await Settings.EnsureLoadedAsync();
+
+        if (AuthenticationStateTask is not null)
+        {
+            var state = await AuthenticationStateTask;
+            var user = state.User;
+            _isAuthenticated = user.Identity?.IsAuthenticated ?? false;
+            _roles = user.Claims
+                .Where(c => c.Type == System.Security.Claims.ClaimTypes.Role)
+                .Select(c => c.Value)
+                .ToArray();
+            _roleLabel = string.Join(", ", _roles);
+
+            var email = user.Identity?.Name ?? "";
+            _displayName = email.Contains('@') ? email[..email.IndexOf('@')] : email;
+        }
+
+        Navigation.LocationChanged += OnLocationChanged;
     }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try
+        {
+            _theme = await JS.InvokeAsync<string>("cuanTheme.apply",
+                Settings.Get(SettingsCatalog.DefaultTheme, "light"));
+            StateHasChanged();
+        }
+        catch (JSDisconnectedException) { }
+    }
+
+    private async Task ToggleTheme()
+    {
+        _theme = _theme == "dark" ? "light" : "dark";
+        await JS.InvokeVoidAsync("cuanTheme.set", _theme);
+    }
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        _menuOpen = false;
+        InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>
+    /// Remah roti memakai nama yang sama dengan menu di sisi kiri, bukan
+    /// potongan URL — supaya bahasanya konsisten dan pengguna mengenali
+    /// halaman yang sedang dibuka.
+    /// </summary>
+    private string Breadcrumb()
+    {
+        var path = "/" + new Uri(Navigation.Uri).AbsolutePath.Trim('/');
+
+        foreach (var group in Menu)
+        {
+            var match = group.Links.FirstOrDefault(l =>
+                string.Equals(l.Href, path, StringComparison.OrdinalIgnoreCase));
+            if (match is not null)
+                return path == "/" ? $"<b>{match.Label}</b>" : $"{group.Title} / <b>{match.Label}</b>";
+        }
+
+        // Halaman di luar menu (mis. /not-found) tetap dapat label yang terbaca.
+        if (path == "/") return "<b>Dasbor</b>";
+        var last = path.Split('/').Last().Replace('-', ' ');
+        return $"<b>{System.Globalization.CultureInfo.CurrentCulture.TextInfo.ToTitleCase(last)}</b>";
+    }
+
+    public void Dispose() => Navigation.LocationChanged -= OnLocationChanged;
 }

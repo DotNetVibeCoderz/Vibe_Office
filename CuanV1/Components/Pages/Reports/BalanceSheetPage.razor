@@ -1,0 +1,19 @@
+@page "/reports/balance-sheet"
+@attribute [Authorize(Roles = "Admin,Akuntan")]
+@inject AppDbContext DbContext
+<PageTitle>Neraca - CUAN</PageTitle>
+<div class="cu-flex-between cu-mb-2"><div><h2 style="margin:0;">⚖️ Neraca / Balance Sheet</h2></div></div>
+<div class="cu-card"><h3>PT. CUAN MAKMUR SENTOSA</h3><p class="cu-text-muted">Neraca per @DateTime.Now.ToString("dd MMMM yyyy")</p>
+<table class="cu-table" style="max-width:600px;"><thead><tr><th>Keterangan</th><th class="cu-text-right">Jumlah (Rp)</th></tr></thead><tbody>
+<tr><td colspan="2"><strong>AKTIVA</strong></td></tr>
+@foreach (var a in assetAccounts){<tr><td style="padding-left:20px;">@a.AccountName</td><td class="cu-text-right">@a.CurrentBalance.ToString("N0")</td></tr>}
+<tr style="font-weight:bold;"><td>Total Aktiva</td><td class="cu-text-right">@totalAsset.ToString("N0")</td></tr>
+<tr><td colspan="2"><strong>KEWAJIBAN</strong></td></tr>
+@foreach (var l in liabilityAccounts){<tr><td style="padding-left:20px;">@l.AccountName</td><td class="cu-text-right">@l.CurrentBalance.ToString("N0")</td></tr>}
+<tr style="font-weight:bold;"><td>Total Kewajiban</td><td class="cu-text-right">@totalLiability.ToString("N0")</td></tr>
+<tr><td colspan="2"><strong>MODAL</strong></td></tr>
+@foreach (var e in equityAccounts){<tr><td style="padding-left:20px;">@e.AccountName</td><td class="cu-text-right">@e.CurrentBalance.ToString("N0")</td></tr>}
+<tr style="font-weight:bold;"><td>Total Modal</td><td class="cu-text-right">@totalEquity.ToString("N0")</td></tr>
+<tr style="font-weight:bold; font-size:1.1rem; border-top:3px double var(--cu-border);"><td>TOTAL KEWAJIBAN + MODAL</td><td class="cu-text-right">@((totalLiability + totalEquity).ToString("N0"))</td></tr>
+</tbody></table></div>
+@code { private List<ChartOfAccount> assetAccounts = new(); private List<ChartOfAccount> liabilityAccounts = new(); private List<ChartOfAccount> equityAccounts = new(); private decimal totalAsset; private decimal totalLiability; private decimal totalEquity; protected override async Task OnInitializedAsync() { assetAccounts = await DbContext.ChartOfAccounts.Where(c => c.AccountType == 1 && !c.IsHeader).ToListAsync(); liabilityAccounts = await DbContext.ChartOfAccounts.Where(c => c.AccountType == 2 && !c.IsHeader).ToListAsync(); equityAccounts = await DbContext.ChartOfAccounts.Where(c => c.AccountType == 3 && !c.IsHeader).ToListAsync(); totalAsset = assetAccounts.Sum(c => c.CurrentBalance); totalLiability = liabilityAccounts.Sum(c => c.CurrentBalance); totalEquity = equityAccounts.Sum(c => c.CurrentBalance); } }

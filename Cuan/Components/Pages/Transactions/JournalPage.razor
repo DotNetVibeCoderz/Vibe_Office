@@ -2,139 +2,365 @@
 @rendermode @(RenderMode.InteractiveServer)
 @attribute [Authorize(Roles = "Admin,Akuntan")]
 @inject AppDbContext DbContext
+@inject SettingsService Settings
+@inject PostingService Posting
+@inject DocumentNumberService Numbers
 @inject IJSRuntime JS
 
-<PageTitle>Jurnal Umum - CUAN</PageTitle>
+<PageTitle>Jurnal Umum — CUAN</PageTitle>
 
-<div class="cu-flex-between cu-mb-2">
-    <div><h2 style="margin:0;">📝 Jurnal Umum</h2><span class="cu-text-muted">@journalCount entri</span></div>
-    <div class="cu-flex cu-gap-1">
-        <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportToExcel">📥 Excel</button>
-        <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportToCsv">📄 CSV</button>
-        <button class="cu-btn cu-btn-primary cu-btn-sm" @onclick="CreateNew">+ Jurnal Baru</button>
+<PageHead Section="Transaksi" Title="Jurnal Umum"
+          Subtitle="@($"{journalCount} entri · {journals.Count(j => !j.IsPosted)} masih draf")">
+    <Actions>
+        <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportToExcel">
+            <Icon Name="download" Size="14" /> Excel
+        </button>
+        <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportToCsv">
+            <Icon Name="download" Size="14" /> CSV
+        </button>
+        <button class="cu-btn cu-btn-primary cu-btn-sm" @onclick="CreateNew">
+            <Icon Name="plus" Size="14" /> Jurnal baru
+        </button>
+    </Actions>
+</PageHead>
+
+@if (message is not null)
+{
+    <div class="cu-alert @messageClass">@message</div>
+}
+
+<div class="cu-filterbar">
+    <div class="cu-search">
+        <span class="cu-search-icon"><Icon Name="search" Size="15" /></span>
+        <input class="cu-form-input" placeholder="Cari nomor, keterangan, atau referensi…"
+               @bind="searchTerm" @bind:event="oninput" />
     </div>
-</div>
-
-<div class="cu-card cu-mb-2">
-    <input class="cu-form-input" @bind="searchTerm" @bind:event="oninput" placeholder="🔍 Cari no, deskripsi, ref..." />
-</div>
-
-<div class="cu-card">
-    <table class="cu-table">
-        <thead><tr><th>No</th><th>Tanggal</th><th>Deskripsi</th><th>Ref</th><th>Sumber</th><th class="cu-text-right">Total</th><th>Status</th><th></th></tr></thead>
-        <tbody>
-        @foreach (var j in filteredJournals)
+    <select class="cu-select" style="width:180px;" @bind="sourceFilter">
+        <option value="">Semua sumber</option>
+        @foreach (var source in Enum.GetValues<JournalSource>())
         {
-            <tr>
-                <td style="font-family:monospace;">@j.JournalNumber</td>
-                <td>@j.TransactionDate.ToString("dd/MM/yyyy")</td>
-                <td>@j.Description</td><td>@j.Reference</td>
-                <td><span class="cu-badge cu-badge-info">@j.SourceType</span></td>
-                <td class="cu-text-right">@j.Details.Sum(d=>d.Debit).ToString("N0")</td>
-                <td><span class="cu-badge @(j.IsPosted?"cu-badge-success":"cu-badge-warning")">@(j.IsPosted?"Posted":"Draft")</span></td>
-                <td>
-                    <button class="cu-btn cu-btn-sm cu-btn-outline" @onclick="()=>ViewJournal(j)">👁️</button>
-                    <button class="cu-btn cu-btn-sm cu-btn-outline" @onclick="()=>EditJournal(j)">✏️</button>
-                    <button class="cu-btn cu-btn-sm cu-btn-danger" @onclick="()=>DeleteJournal(j)">🗑️</button>
-                </td>
-            </tr>
+            <option value="@source">@SourceLabel(source)</option>
         }
-        </tbody>
-    </table>
+    </select>
+    <select class="cu-select" style="width:150px;" @bind="postedFilter">
+        <option value="">Semua status</option>
+        <option value="posted">Diposting</option>
+        <option value="draft">Draf</option>
+    </select>
+</div>
+
+<div class="cu-card cu-card-flush" style="margin-bottom:0;">
+    @if (!FilteredJournals().Any())
+    {
+        <EmptyState Title="Belum ada jurnal"
+                    Message="Catat jurnal manual di sini. Faktur, kas, bank, dan giro membentuk jurnalnya sendiri secara otomatis.">
+            <Action>
+                <button class="cu-btn cu-btn-primary cu-btn-sm" @onclick="CreateNew">
+                    <Icon Name="plus" Size="14" /> Jurnal baru
+                </button>
+            </Action>
+        </EmptyState>
+    }
+    else
+    {
+        <div class="cu-table-wrap">
+            <table class="cu-table">
+                <thead>
+                    <tr>
+                        <th>Nomor</th><th>Tanggal</th><th>Keterangan</th><th>Referensi</th>
+                        <th>Sumber</th><th class="cu-text-right">Nilai</th><th>Status</th><th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var journal in FilteredJournals())
+                    {
+                        <tr>
+                            <td class="cu-mono">@journal.JournalNumber</td>
+                            <td class="cu-mono">@Settings.FormatDate(journal.TransactionDate)</td>
+                            <td>@journal.Description</td>
+                            <td class="cu-mono cu-text-faint">@journal.Reference</td>
+                            <td><span class="cu-badge cu-badge-info">@SourceLabel(journal.SourceType)</span></td>
+                            <td class="cu-text-right">@Settings.Number(journal.Details.Sum(d => d.Debit))</td>
+                            <td>
+                                <span class="cu-badge @(journal.IsPosted ? "cu-badge-success" : "cu-badge-warning")">
+                                    @(journal.IsPosted ? "Diposting" : "Draf")
+                                </span>
+                            </td>
+                            <td class="cu-text-right">
+                                <div class="cu-row-actions">
+                                    <button class="cu-btn cu-btn-outline cu-btn-icon" title="Lihat rincian"
+                                            @onclick="() => viewJournal = journal">
+                                        <Icon Name="eye" Size="13" />
+                                    </button>
+                                    @if (journal.IsPosted)
+                                    {
+                                        <button class="cu-btn cu-btn-outline cu-btn-icon" title="Batalkan posting"
+                                                @onclick="() => Unpost(journal)">
+                                            <Icon Name="refresh" Size="13" />
+                                        </button>
+                                    }
+                                    else
+                                    {
+                                        <button class="cu-btn cu-btn-outline cu-btn-icon" title="Posting ke buku besar"
+                                                @onclick="() => Post(journal)">
+                                            <Icon Name="check" Size="13" />
+                                        </button>
+                                        <button class="cu-btn cu-btn-outline cu-btn-icon" title="Ubah"
+                                                @onclick="() => EditJournal(journal)">
+                                            <Icon Name="edit" Size="13" />
+                                        </button>
+                                    }
+                                    <button class="cu-btn cu-btn-danger cu-btn-icon" title="Hapus"
+                                            @onclick="() => DeleteJournal(journal)">
+                                        <Icon Name="trash" Size="13" />
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
 </div>
 
 @if (showCreate)
 {
-    <div class="cu-modal-overlay" @onclick="()=>showCreate=false"><div class="cu-modal" style="min-width:650px;" @onclick:stopPropagation="true">
-        <h3 style="margin-top:0;">@(isEditing?"Edit Jurnal":"Jurnal Baru")</h3>
-        <div class="cu-grid cu-grid-2">
-            <div class="cu-form-group"><label class="cu-form-label">Tanggal</label><InputDate @bind-Value="newJournal.TransactionDate" class="cu-form-input" /></div>
-            <div class="cu-form-group"><label class="cu-form-label">Referensi</label><InputText @bind-Value="newJournal.Reference" class="cu-form-input" /></div>
-        </div>
-        <div class="cu-form-group"><label class="cu-form-label">Deskripsi</label><InputText @bind-Value="newJournal.Description" class="cu-form-input" /></div>
-        <table class="cu-table" style="margin-bottom:1rem;">
-            <thead><tr><th>Akun</th><th>Deskripsi</th><th class="cu-text-right">Debit</th><th class="cu-text-right">Kredit</th><th></th></tr></thead>
-            <tbody>
-            @for (int i = 0; i < newLines.Count; i++)
+    <div class="cu-modal-overlay" @onclick="() => showCreate = false">
+        <div class="cu-modal cu-modal-lg" @onclick:stopPropagation="true">
+            <div class="cu-modal-head">
+                <div>
+                    <span class="cu-eyebrow">Transaksi</span>
+                    <h3>@(isEditing ? $"Ubah {newJournal.JournalNumber}" : "Jurnal umum baru")</h3>
+                </div>
+                <button class="cu-icon-btn" @onclick="() => showCreate = false" aria-label="Tutup">
+                    <Icon Name="close" Size="17" />
+                </button>
+            </div>
+
+            @if (formError is not null)
             {
-                var line = newLines[i]; var idx = i;
-                <tr>
-                    <td style="min-width:200px;"><select class="cu-select" @bind="line.ChartOfAccountId" style="font-size:0.75rem;">
-                        <option value="0">-- Pilih Akun --</option>
-                        @foreach (var c in coaList.Where(x=>!x.IsHeader)){<option value="@c.Id">@c.AccountCode - @c.AccountName</option>}
-                    </select></td>
-                    <td><input class="cu-form-input" @bind="line.Description" style="font-size:0.75rem;" /></td>
-                    <td style="width:120px;"><InputNumber @bind-Value="line.Debit" class="cu-form-input" style="font-size:0.75rem;" /></td>
-                    <td style="width:120px;"><InputNumber @bind-Value="line.Credit" class="cu-form-input" style="font-size:0.75rem;" /></td>
-                    <td><button class="cu-btn cu-btn-sm cu-btn-danger" @onclick="()=>RemoveLine(idx)">✕</button></td>
-                </tr>
+                <div class="cu-alert cu-alert-error">@formError</div>
             }
-            </tbody>
-        </table>
-        <button class="cu-btn cu-btn-sm cu-btn-outline" @onclick="AddLine">+ Tambah Baris</button>
-        <div class="cu-mb-1"></div>
-        <div class="cu-flex cu-gap-1" style="justify-content:space-between;">
-            <div><span class="cu-text-muted">Debit: <strong>@newLines.Sum(l=>l.Debit).ToString("N0")</strong></span> | <span class="cu-text-muted">Kredit: <strong>@newLines.Sum(l=>l.Credit).ToString("N0")</strong></span> <span class="@(newLines.Sum(l=>l.Debit)==newLines.Sum(l=>l.Credit)?"cu-text-success":"cu-text-danger")">@(newLines.Sum(l=>l.Debit)==newLines.Sum(l=>l.Credit)?"✅ Balance":"❌ Tidak balance")</span></div>
-            <div class="cu-flex cu-gap-1">
-                <button class="cu-btn cu-btn-outline" @onclick="()=>showCreate=false">Batal</button>
-                <button class="cu-btn cu-btn-primary" @onclick="SaveJournal">💾 Simpan</button>
+
+            <div class="cu-grid cu-grid-3">
+                <div class="cu-form-group">
+                    <label class="cu-form-label">Tanggal</label>
+                    <InputDate @bind-Value="newJournal.TransactionDate" class="cu-form-input" />
+                </div>
+                <div class="cu-form-group">
+                    <label class="cu-form-label">Referensi</label>
+                    <input class="cu-form-input" @bind="newJournal.Reference" placeholder="Nomor dokumen sumber" />
+                </div>
+                <div class="cu-form-group">
+                    <label class="cu-form-label">Keterangan</label>
+                    <input class="cu-form-input" @bind="newJournal.Description" placeholder="Uraian singkat" />
+                </div>
+            </div>
+
+            @* Debit di kiri, kredit di kanan — kolomnya diberi warna tinta yang
+               sama seperti di seluruh laporan. *@
+            <div class="cu-table-wrap cu-mb-2">
+                <table class="cu-table">
+                    <thead>
+                        <tr>
+                            <th>Akun</th><th>Keterangan baris</th>
+                            <th class="cu-text-right cu-col-debit" style="width:140px;">Debit</th>
+                            <th class="cu-text-right cu-col-credit" style="width:140px;">Kredit</th>
+                            <th style="width:40px;"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @for (var i = 0; i < newLines.Count; i++)
+                        {
+                            var line = newLines[i];
+                            var index = i;
+                            <tr>
+                                <td>
+                                    <select class="cu-select" @bind="line.ChartOfAccountId">
+                                        <option value="0">— pilih akun —</option>
+                                        @foreach (var account in coaList)
+                                        {
+                                            <option value="@account.Id">@account.AccountCode — @account.AccountName</option>
+                                        }
+                                    </select>
+                                </td>
+                                <td><input class="cu-form-input" @bind="line.Description" /></td>
+                                <td><InputNumber @bind-Value="line.Debit" class="cu-form-input cu-num" /></td>
+                                <td><InputNumber @bind-Value="line.Credit" class="cu-form-input cu-num" /></td>
+                                <td>
+                                    <button class="cu-btn cu-btn-ghost cu-btn-icon" title="Hapus baris"
+                                            @onclick="() => RemoveLine(index)">
+                                        <Icon Name="close" Size="13" />
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+
+            <button class="cu-btn cu-btn-outline cu-btn-sm cu-mb-2" @onclick="AddLine">
+                <Icon Name="plus" Size="13" /> Tambah baris
+            </button>
+
+            @* Bilah keseimbangan: garisnya berubah dari putus-putus merah menjadi
+               garis ganda hijau begitu debit sama dengan kredit. *@
+            <div class="cu-balance @(IsBalanced ? "is-balanced" : "")">
+                <div class="cu-balance-side">
+                    <span class="cu-stat-label">Debit</span>
+                    <span class="cu-balance-fig cu-text-debit">@Settings.Number(TotalDebit)</span>
+                </div>
+                <div class="cu-balance-side">
+                    <span class="cu-stat-label">Kredit</span>
+                    <span class="cu-balance-fig cu-text-credit">@Settings.Number(TotalCredit)</span>
+                </div>
+                <div class="cu-balance-side">
+                    <span class="cu-stat-label">Selisih</span>
+                    <span class="cu-balance-fig">@Settings.Number(Math.Abs(TotalDebit - TotalCredit))</span>
+                </div>
+                <div class="cu-balance-state">
+                    <Icon Name="@(IsBalanced ? "check" : "alert")" Size="15" />
+                    @(IsBalanced ? "Seimbang" : "Belum seimbang")
+                </div>
+            </div>
+
+            <div class="cu-modal-foot">
+                <button class="cu-btn cu-btn-outline" @onclick="() => showCreate = false">Batal</button>
+                <button class="cu-btn cu-btn-primary" @onclick="SaveJournal" disabled="@(!IsBalanced || saving)">
+                    <Icon Name="save" Size="14" /> @(saving ? "Menyimpan…" : "Simpan & posting")
+                </button>
             </div>
         </div>
-    </div></div>
+    </div>
 }
 
-@if (viewJournal != null)
+@if (viewJournal is not null)
 {
-    <div class="cu-modal-overlay" @onclick="()=>viewJournal=null"><div class="cu-modal" style="min-width:500px;" @onclick:stopPropagation="true">
-        <h3 style="margin-top:0;">📄 @viewJournal.JournalNumber</h3>
-        <p>@viewJournal.Description | @viewJournal.TransactionDate.ToString("dd MMM yyyy")</p>
-        <table class="cu-table"><thead><tr><th>Akun</th><th>Deskripsi</th><th class="cu-text-right">Debit</th><th class="cu-text-right">Kredit</th></tr></thead>
-        <tbody>@foreach (var d in viewJournal.Details){<tr><td>@d.ChartOfAccount?.AccountCode - @d.ChartOfAccount?.AccountName</td><td>@d.Description</td><td class="cu-text-right">@d.Debit.ToString("N0")</td><td class="cu-text-right">@d.Credit.ToString("N0")</td></tr>}</tbody></table>
-        <button class="cu-btn cu-btn-outline" @onclick="()=>viewJournal=null" style="margin-top:1rem;">Tutup</button>
-    </div></div>
+    <div class="cu-modal-overlay" @onclick="() => viewJournal = null">
+        <div class="cu-modal cu-modal-lg" @onclick:stopPropagation="true">
+            <div class="cu-modal-head">
+                <div>
+                    <span class="cu-eyebrow">@Settings.FormatDate(viewJournal.TransactionDate)</span>
+                    <h3>@viewJournal.JournalNumber</h3>
+                    <span class="cu-page-sub">@viewJournal.Description</span>
+                </div>
+                <button class="cu-icon-btn" @onclick="() => viewJournal = null" aria-label="Tutup">
+                    <Icon Name="close" Size="17" />
+                </button>
+            </div>
+
+            <div class="cu-table-wrap">
+                <table class="cu-table">
+                    <thead>
+                        <tr>
+                            <th>Akun</th><th>Keterangan</th>
+                            <th class="cu-text-right cu-col-debit">Debit</th>
+                            <th class="cu-text-right cu-col-credit">Kredit</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var detail in viewJournal.Details)
+                        {
+                            <tr>
+                                <td>
+                                    <span class="cu-mono cu-text-faint">@detail.ChartOfAccount?.AccountCode</span>
+                                    @detail.ChartOfAccount?.AccountName
+                                </td>
+                                <td class="cu-text-muted">@detail.Description</td>
+                                <td class="cu-text-right cu-col-debit">@(detail.Debit == 0 ? "" : Settings.Number(detail.Debit))</td>
+                                <td class="cu-text-right cu-col-credit">@(detail.Credit == 0 ? "" : Settings.Number(detail.Credit))</td>
+                            </tr>
+                        }
+                        <tr class="cu-total-row">
+                            <td colspan="2">Jumlah</td>
+                            <td class="cu-text-right">@Settings.Number(viewJournal.Details.Sum(d => d.Debit))</td>
+                            <td class="cu-text-right">@Settings.Number(viewJournal.Details.Sum(d => d.Credit))</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
 }
 
 @code {
+    public class LineItem
+    {
+        public int ChartOfAccountId { get; set; }
+        public string Description { get; set; } = "";
+        public decimal Debit { get; set; }
+        public decimal Credit { get; set; }
+    }
+
     private List<JournalEntry> journals = new();
     private List<ChartOfAccount> coaList = new();
     private int journalCount;
-    private bool showCreate;
-    private bool isEditing;
-    private string searchTerm = "";
+
+    private bool showCreate, isEditing, saving;
     private JournalEntry? viewJournal;
-    private JournalEntry newJournal = new(){TransactionDate=DateTime.Today};
-    private List<LineItem> newLines = new(){new()};
+    private JournalEntry newJournal = new() { TransactionDate = DateTime.Today };
+    private List<LineItem> newLines = new() { new() };
 
-    public class LineItem{public int ChartOfAccountId;public string Description="";public decimal Debit;public decimal Credit;}
+    private string searchTerm = "", sourceFilter = "", postedFilter = "";
+    private string? message, formError;
+    private string messageClass = "cu-alert-success";
 
-    private IEnumerable<JournalEntry> filteredJournals => journals
-        .Where(j => string.IsNullOrEmpty(searchTerm)
-            || j.JournalNumber.Contains(searchTerm, StringComparison.OrdinalIgnoreCase)
-            || (j.Description ?? "").Contains(searchTerm, StringComparison.OrdinalIgnoreCase)
-            || (j.Reference ?? "").Contains(searchTerm, StringComparison.OrdinalIgnoreCase))
-        .OrderByDescending(j => j.TransactionDate);
+    private decimal TotalDebit => newLines.Sum(l => l.Debit);
+    private decimal TotalCredit => newLines.Sum(l => l.Credit);
+    private bool IsBalanced => TotalDebit == TotalCredit && TotalDebit > 0;
 
-    protected override async Task OnInitializedAsync(){await LoadData();}
-    private async Task LoadData(){journals=await DbContext.JournalEntries.Include(j=>j.Details).ThenInclude(d=>d.ChartOfAccount).OrderByDescending(j=>j.TransactionDate).Take(200).ToListAsync();coaList=await DbContext.ChartOfAccounts.OrderBy(c=>c.AccountCode).ToListAsync();journalCount=await DbContext.JournalEntries.CountAsync();}
-    private void CreateNew(){newJournal=new JournalEntry{TransactionDate=DateTime.Today};newLines=new List<LineItem>{new()};showCreate=true;isEditing=false;}
-    private void AddLine(){newLines.Add(new LineItem());}
-    private void RemoveLine(int i){if(newLines.Count>1)newLines.RemoveAt(i);}
-    private void ViewJournal(JournalEntry j){viewJournal=j;}
+    protected override async Task OnInitializedAsync()
+    {
+        await Settings.EnsureLoadedAsync();
+        await LoadData();
+    }
 
-    private async Task EditJournal(JournalEntry j)
+    private async Task LoadData()
+    {
+        journals = await DbContext.JournalEntries
+            .Include(j => j.Details).ThenInclude(d => d.ChartOfAccount)
+            .OrderByDescending(j => j.TransactionDate).ThenByDescending(j => j.Id)
+            .Take(200).ToListAsync();
+        coaList = await DbContext.ChartOfAccounts
+            .Where(c => !c.IsHeader).OrderBy(c => c.AccountCode).ToListAsync();
+        journalCount = await DbContext.JournalEntries.CountAsync();
+    }
+
+    private IEnumerable<JournalEntry> FilteredJournals() => journals
+        .Where(j => string.IsNullOrEmpty(sourceFilter) || j.SourceType.ToString() == sourceFilter)
+        .Where(j => postedFilter switch { "posted" => j.IsPosted, "draft" => !j.IsPosted, _ => true })
+        .Where(j => string.IsNullOrWhiteSpace(searchTerm)
+                    || j.JournalNumber.Contains(searchTerm, StringComparison.OrdinalIgnoreCase)
+                    || (j.Description ?? "").Contains(searchTerm, StringComparison.OrdinalIgnoreCase)
+                    || (j.Reference ?? "").Contains(searchTerm, StringComparison.OrdinalIgnoreCase));
+
+    private void CreateNew()
+    {
+        newJournal = new JournalEntry { TransactionDate = DateTime.Today };
+        newLines = new List<LineItem> { new(), new() };
+        formError = null;
+        showCreate = true;
+        isEditing = false;
+    }
+
+    private void AddLine() => newLines.Add(new LineItem());
+    private void RemoveLine(int index) { if (newLines.Count > 1) newLines.RemoveAt(index); }
+
+    private void EditJournal(JournalEntry journal)
     {
         newJournal = new JournalEntry
         {
-            Id = j.Id,
-            JournalNumber = j.JournalNumber,
-            TransactionDate = j.TransactionDate,
-            Reference = j.Reference,
-            Description = j.Description,
-            SourceType = j.SourceType,
-            IsPosted = j.IsPosted
+            Id = journal.Id,
+            JournalNumber = journal.JournalNumber,
+            TransactionDate = journal.TransactionDate,
+            Reference = journal.Reference,
+            Description = journal.Description,
+            SourceType = journal.SourceType,
+            IsPosted = journal.IsPosted
         };
 
-        newLines = j.Details.Select(d => new LineItem
+        newLines = journal.Details.Select(d => new LineItem
         {
             ChartOfAccountId = d.ChartOfAccountId,
             Description = d.Description ?? "",
@@ -143,86 +369,154 @@
         }).ToList();
 
         if (newLines.Count == 0) newLines.Add(new LineItem());
+        formError = null;
         isEditing = true;
         showCreate = true;
     }
 
-    private async Task SaveJournal(){
-        if(newLines.Sum(l=>l.Debit)!=newLines.Sum(l=>l.Credit)||newLines.Sum(l=>l.Debit)==0)return;
+    private List<JournalEntryDetail> BuildDetails() => newLines
+        .Where(l => l.ChartOfAccountId > 0 && (l.Debit > 0 || l.Credit > 0))
+        .Select(l => new JournalEntryDetail
+        {
+            ChartOfAccountId = l.ChartOfAccountId,
+            Description = l.Description,
+            Debit = l.Debit,
+            Credit = l.Credit
+        }).ToList();
 
-        if (!isEditing)
+    private async Task SaveJournal()
+    {
+        formError = null;
+
+        if (!IsBalanced)
         {
-            newJournal.CreatedAt=DateTime.UtcNow;
-            newJournal.JournalNumber=$"JU-{DateTime.UtcNow.Year}-{journalCount+1:D4}";
-            newJournal.Details=newLines.Where(l=>l.ChartOfAccountId>0&&(l.Debit>0||l.Credit>0)).Select(l=>new JournalEntryDetail{ChartOfAccountId=l.ChartOfAccountId,Description=l.Description,Debit=l.Debit,Credit=l.Credit}).ToList();
-            DbContext.JournalEntries.Add(newJournal);
+            formError = "Debit dan kredit harus sama besar dan tidak boleh nol.";
+            return;
         }
-        else
+
+        var details = BuildDetails();
+        if (details.Count < 2)
         {
-            var existing = await DbContext.JournalEntries.Include(x => x.Details).FirstOrDefaultAsync(x => x.Id == newJournal.Id);
-            if (existing != null)
+            formError = "Jurnal perlu paling sedikit dua baris dengan akun terisi.";
+            return;
+        }
+
+        saving = true;
+        try
+        {
+            if (!isEditing)
             {
-                existing.TransactionDate = newJournal.TransactionDate;
-                existing.Reference = newJournal.Reference;
-                existing.Description = newJournal.Description;
-                existing.SourceType = newJournal.SourceType;
-                DbContext.JournalEntryDetails.RemoveRange(existing.Details);
-                existing.Details = newLines.Where(l=>l.ChartOfAccountId>0&&(l.Debit>0||l.Credit>0)).Select(l=>new JournalEntryDetail{ChartOfAccountId=l.ChartOfAccountId,Description=l.Description,Debit=l.Debit,Credit=l.Credit}).ToList();
-            }
-        }
+                newJournal.JournalNumber = await Numbers.NextAsync(DbContext, DocumentKind.Journal, newJournal.TransactionDate);
+                newJournal.CreatedAt = DateTime.UtcNow;
+                newJournal.Details = details;
+                DbContext.JournalEntries.Add(newJournal);
+                await DbContext.SaveChangesAsync();
 
-        await DbContext.SaveChangesAsync();
-        showCreate=false;isEditing=false;await LoadData();
+                await Posting.PostJournalAsync(newJournal.Id);
+                Say($"Jurnal {newJournal.JournalNumber} tersimpan dan diposting ke buku besar.", true);
+            }
+            else
+            {
+                var existing = await DbContext.JournalEntries.Include(x => x.Details)
+                    .FirstOrDefaultAsync(x => x.Id == newJournal.Id);
+                if (existing is not null)
+                {
+                    // Saldo dikembalikan dulu, baru barisnya diganti dan diposting ulang.
+                    if (existing.IsPosted) await Posting.UnpostJournalAsync(existing.Id);
+
+                    existing.TransactionDate = newJournal.TransactionDate;
+                    existing.Reference = newJournal.Reference;
+                    existing.Description = newJournal.Description;
+
+                    DbContext.JournalEntryDetails.RemoveRange(existing.Details);
+                    existing.Details = details;
+                    await DbContext.SaveChangesAsync();
+
+                    await Posting.PostJournalAsync(existing.Id);
+                    Say($"Jurnal {existing.JournalNumber} diperbarui dan diposting ulang.", true);
+                }
+            }
+
+            showCreate = false;
+            isEditing = false;
+            await LoadData();
+        }
+        finally { saving = false; }
     }
 
-    private async Task DeleteJournal(JournalEntry j)
+    private async Task Post(JournalEntry journal)
     {
-        if (!await ConfirmAsync($"Hapus jurnal {j.JournalNumber}?") ) return;
-        DbContext.JournalEntries.Remove(j);
-        await DbContext.SaveChangesAsync();
+        await Posting.PostJournalAsync(journal.Id);
+        Say($"Jurnal {journal.JournalNumber} diposting — saldo akun sudah bergerak.", true);
         await LoadData();
     }
 
+    private async Task Unpost(JournalEntry journal)
+    {
+        if (!await JS.InvokeAsync<bool>("cuanConfirm",
+            $"Batalkan posting {journal.JournalNumber}? Saldo akun dikembalikan seperti sebelum jurnal ini.")) return;
+
+        await Posting.UnpostJournalAsync(journal.Id);
+        Say($"Posting {journal.JournalNumber} dibatalkan.", true);
+        await LoadData();
+    }
+
+    private async Task DeleteJournal(JournalEntry journal)
+    {
+        if (!await JS.InvokeAsync<bool>("cuanConfirm",
+            $"Hapus jurnal {journal.JournalNumber}? Saldo akun ikut disesuaikan kembali.")) return;
+
+        await Posting.ReverseDocumentJournalAsync(journal.Id);
+        Say($"Jurnal {journal.JournalNumber} dihapus.", true);
+        await LoadData();
+    }
+
+    private void Say(string text, bool ok)
+    {
+        message = text;
+        messageClass = ok ? "cu-alert-success" : "cu-alert-warning";
+    }
+
+    private static string SourceLabel(JournalSource source) => source switch
+    {
+        JournalSource.Manual => "Manual",
+        JournalSource.SalesInvoice => "Penjualan",
+        JournalSource.PurchaseInvoice => "Pembelian",
+        JournalSource.CashIn => "Kas masuk",
+        JournalSource.CashOut => "Kas keluar",
+        JournalSource.BankIn => "Bank masuk",
+        JournalSource.BankOut => "Bank keluar",
+        JournalSource.GiroIn => "Giro masuk",
+        JournalSource.GiroOut => "Giro keluar",
+        JournalSource.StockAdj => "Stok",
+        JournalSource.Transfer => "Transfer",
+        _ => source.ToString()
+    };
+
+    private List<object> ExportRows() => FilteredJournals().Select(j => (object)new
+    {
+        Nomor = j.JournalNumber,
+        Tanggal = j.TransactionDate.ToString("yyyy-MM-dd"),
+        Keterangan = j.Description,
+        Referensi = j.Reference,
+        Sumber = SourceLabel(j.SourceType),
+        Nilai = j.Details.Sum(d => d.Debit),
+        Status = j.IsPosted ? "Diposting" : "Draf"
+    }).ToList();
+
     private async Task ExportToExcel()
     {
-        var data = filteredJournals.Select(j => new
-        {
-            j.JournalNumber,
-            j.TransactionDate,
-            j.Description,
-            j.Reference,
-            j.SourceType,
-            Total = j.Details.Sum(d => d.Debit),
-            j.IsPosted
-        });
-
-        var bytes = ExportService.ExportToExcel(data, "Journals");
-        await DownloadAsync(bytes, "journals.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        var bytes = ExportService.ExportToExcel(ExportRows(), "Jurnal");
+        await Download(bytes, "jurnal-umum.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     }
 
     private async Task ExportToCsv()
     {
-        var data = filteredJournals.Select(j => new
-        {
-            j.JournalNumber,
-            j.TransactionDate,
-            j.Description,
-            j.Reference,
-            j.SourceType,
-            Total = j.Details.Sum(d => d.Debit),
-            j.IsPosted
-        });
-
-        var bytes = ExportService.ExportToCsv(data);
-        await DownloadAsync(bytes, "journals.csv", "text/csv");
+        var bytes = ExportService.ExportToCsv(ExportRows());
+        await Download(bytes, "jurnal-umum.csv", "text/csv");
     }
 
-    private async Task DownloadAsync(byte[] data, string fileName, string contentType)
-    {
-        var base64 = Convert.ToBase64String(data);
-        await JS.InvokeVoidAsync("downloadFileFromBytes", fileName, contentType, base64);
-    }
-
-    private async Task<bool> ConfirmAsync(string message) =>
-        await JS.InvokeAsync<bool>("confirm", message);
+    private async Task Download(byte[] data, string fileName, string contentType)
+        => await JS.InvokeVoidAsync("downloadFileFromBytes", fileName, contentType, Convert.ToBase64String(data));
 }

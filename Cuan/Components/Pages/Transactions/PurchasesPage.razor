@@ -2,169 +2,480 @@
 @rendermode @(RenderMode.InteractiveServer)
 @attribute [Authorize(Roles = "Admin,Akuntan,Purchasing")]
 @inject AppDbContext DbContext
+@inject SettingsService Settings
+@inject TaxService Tax
+@inject PostingService Posting
+@inject DocumentNumberService Numbers
 @inject NotificationService Notif
 @inject IJSRuntime JS
 
-<PageTitle>Pembelian - CUAN</PageTitle>
-<div class="cu-flex-between cu-mb-2"><div><h2 style="margin:0;">📥 Pembelian</h2></div><div class="cu-flex cu-gap-1"><button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportExcel">📥 Excel</button><button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportCsv">📄 CSV</button><button class="cu-btn cu-btn-primary cu-btn-sm" @onclick="CreateNew">+ Pembelian Baru</button></div></div>
+<PageTitle>Pembelian — CUAN</PageTitle>
 
-<div class="cu-card cu-mb-2">
-    <input class="cu-form-input" @bind="searchTerm" @bind:event="oninput" placeholder="🔍 Cari no, supplier..." />
+<PageHead Section="Transaksi" Title="Pembelian"
+          Subtitle="@($"{invoices.Count} faktur · hutang berjalan {Settings.Money(invoices.Sum(i => i.GrandTotal - i.PaidAmount))}")">
+    <Actions>
+        <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportExcel">
+            <Icon Name="download" Size="14" /> Excel
+        </button>
+        <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportCsv">
+            <Icon Name="download" Size="14" /> CSV
+        </button>
+        <button class="cu-btn cu-btn-primary cu-btn-sm" @onclick="CreateNew">
+            <Icon Name="plus" Size="14" /> Faktur pembelian
+        </button>
+    </Actions>
+</PageHead>
+
+@if (message is not null)
+{
+    <div class="cu-alert @messageClass">@message</div>
+}
+
+<div class="cu-filterbar">
+    <div class="cu-search">
+        <span class="cu-search-icon"><Icon Name="search" Size="15" /></span>
+        <input class="cu-form-input" placeholder="Cari nomor faktur atau pemasok…" @bind="searchTerm" @bind:event="oninput" />
+    </div>
 </div>
 
-<div class="cu-card"><table class="cu-table"><thead><tr><th>No</th><th>Tgl</th><th>Supplier</th><th>Jatuh Tempo</th><th class="cu-text-right">Total</th><th>Status</th><th></th></tr></thead>
-<tbody>@foreach(var p in filteredInvoices){<tr><td style="font-family:monospace;">@p.InvoiceNumber</td><td>@p.InvoiceDate.ToString("dd/MM/yy")</td><td>@p.Supplier?.Name</td><td>@p.DueDate.ToString("dd/MM/yy")</td><td class="cu-text-right">@p.GrandTotal.ToString("N0")</td><td>@p.Status</td><td><button class="cu-btn cu-btn-sm cu-btn-outline" @onclick="() => EditInvoice(p)">✏️</button><button class="cu-btn cu-btn-sm cu-btn-danger" @onclick="() => DeleteInvoice(p)">🗑️</button></td></tr>}</tbody></table></div>
+<div class="cu-card cu-card-flush" style="margin-bottom:0;">
+    @if (!FilteredInvoices().Any())
+    {
+        <EmptyState Title="Belum ada faktur pembelian"
+                    Message="Faktur pembelian menambah stok, mencatat PPN masukan, dan membentuk jurnal hutang usaha.">
+            <Action>
+                <button class="cu-btn cu-btn-primary cu-btn-sm" @onclick="CreateNew">
+                    <Icon Name="plus" Size="14" /> Faktur pembelian
+                </button>
+            </Action>
+        </EmptyState>
+    }
+    else
+    {
+        <div class="cu-table-wrap">
+            <table class="cu-table">
+                <thead>
+                    <tr>
+                        <th>Nomor</th><th>Tanggal</th><th>Pemasok</th><th>Jatuh tempo</th>
+                        <th class="cu-text-right">Subtotal</th><th class="cu-text-right">PPN masukan</th>
+                        <th class="cu-text-right">Total</th><th>Jurnal</th><th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var invoice in FilteredInvoices())
+                    {
+                        <tr>
+                            <td class="cu-mono">@invoice.InvoiceNumber</td>
+                            <td class="cu-mono">@Settings.FormatDate(invoice.InvoiceDate)</td>
+                            <td>@invoice.Supplier?.Name</td>
+                            <td class="cu-mono cu-text-faint">@Settings.FormatDate(invoice.DueDate)</td>
+                            <td class="cu-text-right">@Settings.Number(invoice.SubTotal)</td>
+                            <td class="cu-text-right cu-col-debit">@Settings.Number(invoice.TaxAmount)</td>
+                            <td class="cu-text-right">@Settings.Number(invoice.GrandTotal)</td>
+                            <td>
+                                @if (invoice.JournalEntryId is not null)
+                                {
+                                    <span class="cu-badge cu-badge-success">Terjurnal</span>
+                                }
+                                else
+                                {
+                                    <span class="cu-badge">—</span>
+                                }
+                            </td>
+                            <td class="cu-text-right">
+                                <div class="cu-row-actions">
+                                    <button class="cu-btn cu-btn-outline cu-btn-icon" title="Ubah" @onclick="() => EditInvoice(invoice)">
+                                        <Icon Name="edit" Size="13" />
+                                    </button>
+                                    <button class="cu-btn cu-btn-danger cu-btn-icon" title="Hapus" @onclick="() => DeleteInvoice(invoice)">
+                                        <Icon Name="trash" Size="13" />
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                    <tr class="cu-total-row">
+                        <td colspan="4">Jumlah @FilteredInvoices().Count() faktur</td>
+                        <td class="cu-text-right">@Settings.Number(FilteredInvoices().Sum(i => i.SubTotal))</td>
+                        <td class="cu-text-right">@Settings.Number(FilteredInvoices().Sum(i => i.TaxAmount))</td>
+                        <td class="cu-text-right">@Settings.Number(FilteredInvoices().Sum(i => i.GrandTotal))</td>
+                        <td colspan="2"></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
 
-@if(showCreate){<div class="cu-modal-overlay" @onclick="()=>showCreate=false"><div class="cu-modal" style="min-width:650px;" @onclick:stopPropagation="true">
-<h3 style="margin-top:0;">@(isEditing?"Edit Pembelian":"Pembelian Baru")</h3>
-<div class="cu-grid cu-grid-2"><div class="cu-form-group"><label class="cu-form-label">Supplier</label><select class="cu-select" @bind="newInvoice.SupplierId">@foreach(var s in suppliers){<option value="@s.Id">@s.Name</option>}</select></div><div class="cu-form-group"><label class="cu-form-label">Tanggal</label><InputDate @bind-Value="newInvoice.InvoiceDate" class="cu-form-input"/></div></div>
-<div class="cu-grid cu-grid-2"><div class="cu-form-group"><label class="cu-form-label">Jatuh Tempo</label><InputDate @bind-Value="newInvoice.DueDate" class="cu-form-input"/></div><div class="cu-form-group"><label class="cu-form-label">Gudang</label><select class="cu-select" @bind="newInvoice.WarehouseId">@foreach(var w in warehouses){<option value="@w.Id">@w.Name</option>}</select></div></div>
-<table class="cu-table" style="margin-bottom:1rem;"><thead><tr><th>Item</th><th class="cu-text-right">Qty</th><th class="cu-text-right">Harga</th><th class="cu-text-right">Total</th><th></th></tr></thead>
-<tbody>@for(int i=0;i<newLines.Count;i++){var line=newLines[i];var idx=i;<tr><td style="min-width:150px;"><select class="cu-select" @bind="line.ItemId" style="font-size:0.75rem;">@foreach(var it in items){<option value="@it.Id">@it.ItemName (@it.CostPrice.ToString("N0"))</option>}</select></td><td style="width:80px;"><InputNumber @bind-Value="line.Quantity" class="cu-form-input" style="font-size:0.75rem;"/></td><td style="width:120px;"><InputNumber @bind-Value="line.UnitPrice" class="cu-form-input" style="font-size:0.75rem;"/></td><td class="cu-text-right" style="font-weight:600;">@((line.Quantity*line.UnitPrice).ToString("N0"))</td><td><button class="cu-btn cu-btn-sm cu-btn-danger" @onclick="()=>RemoveLine(idx)">✕</button></td></tr>}</tbody></table>
-<button class="cu-btn cu-btn-sm cu-btn-outline" @onclick="AddLine">+ Barang</button>
-<div class="cu-text-muted" style="margin-top:0.5rem;">Grand Total: <strong>@total.ToString("N0")</strong></div>
-<div class="cu-flex cu-gap-1" style="justify-content:flex-end;margin-top:1rem;"><button class="cu-btn cu-btn-outline" @onclick="()=>showCreate=false">Batal</button><button class="cu-btn cu-btn-primary" @onclick="SaveInvoice">💾 Simpan</button></div></div></div>}
+@if (showCreate)
+{
+    <div class="cu-modal-overlay" @onclick="() => showCreate = false">
+        <div class="cu-modal cu-modal-lg" @onclick:stopPropagation="true">
+            <div class="cu-modal-head">
+                <div>
+                    <span class="cu-eyebrow">Transaksi</span>
+                    <h3>@(isEditing ? $"Ubah {newInvoice.InvoiceNumber}" : "Faktur pembelian baru")</h3>
+                </div>
+                <button class="cu-icon-btn" @onclick="() => showCreate = false" aria-label="Tutup">
+                    <Icon Name="close" Size="17" />
+                </button>
+            </div>
+
+            @if (formError is not null)
+            {
+                <div class="cu-alert cu-alert-error">@formError</div>
+            }
+
+            <div class="cu-grid cu-grid-4">
+                <div class="cu-form-group">
+                    <label class="cu-form-label">Pemasok</label>
+                    <select class="cu-select" @bind="newInvoice.SupplierId">
+                        @foreach (var supplier in suppliers)
+                        {
+                            <option value="@supplier.Id">@supplier.Name</option>
+                        }
+                    </select>
+                </div>
+                <div class="cu-form-group">
+                    <label class="cu-form-label">Tanggal faktur</label>
+                    <InputDate @bind-Value="newInvoice.InvoiceDate" class="cu-form-input" />
+                </div>
+                <div class="cu-form-group">
+                    <label class="cu-form-label">Jatuh tempo</label>
+                    <InputDate @bind-Value="newInvoice.DueDate" class="cu-form-input" />
+                </div>
+                <div class="cu-form-group">
+                    <label class="cu-form-label">Gudang tujuan</label>
+                    <select class="cu-select" @bind="newInvoice.WarehouseId">
+                        @foreach (var warehouse in warehouses)
+                        {
+                            <option value="@warehouse.Id">@warehouse.Name</option>
+                        }
+                    </select>
+                </div>
+            </div>
+
+            <div class="cu-table-wrap cu-mb-2">
+                <table class="cu-table">
+                    <thead>
+                        <tr>
+                            <th>Barang</th><th class="cu-text-right" style="width:90px;">Qty</th>
+                            <th class="cu-text-right" style="width:140px;">Harga beli</th>
+                            <th class="cu-text-right" style="width:140px;">Jumlah</th><th style="width:40px;"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @for (var i = 0; i < newLines.Count; i++)
+                        {
+                            var line = newLines[i];
+                            var index = i;
+                            <tr>
+                                <td>
+                                    <select class="cu-select" @bind="line.ItemId" @bind:after="() => OnItemChanged(line)">
+                                        @foreach (var item in items)
+                                        {
+                                            <option value="@item.Id">@item.ItemName — stok @Settings.Number(item.StockQuantity)</option>
+                                        }
+                                    </select>
+                                </td>
+                                <td><InputNumber @bind-Value="line.Quantity" class="cu-form-input cu-num" /></td>
+                                <td><InputNumber @bind-Value="line.UnitPrice" class="cu-form-input cu-num" /></td>
+                                <td class="cu-text-right" style="font-weight:600;">@Settings.Number(line.Quantity * line.UnitPrice)</td>
+                                <td>
+                                    <button class="cu-btn cu-btn-ghost cu-btn-icon" title="Hapus baris"
+                                            @onclick="() => RemoveLine(index)">
+                                        <Icon Name="close" Size="13" />
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+
+            <button class="cu-btn cu-btn-outline cu-btn-sm cu-mb-2" @onclick="AddLine">
+                <Icon Name="plus" Size="13" /> Tambah barang
+            </button>
+
+            <div class="cu-balance is-balanced">
+                <div class="cu-balance-side">
+                    <span class="cu-stat-label">Subtotal</span>
+                    <span class="cu-balance-fig">@Settings.Number(SubTotal)</span>
+                </div>
+                <div class="cu-balance-side">
+                    <span class="cu-stat-label">
+                        @(Tax.PpnEnabled ? $"PPN masukan {Tax.PpnPercent:0.##}%" : "PPN nonaktif")
+                    </span>
+                    <span class="cu-balance-fig cu-text-debit">@Settings.Number(TaxAmount)</span>
+                </div>
+                <div class="cu-balance-side">
+                    <span class="cu-stat-label">Grand total</span>
+                    <span class="cu-balance-fig cu-text-success">@Settings.Money(GrandTotal)</span>
+                </div>
+            </div>
+
+            <div class="cu-modal-foot">
+                <button class="cu-btn cu-btn-outline" @onclick="() => showCreate = false">Batal</button>
+                <button class="cu-btn cu-btn-primary" @onclick="SaveInvoice" disabled="@saving">
+                    <Icon Name="save" Size="14" /> @(saving ? "Menyimpan…" : "Simpan faktur")
+                </button>
+            </div>
+        </div>
+    </div>
+}
 
 @code {
-    private List<PurchaseInvoice> invoices=new();private List<Supplier> suppliers=new();private List<Item> items=new();private List<Warehouse> warehouses=new();
-    private bool showCreate;private bool isEditing;private PurchaseInvoice newInvoice=new(){InvoiceDate=DateTime.Today,DueDate=DateTime.Today.AddDays(30)};
-    private List<LineInv> newLines=new(){new LineInv{ItemId=1,Quantity=1,UnitPrice=0}};
-    private string searchTerm="";
-    private decimal total=>newLines.Sum(l=>l.Quantity*l.UnitPrice);
-    public class LineInv{public int ItemId;public decimal Quantity=1;public decimal UnitPrice;}
+    public class LineInv
+    {
+        public int ItemId { get; set; }
+        public decimal Quantity { get; set; } = 1;
+        public decimal UnitPrice { get; set; }
+    }
 
-    private IEnumerable<PurchaseInvoice> filteredInvoices => invoices
-        .Where(p => string.IsNullOrEmpty(searchTerm)
-            || p.InvoiceNumber.Contains(searchTerm, StringComparison.OrdinalIgnoreCase)
-            || (p.Supplier?.Name ?? "").Contains(searchTerm, StringComparison.OrdinalIgnoreCase))
-        .OrderByDescending(p => p.InvoiceDate);
+    private List<PurchaseInvoice> invoices = new();
+    private List<Supplier> suppliers = new();
+    private List<Item> items = new();
+    private List<Warehouse> warehouses = new();
 
-    protected override async Task OnInitializedAsync(){await LoadData();}
+    private bool showCreate, isEditing, saving;
+    private PurchaseInvoice newInvoice = new();
+    private List<LineInv> newLines = new();
+
+    private string searchTerm = "";
+    private string? message, formError;
+    private string messageClass = "cu-alert-success";
+
+    private decimal SubTotal => newLines.Sum(l => l.Quantity * l.UnitPrice);
+    private decimal TaxAmount => Tax.Compute(SubTotal).Ppn;
+    private decimal GrandTotal => SubTotal + TaxAmount;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Settings.EnsureLoadedAsync();
+        await LoadData();
+    }
 
     private async Task LoadData()
     {
-        invoices=await DbContext.PurchaseInvoices.Include(p=>p.Supplier).Include(p=>p.Details).OrderByDescending(p=>p.InvoiceDate).Take(200).ToListAsync();
-        suppliers=await DbContext.Suppliers.Where(s=>s.IsActive).ToListAsync();
-        items=await DbContext.Items.Where(i=>i.IsActive).ToListAsync();
-        warehouses=await DbContext.Warehouses.ToListAsync();
+        invoices = await DbContext.PurchaseInvoices
+            .Include(p => p.Supplier).Include(p => p.Details)
+            .OrderByDescending(p => p.InvoiceDate).ThenByDescending(p => p.Id)
+            .Take(200).ToListAsync();
+        suppliers = await DbContext.Suppliers.Where(s => s.IsActive).OrderBy(s => s.Name).ToListAsync();
+        items = await DbContext.Items.Where(i => i.IsActive).OrderBy(i => i.ItemName).ToListAsync();
+        warehouses = await DbContext.Warehouses.Where(w => w.IsActive).ToListAsync();
     }
 
-    private void CreateNew(){newInvoice=new PurchaseInvoice{InvoiceDate=DateTime.Today,DueDate=DateTime.Today.AddDays(30)};newLines=new List<LineInv>{new LineInv{ItemId=items.FirstOrDefault()?.Id??1,Quantity=1,UnitPrice=items.FirstOrDefault()?.CostPrice??0}};showCreate=true;isEditing=false;}
+    private IEnumerable<PurchaseInvoice> FilteredInvoices() => invoices
+        .Where(p => string.IsNullOrWhiteSpace(searchTerm)
+                    || p.InvoiceNumber.Contains(searchTerm, StringComparison.OrdinalIgnoreCase)
+                    || (p.Supplier?.Name ?? "").Contains(searchTerm, StringComparison.OrdinalIgnoreCase));
 
-    private void EditInvoice(PurchaseInvoice inv)
+    private LineInv NewLine()
+    {
+        var first = items.FirstOrDefault();
+        return new LineInv { ItemId = first?.Id ?? 0, Quantity = 1, UnitPrice = first?.CostPrice ?? 0 };
+    }
+
+    private void OnItemChanged(LineInv line)
+    {
+        var item = items.FirstOrDefault(i => i.Id == line.ItemId);
+        if (item is not null) line.UnitPrice = item.CostPrice;
+    }
+
+    private void CreateNew()
+    {
+        var termDays = Settings.GetInt(SettingsCatalog.DefaultPaymentTermDays, 30);
+        newInvoice = new PurchaseInvoice
+        {
+            InvoiceDate = DateTime.Today,
+            DueDate = DateTime.Today.AddDays(termDays),
+            SupplierId = suppliers.FirstOrDefault()?.Id ?? 0,
+            WarehouseId = warehouses.FirstOrDefault()?.Id
+        };
+        newLines = new List<LineInv> { NewLine() };
+        formError = null;
+        showCreate = true;
+        isEditing = false;
+    }
+
+    private void EditInvoice(PurchaseInvoice invoice)
     {
         newInvoice = new PurchaseInvoice
         {
-            Id = inv.Id,
-            InvoiceNumber = inv.InvoiceNumber,
-            InvoiceDate = inv.InvoiceDate,
-            DueDate = inv.DueDate,
-            SupplierId = inv.SupplierId,
-            WarehouseId = inv.WarehouseId,
-            Description = inv.Description,
-            Status = inv.Status
+            Id = invoice.Id,
+            InvoiceNumber = invoice.InvoiceNumber,
+            InvoiceDate = invoice.InvoiceDate,
+            DueDate = invoice.DueDate,
+            SupplierId = invoice.SupplierId,
+            WarehouseId = invoice.WarehouseId,
+            Description = invoice.Description,
+            Status = invoice.Status
         };
 
-        newLines = inv.Details.Select(d => new LineInv
+        newLines = invoice.Details.Select(d => new LineInv
         {
             ItemId = d.ItemId,
             Quantity = d.Quantity,
             UnitPrice = d.UnitPrice
         }).ToList();
 
-        if (newLines.Count == 0) newLines.Add(new LineInv{ItemId=items.FirstOrDefault()?.Id??1,Quantity=1,UnitPrice=items.FirstOrDefault()?.CostPrice??0});
+        if (newLines.Count == 0) newLines.Add(NewLine());
+        formError = null;
         showCreate = true;
         isEditing = true;
     }
 
-    private void AddLine(){newLines.Add(new LineInv{ItemId=items.FirstOrDefault()?.Id??1,Quantity=1,UnitPrice=0});}
-    private void RemoveLine(int i){if(newLines.Count>1)newLines.RemoveAt(i);}
+    private void AddLine() => newLines.Add(NewLine());
+    private void RemoveLine(int index) { if (newLines.Count > 1) newLines.RemoveAt(index); }
 
-    private async Task SaveInvoice(){
-        if (!isEditing)
+    private List<PurchaseInvoiceDetail> BuildDetails()
+    {
+        var rate = Tax.PpnEnabled ? Tax.PpnPercent : 0m;
+        return newLines.Where(l => l.Quantity > 0 && l.ItemId > 0).Select(l =>
         {
-            newInvoice.CreatedAt=DateTime.UtcNow;var count=await DbContext.PurchaseInvoices.CountAsync();newInvoice.InvoiceNumber=$"PO-{DateTime.UtcNow.Year}-{count+1:D4}";
-            newInvoice.SubTotal=total;newInvoice.GrandTotal=total;
-            newInvoice.Details=newLines.Where(l=>l.Quantity>0).Select(l=>new PurchaseInvoiceDetail{ItemId=l.ItemId,Quantity=l.Quantity,UnitPrice=l.UnitPrice,LineTotal=l.Quantity*l.UnitPrice}).ToList();
-            DbContext.PurchaseInvoices.Add(newInvoice);
-            var sup=await DbContext.Suppliers.FindAsync(newInvoice.SupplierId);if(sup!=null)sup.Balance+=newInvoice.GrandTotal;
-        }
-        else
-        {
-            var existing = await DbContext.PurchaseInvoices.Include(p=>p.Details).FirstOrDefaultAsync(p=>p.Id==newInvoice.Id);
-            if (existing != null)
+            var total = l.Quantity * l.UnitPrice;
+            return new PurchaseInvoiceDetail
             {
-                var supOld = await DbContext.Suppliers.FindAsync(existing.SupplierId);
-                if (supOld != null) supOld.Balance -= existing.GrandTotal;
-
-                existing.SupplierId = newInvoice.SupplierId;
-                existing.InvoiceDate = newInvoice.InvoiceDate;
-                existing.DueDate = newInvoice.DueDate;
-                existing.WarehouseId = newInvoice.WarehouseId;
-                existing.SubTotal = total;
-                existing.GrandTotal = total;
-
-                DbContext.PurchaseInvoiceDetails.RemoveRange(existing.Details);
-                existing.Details = newLines.Where(l=>l.Quantity>0).Select(l=>new PurchaseInvoiceDetail{ItemId=l.ItemId,Quantity=l.Quantity,UnitPrice=l.UnitPrice,LineTotal=l.Quantity*l.UnitPrice}).ToList();
-
-                var supNew = await DbContext.Suppliers.FindAsync(existing.SupplierId);
-                if (supNew != null) supNew.Balance += existing.GrandTotal;
-            }
-        }
-
-        await DbContext.SaveChangesAsync();
-        await Notif.NotifyAsync("📥 Pembelian",$"PO #{newInvoice.InvoiceNumber} — Rp {total:N0}","Info");
-        showCreate=false;isEditing=false;await LoadData();
+                ItemId = l.ItemId,
+                Quantity = l.Quantity,
+                UnitPrice = l.UnitPrice,
+                LineTotal = total,
+                TaxPercent = rate,
+                TaxAmount = Tax.Compute(total).Ppn
+            };
+        }).ToList();
     }
 
-    private async Task DeleteInvoice(PurchaseInvoice inv)
+    private async Task SaveInvoice()
     {
-        if (!await ConfirmAsync($"Hapus pembelian {inv.InvoiceNumber}?") ) return;
-        var sup = await DbContext.Suppliers.FindAsync(inv.SupplierId);
-        if (sup != null) sup.Balance -= inv.GrandTotal;
-        DbContext.PurchaseInvoices.Remove(inv);
+        formError = null;
+
+        if (newInvoice.SupplierId == 0) { formError = "Pilih pemasok lebih dulu."; return; }
+
+        var details = BuildDetails();
+        if (details.Count == 0) { formError = "Tambahkan minimal satu barang dengan kuantitas di atas nol."; return; }
+
+        saving = true;
+        try
+        {
+            if (!isEditing)
+            {
+                newInvoice.InvoiceNumber = await Numbers.NextAsync(DbContext, DocumentKind.PurchaseInvoice, newInvoice.InvoiceDate);
+                newInvoice.SubTotal = SubTotal;
+                newInvoice.TaxAmount = TaxAmount;
+                newInvoice.GrandTotal = GrandTotal;
+                newInvoice.Details = details;
+                newInvoice.Status = InvoiceStatus.Confirmed;
+                newInvoice.CreatedAt = DateTime.UtcNow;
+
+                DbContext.PurchaseInvoices.Add(newInvoice);
+
+                var supplier = await DbContext.Suppliers.FindAsync(newInvoice.SupplierId);
+                if (supplier is not null) supplier.Balance += newInvoice.GrandTotal;
+
+                await DbContext.SaveChangesAsync();
+
+                await Posting.ApplyPurchaseStockAsync(newInvoice);
+                await Posting.PostPurchaseInvoiceAsync(newInvoice);
+
+                Say($"Faktur {newInvoice.InvoiceNumber} tersimpan — stok bertambah dan PPN masukan tercatat.", true);
+                await Notif.NotifyAsync("Pembelian baru",
+                    $"Faktur {newInvoice.InvoiceNumber} senilai {Settings.Money(newInvoice.GrandTotal)}",
+                    "Info", link: "/transactions/purchases");
+            }
+            else
+            {
+                var existing = await DbContext.PurchaseInvoices.Include(p => p.Details)
+                    .FirstOrDefaultAsync(p => p.Id == newInvoice.Id);
+                if (existing is not null)
+                {
+                    await Posting.ReverseDocumentJournalAsync(existing.JournalEntryId);
+                    existing.JournalEntryId = null;
+                    existing.IsPosted = false;
+
+                    var oldSupplier = await DbContext.Suppliers.FindAsync(existing.SupplierId);
+                    if (oldSupplier is not null) oldSupplier.Balance -= existing.GrandTotal;
+
+                    existing.SupplierId = newInvoice.SupplierId;
+                    existing.InvoiceDate = newInvoice.InvoiceDate;
+                    existing.DueDate = newInvoice.DueDate;
+                    existing.WarehouseId = newInvoice.WarehouseId;
+                    existing.SubTotal = SubTotal;
+                    existing.TaxAmount = TaxAmount;
+                    existing.GrandTotal = GrandTotal;
+                    existing.UpdatedAt = DateTime.UtcNow;
+
+                    DbContext.PurchaseInvoiceDetails.RemoveRange(existing.Details);
+                    existing.Details = details;
+
+                    var newSupplier = await DbContext.Suppliers.FindAsync(existing.SupplierId);
+                    if (newSupplier is not null) newSupplier.Balance += existing.GrandTotal;
+
+                    await DbContext.SaveChangesAsync();
+                    await Posting.PostPurchaseInvoiceAsync(existing);
+                    Say($"Faktur {existing.InvoiceNumber} diperbarui.", true);
+                }
+            }
+
+            showCreate = false;
+            isEditing = false;
+            await LoadData();
+        }
+        catch (InvalidOperationException ex)
+        {
+            formError = ex.Message;
+        }
+        finally { saving = false; }
+    }
+
+    private async Task DeleteInvoice(PurchaseInvoice invoice)
+    {
+        if (!await JS.InvokeAsync<bool>("cuanConfirm",
+            $"Hapus faktur {invoice.InvoiceNumber}? Jurnal yang terbentuk darinya ikut dibatalkan.")) return;
+
+        await Posting.ReverseDocumentJournalAsync(invoice.JournalEntryId);
+
+        var supplier = await DbContext.Suppliers.FindAsync(invoice.SupplierId);
+        if (supplier is not null) supplier.Balance -= invoice.GrandTotal;
+
+        DbContext.PurchaseInvoices.Remove(invoice);
         await DbContext.SaveChangesAsync();
+
+        Say($"Faktur {invoice.InvoiceNumber} dihapus.", true);
         await LoadData();
     }
 
+    private void Say(string text, bool ok)
+    {
+        message = text;
+        messageClass = ok ? "cu-alert-success" : "cu-alert-warning";
+    }
+
+    private List<object> ExportRows() => FilteredInvoices().Select(p => (object)new
+    {
+        Nomor = p.InvoiceNumber,
+        Tanggal = p.InvoiceDate.ToString("yyyy-MM-dd"),
+        Pemasok = p.Supplier?.Name,
+        JatuhTempo = p.DueDate.ToString("yyyy-MM-dd"),
+        Subtotal = p.SubTotal,
+        PpnMasukan = p.TaxAmount,
+        Total = p.GrandTotal
+    }).ToList();
+
     private async Task ExportCsv()
     {
-        var data = filteredInvoices.Select(p => new
-        {
-            p.InvoiceNumber,
-            p.InvoiceDate,
-            Supplier = p.Supplier?.Name,
-            p.DueDate,
-            p.GrandTotal,
-            p.Status
-        });
-
-        var bytes = ExportService.ExportToCsv(data);
-        await DownloadAsync(bytes, "purchases.csv", "text/csv");
+        var bytes = ExportService.ExportToCsv(ExportRows());
+        await Download(bytes, "pembelian.csv", "text/csv");
     }
 
     private async Task ExportExcel()
     {
-        var data = filteredInvoices.Select(p => new
-        {
-            p.InvoiceNumber,
-            p.InvoiceDate,
-            Supplier = p.Supplier?.Name,
-            p.DueDate,
-            p.GrandTotal,
-            p.Status
-        });
-
-        var bytes = ExportService.ExportToExcel(data, "Purchases");
-        await DownloadAsync(bytes, "purchases.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        var bytes = ExportService.ExportToExcel(ExportRows(), "Pembelian");
+        await Download(bytes, "pembelian.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     }
 
-    private async Task DownloadAsync(byte[] data, string fileName, string contentType)
-    {
-        var base64 = Convert.ToBase64String(data);
-        await JS.InvokeVoidAsync("downloadFileFromBytes", fileName, contentType, base64);
-    }
-
-    private async Task<bool> ConfirmAsync(string message) =>
-        await JS.InvokeAsync<bool>("confirm", message);
+    private async Task Download(byte[] data, string fileName, string contentType)
+        => await JS.InvokeVoidAsync("downloadFileFromBytes", fileName, contentType, Convert.ToBase64String(data));
 }

@@ -1,0 +1,313 @@
+@page "/tax/spt"
+@rendermode @(RenderMode.InteractiveServer)
+@attribute [Authorize(Roles = "Admin,Akuntan")]
+@inject AppDbContext DbContext
+@inject SettingsService Settings
+@inject TaxService Tax
+@inject DjpClient Djp
+@inject IJSRuntime JS
+
+<PageTitle>SPT Masa — CUAN</PageTitle>
+
+<PageHead Section="Pajak" Title="SPT Masa PPN"
+          Subtitle="@($"{Settings.CompanyName} · NPWP {Settings.CompanyNpwp}")">
+    <Actions>
+        <select class="cu-select cu-btn-sm" style="width:110px;" value="@year" @onchange="OnYearChanged">
+            @foreach (var y in years)
+            {
+                <option value="@y">@y</option>
+            }
+        </select>
+        <button class="cu-btn cu-btn-primary cu-btn-sm" @onclick="BuildCurrent" disabled="@busy">
+            <Icon Name="calculator" Size="14" /> Susun SPT masa berjalan
+        </button>
+    </Actions>
+</PageHead>
+
+@if (message is not null)
+{
+    <div class="cu-alert @messageClass">@message</div>
+}
+
+@* Rekap dua belas masa dalam satu tabel: kolom pajak keluaran dan masukan
+   memakai sumbu warna yang sama seperti debit dan kredit di jurnal. *@
+<div class="cu-card cu-card-flush">
+    <div class="cu-card-header">
+        <span class="cu-card-title">Rekap masa pajak @year</span>
+        <span class="cu-text-muted">Tarif PPN @Tax.PpnPercent.ToString("0.##")%</span>
+    </div>
+
+    <div class="cu-table-wrap">
+        <table class="cu-table">
+            <thead>
+                <tr>
+                    <th>Masa</th>
+                    <th class="cu-text-right cu-col-debit">DPP keluaran</th>
+                    <th class="cu-text-right cu-col-debit">PPN keluaran</th>
+                    <th class="cu-text-right cu-col-credit">PPN masukan</th>
+                    <th class="cu-text-right">Kurang / lebih bayar</th>
+                    <th>Batas lapor</th>
+                    <th>SPT</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var s in summaries)
+                {
+                    var ret = returns.FirstOrDefault(r => r.PeriodMonth == s.Month && r.PeriodYear == s.Year);
+                    var due = TaxService.PpnDueDate(s.Month, s.Year);
+                    var overdue = ret is null or { Status: TaxReturnStatus.Draft } && due < DateTime.Today
+                                  && (s.OutputTax > 0 || s.InputTax > 0);
+                    <tr>
+                        <td>
+                            <strong>@TaxPeriodSummary.MonthName(s.Month)</strong>
+                            @if (s.UninvoicedSales > 0)
+                            {
+                                <span class="cu-badge cu-badge-warning" style="margin-left:0.35rem;"
+                                      title="@s.UninvoicedSales faktur penjualan belum diterbitkan faktur pajaknya">
+                                    @s.UninvoicedSales belum FP
+                                </span>
+                            }
+                        </td>
+                        <td class="cu-text-right">@Settings.Number(s.OutputDpp)</td>
+                        <td class="cu-text-right cu-col-debit">@Settings.Number(s.OutputTax)</td>
+                        <td class="cu-text-right cu-col-credit">@Settings.Number(s.InputTax)</td>
+                        <td class="cu-text-right" style="font-weight:600;">
+                            <span class="@(s.PpnPayable >= 0 ? "cu-text-credit" : "cu-text-success")">
+                                @Settings.Number(Math.Abs(s.PpnPayable))
+                            </span>
+                            <span class="cu-text-faint" style="font-size:0.7rem;">
+                                @(s.PpnPayable >= 0 ? "KB" : "LB")
+                            </span>
+                        </td>
+                        <td class="cu-mono @(overdue ? "cu-text-danger" : "cu-text-faint")">
+                            @Settings.FormatDate(due)
+                        </td>
+                        <td>
+                            @if (ret is null)
+                            {
+                                <span class="cu-badge">Belum disusun</span>
+                            }
+                            else
+                            {
+                                <span class="cu-badge @ReturnClass(ret.Status)" title="@ret.NtteNumber">
+                                    @ReturnLabel(ret.Status)@(ret.Revision > 0 ? $" · P{ret.Revision}" : "")
+                                </span>
+                            }
+                        </td>
+                        <td class="cu-text-right">
+                            <div class="cu-row-actions">
+                                @if (ret is null || ret.Status == TaxReturnStatus.Draft)
+                                {
+                                    <button class="cu-btn cu-btn-outline cu-btn-sm" title="Susun ulang dari transaksi"
+                                            @onclick="() => Build(s.Month)" disabled="@busy">
+                                        <Icon Name="calculator" Size="13" />
+                                    </button>
+                                }
+                                @if (ret is { Status: TaxReturnStatus.Draft })
+                                {
+                                    <button class="cu-btn cu-btn-outline cu-btn-sm" title="Lapor ke DJP"
+                                            @onclick="() => Submit(ret)" disabled="@busy">
+                                        <Icon Name="send" Size="13" />
+                                    </button>
+                                }
+                                @if (ret is { Status: TaxReturnStatus.Accepted or TaxReturnStatus.Paid })
+                                {
+                                    <button class="cu-btn cu-btn-outline cu-btn-sm" title="Buat pembetulan"
+                                            @onclick="() => Revise(ret)" disabled="@busy">
+                                        <Icon Name="edit" Size="13" />
+                                    </button>
+                                }
+                            </div>
+                        </td>
+                    </tr>
+                }
+
+                <tr class="cu-total-row">
+                    <td>Setahun</td>
+                    <td class="cu-text-right">@Settings.Number(summaries.Sum(s => s.OutputDpp))</td>
+                    <td class="cu-text-right">@Settings.Number(summaries.Sum(s => s.OutputTax))</td>
+                    <td class="cu-text-right">@Settings.Number(summaries.Sum(s => s.InputTax))</td>
+                    <td class="cu-text-right">@Settings.Number(summaries.Sum(s => s.PpnPayable))</td>
+                    <td colspan="3"></td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="cu-grid cu-grid-2">
+    <div class="cu-card">
+        <div class="cu-card-header"><span class="cu-card-title">PPh yang dipotong tahun @year</span></div>
+        <div class="cu-table-wrap" style="border:0;">
+            <table class="cu-table">
+                <thead>
+                    <tr><th>Jenis</th><th class="cu-text-right">Jumlah</th><th>Batas setor</th></tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>PPh Pasal 21 — gaji karyawan</td>
+                        <td class="cu-text-right">@Settings.Number(summaries.Sum(s => s.Pph21))</td>
+                        <td class="cu-mono cu-text-faint">tanggal 10 bulan berikutnya</td>
+                    </tr>
+                    <tr>
+                        <td>PPh Pasal 23 — jasa</td>
+                        <td class="cu-text-right">@Settings.Number(summaries.Sum(s => s.Pph23))</td>
+                        <td class="cu-mono cu-text-faint">tanggal 10 bulan berikutnya</td>
+                    </tr>
+                    <tr>
+                        <td>PPh Pasal 4 ayat 2 — final</td>
+                        <td class="cu-text-right">@Settings.Number(summaries.Sum(s => s.Pph42))</td>
+                        <td class="cu-mono cu-text-faint">tanggal 10 bulan berikutnya</td>
+                    </tr>
+                    <tr>
+                        <td>PPh Pasal 25 — angsuran</td>
+                        <td class="cu-text-right">@Settings.Number(summaries.Sum(s => s.Pph25))</td>
+                        <td class="cu-mono cu-text-faint">tanggal 15 bulan berikutnya</td>
+                    </tr>
+                    <tr class="cu-total-row">
+                        <td>Total PPh</td>
+                        <td class="cu-text-right">
+                            @Settings.Number(summaries.Sum(s => s.TotalWithholding + s.Pph25))
+                        </td>
+                        <td></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        <div class="cu-form-hint" style="margin-top:0.6rem;">
+            Rincian per bukti potong ada di <a href="/tax/withholding">Bukti Potong PPh</a>.
+        </div>
+    </div>
+
+    <div class="cu-card">
+        <div class="cu-card-header"><span class="cu-card-title">Bukti pelaporan</span></div>
+        @if (!returns.Any(r => r.NtteNumber is not null))
+        {
+            <EmptyState Title="Belum ada tanda terima"
+                        Message="Nomor NTTE dan NTPN tersimpan di sini setelah SPT dilaporkan dan pajaknya disetor." />
+        }
+        else
+        {
+            <div class="cu-table-wrap" style="border:0;">
+                <table class="cu-table">
+                    <thead><tr><th>Masa</th><th>NTTE</th><th>NTPN</th><th>Disetor</th></tr></thead>
+                    <tbody>
+                        @foreach (var r in returns.Where(r => r.NtteNumber is not null).OrderByDescending(r => r.PeriodMonth))
+                        {
+                            <tr>
+                                <td>@TaxPeriodSummary.MonthName(r.PeriodMonth) @r.PeriodYear</td>
+                                <td class="cu-mono" style="font-size:0.72rem;">@r.NtteNumber</td>
+                                <td class="cu-mono" style="font-size:0.72rem;">@r.NtpnNumber</td>
+                                <td class="cu-mono cu-text-faint">
+                                    @(r.PaidAt is null ? "—" : Settings.FormatDate(r.PaidAt.Value))
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private int year = DateTime.Today.Year;
+    private int[] years = Array.Empty<int>();
+    private List<TaxPeriodSummary> summaries = new();
+    private List<TaxReturn> returns = new();
+
+    private string? message;
+    private string messageClass = "cu-alert-success";
+    private bool busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Settings.EnsureLoadedAsync();
+        var current = DateTime.Today.Year;
+        years = Enumerable.Range(current - 3, 5).ToArray();
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        summaries = await Tax.SummarizeYearAsync(year);
+        returns = await DbContext.TaxReturns
+            .Where(r => r.PeriodYear == year && r.ReturnType == "PPN")
+            .OrderByDescending(r => r.Revision)
+            .ToListAsync();
+    }
+
+    private async Task OnYearChanged(ChangeEventArgs e)
+    {
+        year = int.Parse(e.Value?.ToString() ?? DateTime.Today.Year.ToString());
+        await LoadAsync();
+    }
+
+    private Task BuildCurrent() => Build(DateTime.Today.Month);
+
+    private async Task Build(int month)
+    {
+        busy = true;
+        try
+        {
+            var ret = await Tax.BuildPpnReturnAsync(month, year);
+            Say($"SPT Masa {TaxPeriodSummary.MonthName(month)} {year} disusun — " +
+                $"{(ret.PayableAmount >= 0 ? "kurang" : "lebih")} bayar {Settings.Money(Math.Abs(ret.PayableAmount))}.", true);
+            await LoadAsync();
+        }
+        finally { busy = false; }
+    }
+
+    private async Task Submit(TaxReturn ret)
+    {
+        busy = true;
+        try
+        {
+            var result = await Djp.SubmitReturnAsync(ret.Id);
+            Say(result.Message, result.Success);
+            await LoadAsync();
+        }
+        finally { busy = false; }
+    }
+
+    private async Task Revise(TaxReturn ret)
+    {
+        if (!await JS.InvokeAsync<bool>("cuanConfirm",
+            $"Buat pembetulan ke-{ret.Revision + 1} untuk masa {TaxPeriodSummary.MonthName(ret.PeriodMonth)} {ret.PeriodYear}?")) return;
+
+        busy = true;
+        try
+        {
+            var revision = await Tax.ReviseAsync(ret);
+            Say($"Pembetulan ke-{revision.Revision} dibuat sebagai draf.", true);
+            await LoadAsync();
+        }
+        finally { busy = false; }
+    }
+
+    private void Say(string text, bool ok)
+    {
+        message = text;
+        messageClass = ok ? "cu-alert-success" : "cu-alert-warning";
+    }
+
+    private static string ReturnLabel(TaxReturnStatus status) => status switch
+    {
+        TaxReturnStatus.Draft => "Draf",
+        TaxReturnStatus.Submitted => "Terkirim",
+        TaxReturnStatus.Accepted => "Diterima",
+        TaxReturnStatus.Paid => "Lunas",
+        TaxReturnStatus.Rejected => "Ditolak",
+        _ => status.ToString()
+    };
+
+    private static string ReturnClass(TaxReturnStatus status) => status switch
+    {
+        TaxReturnStatus.Paid => "cu-badge-success",
+        TaxReturnStatus.Accepted => "cu-badge-success",
+        TaxReturnStatus.Submitted => "cu-badge-info",
+        TaxReturnStatus.Rejected => "cu-badge-danger",
+        _ => "cu-badge-warning"
+    };
+}

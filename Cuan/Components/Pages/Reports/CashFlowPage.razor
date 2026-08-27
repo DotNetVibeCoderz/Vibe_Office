@@ -1,22 +1,220 @@
 @page "/reports/cash-flow"
 @rendermode @(RenderMode.InteractiveServer)
-@attribute [Authorize(Roles = "Admin,Akuntan")]
+@attribute [Authorize(Roles = "Admin,Akuntan,Viewer")]
 @inject AppDbContext DbContext
+@inject SettingsService Settings
+@inject IJSRuntime JS
 
-<PageTitle>Arus Kas - CUAN</PageTitle>
-<div class="cu-flex-between cu-mb-2"><div><h2 style="margin:0;">💸 Laporan Arus Kas</h2></div><button class="cu-btn cu-btn-outline cu-btn-sm">📥 Excel</button></div>
-<div class="cu-card"><h3>PT. CUAN MAKMUR SENTOSA — Arus Kas 2024</h3>
-<table class="cu-table" style="max-width:600px;"><thead><tr><th>Keterangan</th><th class="cu-text-right">Jumlah (Rp)</th></tr></thead><tbody>
-<tr><td colspan="2"><strong>A. ARUS KAS OPERASI</strong></td></tr>
-<tr><td style="padding-left:20px;">Kas Masuk dari Customer</td><td class="cu-text-right">@cashInFromCustomer.ToString("N0")</td></tr>
-<tr><td style="padding-left:20px;">Kas Keluar ke Supplier</td><td class="cu-text-right">@(cashOutToSupplier.ToString("N0"))</td></tr>
-<tr><td style="padding-left:20px;">Beban Operasional</td><td class="cu-text-right">@(operatingExpense.ToString("N0"))</td></tr>
-<tr style="font-weight:bold;border-top:2px solid var(--cu-border);"><td>Kas Bersih Operasi</td><td class="cu-text-right">@((cashInFromCustomer+cashOutToSupplier+operatingExpense).ToString("N0"))</td></tr>
-<tr><td colspan="2"><strong>B. ARUS KAS INVESTASI</strong></td></tr>
-<tr><td style="padding-left:20px;">Pembelian Aset Tetap</td><td class="cu-text-right">0</td></tr>
-<tr><td colspan="2"><strong>C. ARUS KAS PENDANAAN</strong></td></tr>
-<tr><td style="padding-left:20px;">Modal Disetor</td><td class="cu-text-right">155,000,000</td></tr>
-<tr style="font-weight:bold;font-size:1.1rem;border-top:3px double var(--cu-border);"><td>KENAIKAN / PENURUNAN KAS</td><td class="cu-text-right">@((cashInFromCustomer+cashOutToSupplier+operatingExpense+155000000).ToString("N0"))</td></tr>
-</tbody></table></div>
+<PageTitle>Arus Kas — CUAN</PageTitle>
 
-@code {private decimal cashInFromCustomer;private decimal cashOutToSupplier;private decimal operatingExpense;protected override async Task OnInitializedAsync(){cashInFromCustomer=await DbContext.CashTransactions.Where(t=>t.Type==CashTransactionType.CashIn&&t.CustomerId!=null).SumAsync(t=>t.Amount);cashOutToSupplier=(await DbContext.CashTransactions.Where(t=>t.Type==CashTransactionType.CashOut&&t.SupplierId!=null).SumAsync(t=>t.Amount))*-1;operatingExpense=(await DbContext.ChartOfAccounts.Where(c=>c.AccountType==5&&!c.IsHeader).SumAsync(c=>c.CurrentBalance))*-1;}}
+<PageHead Section="Laporan" Title="Arus Kas"
+          Subtitle="@($"{Settings.CompanyName} · {Settings.FormatDate(from)} — {Settings.FormatDate(to)}")">
+    <Actions>
+        <input type="date" class="cu-form-input cu-btn-sm" style="width:150px;" @bind="from" @bind:after="LoadAsync" />
+        <input type="date" class="cu-form-input cu-btn-sm" style="width:150px;" @bind="to" @bind:after="LoadAsync" />
+        <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="Print">
+            <Icon Name="printer" Size="14" /> Cetak
+        </button>
+    </Actions>
+</PageHead>
+
+<div class="cu-grid cu-grid-4 cu-mb-3">
+    <div class="cu-card cu-stat" style="margin-bottom:0;">
+        <div class="cu-stat-label">Kas awal</div>
+        <div class="cu-stat-value">@Settings.Money(openingCash)</div>
+    </div>
+    <div class="cu-card cu-stat cu-stat-primary" style="margin-bottom:0;">
+        <div class="cu-stat-label">Arus masuk</div>
+        <div class="cu-stat-value">@Settings.Money(TotalIn)</div>
+    </div>
+    <div class="cu-card cu-stat cu-stat-credit" style="margin-bottom:0;">
+        <div class="cu-stat-label">Arus keluar</div>
+        <div class="cu-stat-value">@Settings.Money(TotalOut)</div>
+    </div>
+    <div class="cu-card cu-stat cu-stat-debit" style="margin-bottom:0;">
+        <div class="cu-stat-label">Kas akhir</div>
+        <div class="cu-stat-value">@Settings.Money(openingCash + NetChange)</div>
+        <div class="cu-stat-foot">@(NetChange >= 0 ? "Naik" : "Turun") @Settings.Money(Math.Abs(NetChange))</div>
+    </div>
+</div>
+
+@* Metode langsung: setiap jurnal terposting yang menyentuh akun kas atau bank
+   dikelompokkan menurut jenis akun lawannya. *@
+<div class="cu-card cu-card-flush" style="margin-bottom:0;">
+    <div class="cu-card-header">
+        <span class="cu-card-title">Laporan arus kas — metode langsung</span>
+        <span class="cu-text-muted">@cashAccountNames.Count akun kas &amp; bank</span>
+    </div>
+
+    @if (lines.Count == 0)
+    {
+        <EmptyState Title="Belum ada mutasi kas di rentang ini"
+                    Message="Arus kas disusun dari jurnal yang sudah diposting dan menyentuh akun kas atau bank." />
+    }
+    else
+    {
+        <div class="cu-table-wrap">
+            <table class="cu-table">
+                <thead>
+                    <tr><th>Keterangan</th><th class="cu-text-right" style="width:200px;">Jumlah</th></tr>
+                </thead>
+                <tbody>
+                    <tr class="cu-subtotal-row">
+                        <td>Saldo kas &amp; bank awal periode</td>
+                        <td class="cu-text-right">@Settings.Number(openingCash)</td>
+                    </tr>
+
+                    @foreach (var section in new[] { "Operasi", "Investasi", "Pendanaan" })
+                    {
+                        <tr class="cu-subtotal-row"><td colspan="2">ARUS KAS @section.ToUpperInvariant()</td></tr>
+
+                        @if (!lines.Any(l => l.Section == section))
+                        {
+                            <tr><td style="padding-left:1.4rem;" class="cu-text-faint">Tidak ada mutasi</td><td class="cu-text-right">—</td></tr>
+                        }
+                        else
+                        {
+                            @foreach (var line in lines.Where(l => l.Section == section).OrderByDescending(l => Math.Abs(l.Amount)))
+                            {
+                                <tr>
+                                    <td style="padding-left:1.4rem;">@line.Label</td>
+                                    <td class="cu-text-right @(line.Amount >= 0 ? "cu-text-debit" : "cu-text-credit")">
+                                        @Settings.Number(line.Amount)
+                                    </td>
+                                </tr>
+                            }
+                        }
+
+                        <tr class="cu-subtotal-row">
+                            <td>Kas bersih dari @section.ToLowerInvariant()</td>
+                            <td class="cu-text-right">@Settings.Number(lines.Where(l => l.Section == section).Sum(l => l.Amount))</td>
+                        </tr>
+                    }
+
+                    <tr class="cu-total-row">
+                        <td>KENAIKAN / PENURUNAN KAS</td>
+                        <td class="cu-text-right @(NetChange >= 0 ? "cu-text-success" : "cu-text-danger")">
+                            @Settings.Number(NetChange)
+                        </td>
+                    </tr>
+                    <tr class="cu-total-row">
+                        <td>SALDO KAS &amp; BANK AKHIR PERIODE</td>
+                        <td class="cu-text-right">@Settings.Number(openingCash + NetChange)</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@code {
+    private sealed record Line(string Section, string Label, decimal Amount);
+
+    private List<Line> lines = new();
+    private List<string> cashAccountNames = new();
+    private DateTime from = new(DateTime.Today.Year, 1, 1);
+    private DateTime to = DateTime.Today;
+    private decimal openingCash;
+
+    private decimal NetChange => lines.Sum(l => l.Amount);
+    private decimal TotalIn => lines.Where(l => l.Amount > 0).Sum(l => l.Amount);
+    private decimal TotalOut => Math.Abs(lines.Where(l => l.Amount < 0).Sum(l => l.Amount));
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Settings.EnsureLoadedAsync();
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        // Akun kas: akun kas yang dipetakan di Pengaturan ditambah akun setiap
+        // rekening bank yang terdaftar.
+        var cashCode = Settings.Get(SettingsCatalog.AccountCash);
+        var bankAccountIds = await DbContext.BankAccounts
+            .Where(b => b.ChartOfAccountId != null)
+            .Select(b => b.ChartOfAccountId!.Value)
+            .ToListAsync();
+
+        var cashAccounts = await DbContext.ChartOfAccounts
+            .Where(a => a.AccountCode == cashCode || bankAccountIds.Contains(a.Id))
+            .ToListAsync();
+
+        var cashIds = cashAccounts.Select(a => a.Id).ToHashSet();
+        cashAccountNames = cashAccounts.Select(a => a.AccountName).ToList();
+
+        if (cashIds.Count == 0)
+        {
+            lines = new();
+            openingCash = 0;
+            return;
+        }
+
+        // Saldo kas awal periode.
+        var beforeMoves = await DbContext.JournalEntryDetails
+            .Include(d => d.JournalEntry)
+            .Where(d => d.JournalEntry!.IsPosted && d.JournalEntry.TransactionDate < from
+                        && cashIds.Contains(d.ChartOfAccountId))
+            .Select(d => new { d.Debit, d.Credit })
+            .ToListAsync();
+
+        openingCash = cashAccounts.Sum(a => a.OpeningBalance)
+                      + beforeMoves.Sum(m => m.Debit - m.Credit);
+
+        // Jurnal dalam periode yang menyentuh kas.
+        var journalIds = await DbContext.JournalEntryDetails
+            .Include(d => d.JournalEntry)
+            .Where(d => d.JournalEntry!.IsPosted
+                        && d.JournalEntry.TransactionDate >= from && d.JournalEntry.TransactionDate <= to
+                        && cashIds.Contains(d.ChartOfAccountId))
+            .Select(d => d.JournalEntryId)
+            .Distinct()
+            .ToListAsync();
+
+        var details = await DbContext.JournalEntryDetails
+            .Include(d => d.ChartOfAccount)
+            .Where(d => journalIds.Contains(d.JournalEntryId))
+            .ToListAsync();
+
+        var buckets = new Dictionary<(string Section, string Label), decimal>();
+
+        foreach (var group in details.GroupBy(d => d.JournalEntryId))
+        {
+            var cashDelta = group.Where(d => cashIds.Contains(d.ChartOfAccountId))
+                                 .Sum(d => d.Debit - d.Credit);
+            if (cashDelta == 0) continue;
+
+            var counterparts = group.Where(d => !cashIds.Contains(d.ChartOfAccountId)).ToList();
+            var counterTotal = counterparts.Sum(d => d.Debit + d.Credit);
+            if (counterTotal == 0) continue;
+
+            // Nilai kas dibagi ke tiap akun lawan sebanding porsinya.
+            foreach (var line in counterparts)
+            {
+                var account = line.ChartOfAccount;
+                if (account is null) continue;
+
+                var share = (line.Debit + line.Credit) / counterTotal;
+                var key = (Classify(account), account.AccountName);
+                buckets[key] = buckets.GetValueOrDefault(key) + cashDelta * share;
+            }
+        }
+
+        lines = buckets
+            .Where(b => Math.Abs(b.Value) >= 1)
+            .Select(b => new Line(b.Key.Section, b.Key.Label, Math.Round(b.Value, 0)))
+            .ToList();
+    }
+
+    /// <summary>
+    /// Aset tetap masuk investasi, modal masuk pendanaan, sisanya operasi.
+    /// </summary>
+    private static string Classify(ChartOfAccount account)
+    {
+        if (account.AccountType == 3) return "Pendanaan";
+        if (account.AccountType == 1 && account.AccountCode.StartsWith("1-2")) return "Investasi";
+        return "Operasi";
+    }
+
+    private async Task Print() => await JS.InvokeVoidAsync("cuanPrint");
+}

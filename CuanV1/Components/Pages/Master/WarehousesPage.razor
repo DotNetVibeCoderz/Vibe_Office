@@ -1,0 +1,175 @@
+@page "/master/warehouses"
+@rendermode @(RenderMode.InteractiveServer)
+@attribute [Authorize(Roles = "Admin,Akuntan")]
+@inject AppDbContext DbContext
+@inject IJSRuntime JS
+
+<PageTitle>Gudang & Cabang - CUAN</PageTitle>
+
+<div class="cu-flex-between cu-mb-2">
+    <div><h2 style="margin:0;">🏗️ Gudang & Cabang</h2><span class="cu-text-muted">@totalWarehouses lokasi terdaftar</span></div>
+    <div class="cu-flex cu-gap-1">
+        <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportExcel">📥 Excel</button>
+        <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportCsv">📄 CSV</button>
+        <button class="cu-btn cu-btn-primary cu-btn-sm" @onclick="() => ShowModal(null)">+ Lokasi</button>
+    </div>
+</div>
+
+<div class="cu-card cu-mb-2">
+    <div class="cu-flex cu-gap-2">
+        <div style="flex:1;"><input class="cu-form-input" @bind="searchTerm" @bind:event="oninput" placeholder="🔍 Cari kode/nama/alamat..." /></div>
+    </div>
+</div>
+
+<div class="cu-card">
+    <table class="cu-table">
+        <thead><tr><th>Kode</th><th>Nama</th><th>Alamat</th><th>Tipe</th><th>Status</th><th></th></tr></thead>
+        <tbody>
+            @foreach (var w in filteredWarehouses)
+            {
+                <tr>
+                    <td>@w.Code</td>
+                    <td>@w.Name</td>
+                    <td>@w.Address</td>
+                    <td>@(w.IsBranch ? "🏢 Cabang" : "📦 Gudang")</td>
+                    <td><span class="cu-badge @(w.IsActive ? "cu-badge-success" : "cu-badge-danger")">@(w.IsActive ? "Active" : "Inactive")</span></td>
+                    <td>
+                        <button class="cu-btn cu-btn-sm cu-btn-outline" @onclick="() => ShowModal(w)">✏️</button>
+                        <button class="cu-btn cu-btn-sm cu-btn-danger" title="Hapus" @onclick="() => DeleteWarehouse(w)">🗑️</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@if (showModal)
+{
+    <div class="cu-modal-overlay" @onclick="HideModal">
+        <div class="cu-modal" @onclick:stopPropagation="true">
+            <h3 style="margin-top:0;">@(editingWarehouse.Id == 0 ? "Tambah Lokasi" : "Edit Lokasi")</h3>
+            <EditForm Model="editingWarehouse" OnValidSubmit="SaveWarehouse">
+                <div class="cu-grid cu-grid-2">
+                    <div class="cu-form-group"><label class="cu-form-label">Kode *</label><InputText @bind-Value="editingWarehouse.Code" class="cu-form-input" /></div>
+                    <div class="cu-form-group"><label class="cu-form-label">Nama *</label><InputText @bind-Value="editingWarehouse.Name" class="cu-form-input" /></div>
+                </div>
+                <div class="cu-form-group"><label class="cu-form-label">Alamat</label><InputTextArea @bind-Value="editingWarehouse.Address" class="cu-form-input" rows="2" /></div>
+                <div class="cu-grid cu-grid-2">
+                    <div class="cu-form-group"><label class="cu-form-label"><input type="checkbox" @bind="editingWarehouse.IsBranch" /> Cabang?</label></div>
+                    <div class="cu-form-group"><label class="cu-form-label"><input type="checkbox" @bind="editingWarehouse.IsActive" /> Aktif?</label></div>
+                </div>
+                <div class="cu-flex cu-gap-1" style="justify-content:flex-end;margin-top:1rem;">
+                    <button type="button" class="cu-btn cu-btn-outline" @onclick="HideModal">Batal</button>
+                    <button type="submit" class="cu-btn cu-btn-primary">💾 Simpan</button>
+                </div>
+            </EditForm>
+        </div>
+    </div>
+}
+
+@code {
+    private List<Warehouse> warehouses = new();
+    private string searchTerm = "";
+    private int totalWarehouses;
+    private bool showModal;
+    private Warehouse editingWarehouse = new();
+
+    private IEnumerable<Warehouse> filteredWarehouses => warehouses
+        .Where(w => string.IsNullOrEmpty(searchTerm)
+            || w.Code.Contains(searchTerm, StringComparison.OrdinalIgnoreCase)
+            || w.Name.Contains(searchTerm, StringComparison.OrdinalIgnoreCase)
+            || (w.Address ?? "").Contains(searchTerm, StringComparison.OrdinalIgnoreCase))
+        .OrderBy(w => w.Code);
+
+    protected override async Task OnInitializedAsync() { await LoadData(); }
+    private async Task LoadData() { warehouses = await DbContext.Warehouses.OrderBy(w => w.Code).ToListAsync(); totalWarehouses = warehouses.Count; }
+
+    private void ShowModal(Warehouse? existing)
+    {
+        editingWarehouse = existing != null
+            ? new Warehouse
+            {
+                Id = existing.Id,
+                Code = existing.Code,
+                Name = existing.Name,
+                Address = existing.Address,
+                IsBranch = existing.IsBranch,
+                IsActive = existing.IsActive
+            }
+            : new Warehouse { IsActive = true };
+        showModal = true;
+    }
+
+    private void HideModal() { showModal = false; }
+
+    private async Task SaveWarehouse()
+    {
+        if (editingWarehouse.Id == 0)
+        {
+            editingWarehouse.CreatedAt = DateTime.UtcNow;
+            DbContext.Warehouses.Add(editingWarehouse);
+        }
+        else
+        {
+            var ex = await DbContext.Warehouses.FindAsync(editingWarehouse.Id);
+            if (ex != null)
+            {
+                ex.Code = editingWarehouse.Code;
+                ex.Name = editingWarehouse.Name;
+                ex.Address = editingWarehouse.Address;
+                ex.IsBranch = editingWarehouse.IsBranch;
+                ex.IsActive = editingWarehouse.IsActive;
+            }
+        }
+        await DbContext.SaveChangesAsync();
+        showModal = false;
+        await LoadData();
+    }
+
+    private async Task DeleteWarehouse(Warehouse warehouse)
+    {
+        if (!await ConfirmAsync($"Hapus lokasi {warehouse.Code} - {warehouse.Name}?") ) return;
+        DbContext.Warehouses.Remove(warehouse);
+        await DbContext.SaveChangesAsync();
+        await LoadData();
+    }
+
+    private async Task ExportCsv()
+    {
+        var data = filteredWarehouses.Select(w => new
+        {
+            w.Code,
+            w.Name,
+            w.Address,
+            w.IsBranch,
+            w.IsActive
+        });
+
+        var bytes = ExportService.ExportToCsv(data);
+        await DownloadAsync(bytes, "warehouses.csv", "text/csv");
+    }
+
+    private async Task ExportExcel()
+    {
+        var data = filteredWarehouses.Select(w => new
+        {
+            w.Code,
+            w.Name,
+            w.Address,
+            w.IsBranch,
+            w.IsActive
+        });
+
+        var bytes = ExportService.ExportToExcel(data, "Warehouses");
+        await DownloadAsync(bytes, "warehouses.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    }
+
+    private async Task DownloadAsync(byte[] data, string fileName, string contentType)
+    {
+        var base64 = Convert.ToBase64String(data);
+        await JS.InvokeVoidAsync("downloadFileFromBytes", fileName, contentType, base64);
+    }
+
+    private async Task<bool> ConfirmAsync(string message) =>
+        await JS.InvokeAsync<bool>("confirm", message);
+}

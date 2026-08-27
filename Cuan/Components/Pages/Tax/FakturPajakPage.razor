@@ -1,0 +1,354 @@
+@page "/tax/faktur"
+@rendermode @(RenderMode.InteractiveServer)
+@attribute [Authorize(Roles = "Admin,Akuntan")]
+@inject AppDbContext DbContext
+@inject SettingsService Settings
+@inject TaxService Tax
+@inject DocumentNumberService Numbers
+@inject EfakturExportService Efaktur
+@inject DjpClient Djp
+@inject IJSRuntime JS
+
+<PageTitle>Faktur Pajak — CUAN</PageTitle>
+
+<PageHead Section="Pajak" Title="Faktur Pajak"
+          Subtitle="@($"Masa {TaxPeriodSummary.MonthName(month)} {year} · NSFP tersisa {remainingNsfp:N0}")">
+    <Actions>
+        <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportCsv">
+            <Icon Name="download" Size="14" /> CSV e-Faktur
+        </button>
+        <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportXml">
+            <Icon Name="download" Size="14" /> XML Coretax
+        </button>
+        <button class="cu-btn cu-btn-primary cu-btn-sm" @onclick="IssueAll" disabled="@(pending.Count == 0 || busy)">
+            <Icon Name="plus" Size="14" /> Terbitkan @pending.Count faktur
+        </button>
+    </Actions>
+</PageHead>
+
+@if (message is not null)
+{
+    <div class="cu-alert @messageClass">@message</div>
+}
+
+@if (!Settings.IsPkp)
+{
+    <div class="cu-alert cu-alert-warning">
+        Perusahaan belum ditandai berstatus PKP, jadi faktur pajak tidak bisa diterbitkan.
+        Ubah di <a href="/admin/settings">Pengaturan → Perusahaan</a>.
+    </div>
+}
+else if (remainingNsfp <= 10)
+{
+    <div class="cu-alert cu-alert-warning">
+        Jatah nomor seri faktur pajak tinggal @remainingNsfp. Perbarui rentangnya di
+        <a href="/admin/settings">Pengaturan → Pajak</a> sebelum kehabisan.
+    </div>
+}
+
+<div class="cu-filterbar">
+    <select class="cu-select" style="width:150px;" value="@month" @onchange="OnMonthChanged">
+        @for (var m = 1; m <= 12; m++)
+        {
+            var value = m;
+            <option value="@value">@TaxPeriodSummary.MonthName(value)</option>
+        }
+    </select>
+    <select class="cu-select" style="width:110px;" value="@year" @onchange="OnYearChanged">
+        @foreach (var y in years)
+        {
+            <option value="@y">@y</option>
+        }
+    </select>
+    <div class="cu-search">
+        <span class="cu-search-icon"><Icon Name="search" Size="15" /></span>
+        <input class="cu-form-input" placeholder="Cari nomor faktur atau pembeli…"
+               @bind="search" @bind:event="oninput" />
+    </div>
+    <select class="cu-select" style="width:160px;" @bind="statusFilter">
+        <option value="">Semua status</option>
+        <option value="Issued">Diterbitkan</option>
+        <option value="Submitted">Terkirim</option>
+        <option value="Approved">Disetujui</option>
+        <option value="Rejected">Ditolak</option>
+    </select>
+</div>
+
+<div class="cu-grid cu-grid-4 cu-mb-3">
+    <div class="cu-card cu-stat" style="margin-bottom:0;">
+        <div class="cu-stat-label">Faktur pajak</div>
+        <div class="cu-stat-value">@fakturs.Count</div>
+        <div class="cu-stat-foot">@pending.Count penjualan menunggu</div>
+    </div>
+    <div class="cu-card cu-stat cu-stat-debit" style="margin-bottom:0;">
+        <div class="cu-stat-label">Total DPP</div>
+        <div class="cu-stat-value">@Settings.Money(fakturs.Sum(f => f.Dpp))</div>
+    </div>
+    <div class="cu-card cu-stat cu-stat-credit" style="margin-bottom:0;">
+        <div class="cu-stat-label">PPN keluaran</div>
+        <div class="cu-stat-value">@Settings.Money(fakturs.Sum(f => f.PpnAmount))</div>
+        <div class="cu-stat-foot">Tarif @Tax.PpnPercent.ToString("0.##")%</div>
+    </div>
+    <div class="cu-card cu-stat cu-stat-primary" style="margin-bottom:0;">
+        <div class="cu-stat-label">Disetujui DJP</div>
+        <div class="cu-stat-value">@fakturs.Count(f => f.Status == TaxInvoiceStatus.Approved)</div>
+        <div class="cu-stat-foot">dari @fakturs.Count faktur</div>
+    </div>
+</div>
+
+@if (pending.Count > 0)
+{
+    <div class="cu-card cu-card-flush">
+        <div class="cu-card-header">
+            <span class="cu-card-title">Menunggu diterbitkan</span>
+            <span class="cu-text-muted">Faktur penjualan ber-PPN yang belum punya faktur pajak</span>
+        </div>
+        <div class="cu-table-wrap">
+            <table class="cu-table">
+                <thead>
+                    <tr>
+                        <th>Faktur</th><th>Tanggal</th><th>Pembeli</th>
+                        <th class="cu-text-right">DPP</th><th class="cu-text-right">PPN</th><th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var invoice in pending)
+                    {
+                        <tr>
+                            <td class="cu-mono">@invoice.InvoiceNumber</td>
+                            <td class="cu-mono">@Settings.FormatDate(invoice.InvoiceDate)</td>
+                            <td>@invoice.Customer?.Name</td>
+                            <td class="cu-text-right">@Settings.Number(invoice.SubTotal - invoice.DiscountAmount)</td>
+                            <td class="cu-text-right cu-col-credit">@Settings.Number(invoice.TaxAmount)</td>
+                            <td class="cu-text-right">
+                                <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="() => IssueOne(invoice)" disabled="@busy">
+                                    Terbitkan
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
+
+<div class="cu-card cu-card-flush" style="margin-bottom:0;">
+    <div class="cu-card-header">
+        <span class="cu-card-title">Faktur pajak diterbitkan</span>
+        <span class="cu-text-muted">@Filtered().Count() baris</span>
+    </div>
+
+    @if (!Filtered().Any())
+    {
+        <EmptyState Title="Belum ada faktur pajak di masa ini"
+                    Message="Terbitkan faktur pajak dari faktur penjualan yang sudah ber-PPN, lalu unduh berkasnya untuk dilaporkan." />
+    }
+    else
+    {
+        <div class="cu-table-wrap">
+            <table class="cu-table">
+                <thead>
+                    <tr>
+                        <th>Nomor seri</th><th>Tanggal</th><th>Pembeli</th><th>NPWP</th>
+                        <th class="cu-text-right">DPP</th><th class="cu-text-right">PPN</th>
+                        <th>Status</th><th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var faktur in Filtered())
+                    {
+                        <tr>
+                            <td class="cu-mono">@faktur.FakturNumber</td>
+                            <td class="cu-mono">@Settings.FormatDate(faktur.FakturDate)</td>
+                            <td>@faktur.BuyerName</td>
+                            <td class="cu-mono cu-text-faint">@(string.IsNullOrWhiteSpace(faktur.BuyerNpwp) ? "—" : faktur.BuyerNpwp)</td>
+                            <td class="cu-text-right">@Settings.Number(faktur.Dpp)</td>
+                            <td class="cu-text-right cu-col-credit">@Settings.Number(faktur.PpnAmount)</td>
+                            <td>
+                                <span class="cu-badge @StatusClass(faktur.Status)" title="@faktur.DjpMessage">
+                                    @StatusLabel(faktur.Status)
+                                </span>
+                            </td>
+                            <td class="cu-text-right">
+                                <div class="cu-row-actions">
+                                    @if (faktur.Status is TaxInvoiceStatus.Issued or TaxInvoiceStatus.Rejected)
+                                    {
+                                        <button class="cu-btn cu-btn-outline cu-btn-sm" title="Kirim ke DJP"
+                                                @onclick="() => SubmitOne(faktur)" disabled="@busy">
+                                            <Icon Name="send" Size="13" />
+                                        </button>
+                                    }
+                                    <button class="cu-btn cu-btn-outline cu-btn-icon" title="Batalkan faktur"
+                                            @onclick="() => Cancel(faktur)" disabled="@busy">
+                                        <Icon Name="close" Size="13" />
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                    <tr class="cu-total-row">
+                        <td colspan="4">Total masa @TaxPeriodSummary.MonthName(month) @year</td>
+                        <td class="cu-text-right">@Settings.Number(Filtered().Sum(f => f.Dpp))</td>
+                        <td class="cu-text-right">@Settings.Number(Filtered().Sum(f => f.PpnAmount))</td>
+                        <td colspan="2"></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@code {
+    private int month = DateTime.Today.Month;
+    private int year = DateTime.Today.Year;
+    private int[] years = Array.Empty<int>();
+    private int remainingNsfp;
+
+    private List<TaxInvoice> fakturs = new();
+    private List<SalesInvoice> pending = new();
+
+    private string search = "";
+    private string statusFilter = "";
+    private string? message;
+    private string messageClass = "cu-alert-success";
+    private bool busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Settings.EnsureLoadedAsync();
+        var current = DateTime.Today.Year;
+        years = Enumerable.Range(current - 3, 5).ToArray();
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        fakturs = await DbContext.TaxInvoices
+            .Where(t => t.TaxPeriodMonth == month && t.TaxPeriodYear == year)
+            .OrderBy(t => t.FakturNumber)
+            .ToListAsync();
+
+        pending = await Tax.PendingSalesAsync(month, year);
+        remainingNsfp = Numbers.RemainingNsfp();
+    }
+
+    private IEnumerable<TaxInvoice> Filtered() => fakturs
+        .Where(f => string.IsNullOrEmpty(statusFilter) || f.Status.ToString() == statusFilter)
+        .Where(f => string.IsNullOrWhiteSpace(search)
+                    || f.FakturNumber.Contains(search, StringComparison.OrdinalIgnoreCase)
+                    || (f.BuyerName ?? "").Contains(search, StringComparison.OrdinalIgnoreCase));
+
+    private async Task OnMonthChanged(ChangeEventArgs e)
+    {
+        month = int.Parse(e.Value?.ToString() ?? "1");
+        await LoadAsync();
+    }
+
+    private async Task OnYearChanged(ChangeEventArgs e)
+    {
+        year = int.Parse(e.Value?.ToString() ?? DateTime.Today.Year.ToString());
+        await LoadAsync();
+    }
+
+    private async Task IssueOne(SalesInvoice invoice)
+    {
+        busy = true;
+        try
+        {
+            var faktur = await Tax.IssueAsync(invoice, CurrentUser());
+            Say($"Faktur pajak {faktur.FakturNumber} diterbitkan.", true);
+            await LoadAsync();
+        }
+        catch (InvalidOperationException ex) { Say(ex.Message, false); }
+        finally { busy = false; }
+    }
+
+    private async Task IssueAll()
+    {
+        busy = true;
+        try
+        {
+            var (issued, error) = await Tax.IssueBatchAsync(month, year, CurrentUser());
+            Say(error is null
+                ? $"{issued} faktur pajak diterbitkan untuk masa {TaxPeriodSummary.MonthName(month)} {year}."
+                : $"{issued} faktur diterbitkan, lalu berhenti: {error}", error is null);
+            await LoadAsync();
+        }
+        finally { busy = false; }
+    }
+
+    private async Task SubmitOne(TaxInvoice faktur)
+    {
+        busy = true;
+        try
+        {
+            var result = await Djp.SubmitTaxInvoiceAsync(faktur.Id, CurrentUser());
+            Say(result.Message, result.Success);
+            await LoadAsync();
+        }
+        finally { busy = false; }
+    }
+
+    private async Task Cancel(TaxInvoice faktur)
+    {
+        if (!await JS.InvokeAsync<bool>("cuanConfirm",
+            $"Batalkan faktur pajak {faktur.FakturNumber}? Nomor serinya tidak bisa dipakai ulang.")) return;
+
+        faktur.Status = TaxInvoiceStatus.Canceled;
+        await DbContext.SaveChangesAsync();
+        Say($"Faktur pajak {faktur.FakturNumber} dibatalkan.", true);
+        await LoadAsync();
+    }
+
+    private async Task ExportCsv()
+    {
+        var bytes = await Efaktur.ExportCsvAsync(month, year);
+        await Download(bytes, Efaktur.FileNameFor(month, year, "csv"), "text/csv");
+    }
+
+    private async Task ExportXml()
+    {
+        var bytes = await Efaktur.ExportXmlAsync(month, year);
+        await Download(bytes, Efaktur.FileNameFor(month, year, "xml"), "application/xml");
+    }
+
+    private async Task Download(byte[] bytes, string fileName, string contentType)
+    {
+        if (bytes.Length == 0)
+        {
+            Say("Tidak ada faktur pajak di masa ini untuk diekspor.", false);
+            return;
+        }
+        await JS.InvokeVoidAsync("downloadFileFromBytes", fileName, contentType, Convert.ToBase64String(bytes));
+        Say($"{fileName} diunduh.", true);
+    }
+
+    private void Say(string text, bool ok)
+    {
+        message = text;
+        messageClass = ok ? "cu-alert-success" : "cu-alert-warning";
+    }
+
+    private string? CurrentUser() => null;
+
+    private static string StatusLabel(TaxInvoiceStatus status) => status switch
+    {
+        TaxInvoiceStatus.Draft => "Draf",
+        TaxInvoiceStatus.Issued => "Diterbitkan",
+        TaxInvoiceStatus.Submitted => "Terkirim",
+        TaxInvoiceStatus.Approved => "Disetujui",
+        TaxInvoiceStatus.Rejected => "Ditolak",
+        TaxInvoiceStatus.Canceled => "Batal",
+        _ => status.ToString()
+    };
+
+    private static string StatusClass(TaxInvoiceStatus status) => status switch
+    {
+        TaxInvoiceStatus.Approved => "cu-badge-success",
+        TaxInvoiceStatus.Submitted => "cu-badge-info",
+        TaxInvoiceStatus.Rejected => "cu-badge-danger",
+        TaxInvoiceStatus.Canceled => "cu-badge-danger",
+        _ => "cu-badge-warning"
+    };
+}

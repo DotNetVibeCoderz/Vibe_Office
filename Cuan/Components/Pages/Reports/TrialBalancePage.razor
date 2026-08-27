@@ -1,0 +1,172 @@
+@page "/reports/trial-balance"
+@rendermode @(RenderMode.InteractiveServer)
+@attribute [Authorize(Roles = "Admin,Akuntan,Viewer")]
+@inject AppDbContext DbContext
+@inject SettingsService Settings
+@inject IJSRuntime JS
+
+<PageTitle>Neraca Saldo — CUAN</PageTitle>
+
+<PageHead Section="Laporan" Title="Neraca Saldo"
+          Subtitle="@($"{Settings.CompanyName} · per {Settings.FormatDate(asOf)}")">
+    <Actions>
+        <input type="date" class="cu-form-input cu-btn-sm" style="width:150px;" @bind="asOf" @bind:after="LoadAsync" />
+        <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="Print">
+            <Icon Name="printer" Size="14" /> Cetak
+        </button>
+        <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportCsv">
+            <Icon Name="download" Size="14" /> CSV
+        </button>
+    </Actions>
+</PageHead>
+
+@* Uji paling dasar sebuah pembukuan: jumlah debit harus sama dengan jumlah
+   kredit. Kalau tidak, seluruh laporan di bawahnya ikut meleset. *@
+<div class="cu-balance @(IsBalanced ? "is-balanced" : "") cu-mb-3">
+    <div class="cu-balance-side">
+        <span class="cu-stat-label">Jumlah debit</span>
+        <span class="cu-balance-fig cu-text-debit">@Settings.Money(TotalDebit)</span>
+    </div>
+    <div class="cu-balance-side">
+        <span class="cu-stat-label">Jumlah kredit</span>
+        <span class="cu-balance-fig cu-text-credit">@Settings.Money(TotalCredit)</span>
+    </div>
+    <div class="cu-balance-side">
+        <span class="cu-stat-label">Akun bersaldo</span>
+        <span class="cu-balance-fig">@rows.Count</span>
+    </div>
+    <div class="cu-balance-state">
+        <Icon Name="@(IsBalanced ? "check" : "alert")" Size="15" />
+        @(IsBalanced ? "Debit sama dengan kredit" : $"Selisih {Settings.Money(Math.Abs(TotalDebit - TotalCredit))}")
+    </div>
+</div>
+
+@if (!IsBalanced)
+{
+    <div class="cu-alert cu-alert-warning">
+        Neraca saldo belum seimbang. Jalankan <a href="/admin/settings">Pengaturan → Akuntansi →
+        Hitung ulang saldo</a> untuk menyusun ulang saldo dari jurnal yang sudah diposting.
+    </div>
+}
+
+<div class="cu-card cu-card-flush" style="margin-bottom:0;">
+    <div class="cu-table-wrap">
+        <table class="cu-table">
+            <thead>
+                <tr>
+                    <th>Kode</th><th>Nama akun</th><th>Jenis</th>
+                    <th class="cu-text-right">Saldo awal</th>
+                    <th class="cu-text-right cu-col-debit">Debit</th>
+                    <th class="cu-text-right cu-col-credit">Kredit</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var group in rows.GroupBy(r => r.Type).OrderBy(g => g.Key))
+                {
+                    <tr class="cu-subtotal-row">
+                        <td colspan="3">@TypeName(group.Key)</td>
+                        <td class="cu-text-right">@Settings.Number(group.Sum(r => r.Opening))</td>
+                        <td class="cu-text-right">@Settings.Number(group.Sum(r => r.Debit))</td>
+                        <td class="cu-text-right">@Settings.Number(group.Sum(r => r.Credit))</td>
+                    </tr>
+                    @foreach (var row in group.OrderBy(r => r.Code))
+                    {
+                        <tr>
+                            <td class="cu-mono">@row.Code</td>
+                            <td style="padding-left:1.4rem;">@row.Name</td>
+                            <td class="cu-text-faint" style="font-size:0.75rem;">@TypeName(row.Type)</td>
+                            <td class="cu-text-right cu-text-faint">@Settings.Number(row.Opening)</td>
+                            <td class="cu-text-right cu-col-debit">@(row.Debit == 0 ? "" : Settings.Number(row.Debit))</td>
+                            <td class="cu-text-right cu-col-credit">@(row.Credit == 0 ? "" : Settings.Number(row.Credit))</td>
+                        </tr>
+                    }
+                }
+
+                <tr class="cu-total-row">
+                    <td colspan="3">Jumlah</td>
+                    <td class="cu-text-right">@Settings.Number(rows.Sum(r => r.Opening))</td>
+                    <td class="cu-text-right">@Settings.Number(TotalDebit)</td>
+                    <td class="cu-text-right">@Settings.Number(TotalCredit)</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@code {
+    private sealed record Row(string Code, string Name, int Type, decimal Opening, decimal Debit, decimal Credit);
+
+    private List<Row> rows = new();
+    private DateTime asOf = DateTime.Today;
+
+    private decimal TotalDebit => rows.Sum(r => r.Debit);
+    private decimal TotalCredit => rows.Sum(r => r.Credit);
+    private bool IsBalanced => Math.Abs(TotalDebit - TotalCredit) < 1m;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Settings.EnsureLoadedAsync();
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        var accounts = await DbContext.ChartOfAccounts
+            .Where(a => !a.IsHeader)
+            .OrderBy(a => a.AccountCode)
+            .ToListAsync();
+
+        // Saldo per tanggal disusun dari saldo awal ditambah jurnal terposting
+        // sampai tanggal yang dipilih, bukan dari CurrentBalance — supaya
+        // neraca saldo bisa dilihat mundur ke tanggal mana pun.
+        var movements = await DbContext.JournalEntryDetails
+            .Include(d => d.JournalEntry)
+            .Where(d => d.JournalEntry!.IsPosted && d.JournalEntry.TransactionDate <= asOf)
+            .GroupBy(d => d.ChartOfAccountId)
+            .Select(g => new { AccountId = g.Key, Debit = g.Sum(x => x.Debit), Credit = g.Sum(x => x.Credit) })
+            .ToListAsync();
+
+        var byAccount = movements.ToDictionary(m => m.AccountId);
+
+        rows = accounts.Select(account =>
+        {
+            var move = byAccount.GetValueOrDefault(account.Id);
+            var delta = move is null ? 0m : PostingService.SignedAmount(account.AccountType, move.Debit, move.Credit);
+            var balance = account.OpeningBalance + delta;
+
+            // Saldo positif ditempatkan pada sisi normal akunnya.
+            var onDebitSide = account.AccountType is 1 or 5;
+            var debit = onDebitSide ? Math.Max(balance, 0) : Math.Max(-balance, 0);
+            var credit = onDebitSide ? Math.Max(-balance, 0) : Math.Max(balance, 0);
+
+            return new Row(account.AccountCode, account.AccountName, account.AccountType,
+                account.OpeningBalance, debit, credit);
+        })
+        .Where(r => r.Debit != 0 || r.Credit != 0 || r.Opening != 0)
+        .ToList();
+    }
+
+    private static string TypeName(int type) => type switch
+    {
+        1 => "Aktiva", 2 => "Kewajiban", 3 => "Modal", 4 => "Pendapatan", 5 => "Beban", _ => "Lainnya"
+    };
+
+    private async Task Print() => await JS.InvokeVoidAsync("cuanPrint");
+
+    private async Task ExportCsv()
+    {
+        var data = rows.Select(r => new
+        {
+            Kode = r.Code,
+            Akun = r.Name,
+            Jenis = TypeName(r.Type),
+            SaldoAwal = r.Opening,
+            Debit = r.Debit,
+            Kredit = r.Credit
+        }).ToList();
+
+        var bytes = ExportService.ExportToCsv(data);
+        await JS.InvokeVoidAsync("downloadFileFromBytes",
+            $"neraca-saldo-{asOf:yyyy-MM-dd}.csv", "text/csv", Convert.ToBase64String(bytes));
+    }
+}

@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using System.Globalization;
 using System.Threading.RateLimiting;
 using ApexCharts;
 
@@ -77,6 +78,9 @@ builder.Services.AddControllers()
     {
         options.JsonSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
         options.JsonSerializerOptions.WriteIndented = true;
+        // Entitas EF saling menunjuk (COA punya Parent dan Children), jadi tanpa
+        // ini serialisasi berputar dan endpoint balas 500.
+        options.JsonSerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
     });
 
 builder.Services.AddEndpointsApiExplorer();
@@ -97,9 +101,21 @@ builder.Services.AddRateLimiter(options =>
 builder.Services.AddAntiforgery();
 
 builder.Services.AddHttpContextAccessor();
+builder.Services.AddHttpClient("djp");
+
 builder.Services.AddScoped<AuditService>();
 builder.Services.AddScoped<NotificationService>();
 builder.Services.AddScoped<ReportExportService>();
+
+// Parameter sistem dibaca sekali lalu dipakai bersama seluruh circuit.
+builder.Services.AddSingleton<SettingsService>();
+builder.Services.AddScoped<DocumentNumberService>();
+builder.Services.AddScoped<PostingService>();
+builder.Services.AddScoped<TaxService>();
+builder.Services.AddScoped<EfakturExportService>();
+builder.Services.AddScoped<DjpClient>();
+builder.Services.AddScoped<ImportService>();
+builder.Services.AddScoped<MasterImportPlans>();
 
 builder.Services.AddApexCharts();
 
@@ -132,6 +148,21 @@ using (var scope = app.Services.CreateScope())
             await db.SaveChangesAsync();
         }
     }
+}
+
+// Lengkapi tabel SystemSettings dengan parameter baru dari katalog, lalu muat
+// ke cache. Basis data lama tetap terpakai — parameter yang belum ada
+// ditambahkan dengan nilai bawaannya.
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    var settings = app.Services.GetRequiredService<SettingsService>();
+    await settings.SyncCatalogAsync(db);
+
+    // Angka dan tanggal mengikuti locale dari Pengaturan (bawaan id-ID → Rp 1.500.000).
+    var culture = settings.Culture;
+    CultureInfo.DefaultThreadCurrentCulture = culture;
+    CultureInfo.DefaultThreadCurrentUICulture = culture;
 }
 
 if (!app.Environment.IsDevelopment())

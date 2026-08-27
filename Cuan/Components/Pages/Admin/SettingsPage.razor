@@ -2,46 +2,268 @@
 @rendermode @(RenderMode.InteractiveServer)
 @attribute [Authorize(Roles = "Admin")]
 @inject AppDbContext DbContext
-<PageTitle>Pengaturan - CUAN</PageTitle>
-<div class="cu-flex-between cu-mb-2"><div><h2 style="margin:0;">🔧 Pengaturan Sistem</h2></div><button class="cu-btn cu-btn-primary cu-btn-sm" @onclick="SaveSettings">💾 Simpan</button></div>
-<div class="cu-card"><table class="cu-table"><thead><tr><th>Key</th><th>Value</th><th>Grup</th><th>Deskripsi</th></tr></thead><tbody>@foreach (var s in settings){<tr><td style="font-family:monospace;">@s.SettingKey</td><td style="min-width:240px;">
-@if (selectOptions.TryGetValue(s.SettingKey, out var options))
+@inject SettingsService Settings
+@inject PostingService Posting
+@inject NavigationManager Nav
+
+<PageTitle>Pengaturan — CUAN</PageTitle>
+
+<PageHead Section="Administrasi" Title="Pengaturan"
+          Subtitle="@($"{values.Count} parameter · perubahan langsung berlaku tanpa restart")">
+    <Actions>
+        <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="Reset" disabled="@(!IsDirty)">
+            <Icon Name="refresh" Size="14" /> Batalkan
+        </button>
+        <button class="cu-btn cu-btn-primary cu-btn-sm" @onclick="Save" disabled="@(!IsDirty || saving)">
+            <Icon Name="save" Size="14" /> @(saving ? "Menyimpan…" : $"Simpan {DirtyCount} perubahan")
+        </button>
+    </Actions>
+</PageHead>
+
+@if (message is not null)
 {
-    <select class="cu-select" @bind="s.SettingValue">@foreach (var o in options){<option value="@o">@o</option>}</select>
+    <div class="cu-alert @messageClass">@message</div>
 }
-else
+
+<div class="cu-tabs">
+    @foreach (var group in SettingsCatalog.GroupOrder)
+    {
+        <button class="cu-tab @(activeGroup == group ? "active" : "")" @onclick="() => activeGroup = group">
+            @group
+            @if (DirtyInGroup(group) > 0)
+            {
+                <span class="cu-badge cu-badge-warning" style="margin-left:0.35rem;">@DirtyInGroup(group)</span>
+            }
+        </button>
+    }
+</div>
+
+@if (activeGroup == SettingsCatalog.GroupMapping)
 {
-    <input class="cu-form-input" @bind="s.SettingValue" />
+    <div class="cu-alert cu-alert-info">
+        Pemetaan ini menentukan akun mana yang bergerak saat faktur, kas, bank, dan giro diposting.
+        Kode yang tidak ditemukan di Daftar Akun akan dilewati, dan jurnalnya menjadi tidak seimbang.
+    </div>
 }
-</td><td>@s.Group</td><td style="font-size:0.75rem;color:var(--cu-text-secondary);">@s.Description</td></tr>}</tbody></table></div>
+@if (activeGroup == SettingsCatalog.GroupDjp)
+{
+    <div class="cu-alert cu-alert-info">
+        Akses host-to-host DJP hanya terbuka bagi wajib pajak yang sudah terdaftar dan memegang
+        client id, secret, serta sertifikat elektronik. Selama itu belum ada, pelaporan tetap bisa
+        ditempuh lewat berkas ekspor di halaman <a href="/tax/faktur">Faktur Pajak</a>.
+    </div>
+}
+
+<div class="cu-card">
+    @foreach (var def in SettingsCatalog.All.Where(d => d.Group == activeGroup))
+    {
+        <div class="cu-form-group" style="border-bottom:1px solid var(--cu-border);padding-bottom:0.75rem;">
+            <div class="cu-grid" style="grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:1rem;align-items:start;">
+                <div>
+                    <label class="cu-form-label" for="@def.Key" style="font-size:0.8rem;color:var(--cu-text);">
+                        @def.Label
+                        @if (IsDirtyKey(def.Key))
+                        {
+                            <span class="cu-badge cu-badge-warning" style="margin-left:0.4rem;">diubah</span>
+                        }
+                    </label>
+                    <div class="cu-mono" style="font-size:0.65rem;color:var(--cu-text-faint);">@def.Key</div>
+                    @if (!string.IsNullOrEmpty(def.Description))
+                    {
+                        <div class="cu-form-hint" style="margin-top:0.25rem;">@def.Description</div>
+                    }
+                </div>
+
+                <div>
+                    @switch (def.Editor)
+                    {
+                        case SettingEditor.Bool:
+                            <label class="cu-switch">
+                                <input type="checkbox" id="@def.Key"
+                                       checked="@IsOn(def.Key)"
+                                       @onchange="e => SetBool(def.Key, e)" />
+                                <span class="cu-switch-track"></span>
+                                <span class="cu-text-muted">@(IsOn(def.Key) ? "Aktif" : "Nonaktif")</span>
+                            </label>
+                            break;
+
+                        case SettingEditor.Select:
+                            <select id="@def.Key" class="cu-select" value="@values[def.Key]"
+                                    @onchange="e => Set(def.Key, e.Value?.ToString() ?? string.Empty)">
+                                @foreach (var option in def.Options ?? Array.Empty<string>())
+                                {
+                                    <option value="@option">@option</option>
+                                }
+                            </select>
+                            break;
+
+                        case SettingEditor.AccountCode:
+                            <select id="@def.Key" class="cu-select" value="@values[def.Key]"
+                                    @onchange="e => Set(def.Key, e.Value?.ToString() ?? string.Empty)">
+                                <option value="">— belum dipetakan —</option>
+                                @foreach (var account in accounts)
+                                {
+                                    <option value="@account.AccountCode">@account.AccountCode — @account.AccountName</option>
+                                }
+                            </select>
+                            break;
+
+                        case SettingEditor.CurrencyCode:
+                            <select id="@def.Key" class="cu-select" value="@values[def.Key]"
+                                    @onchange="e => Set(def.Key, e.Value?.ToString() ?? string.Empty)">
+                                @foreach (var currency in currencies)
+                                {
+                                    <option value="@currency.Code">@currency.Code — @currency.Name</option>
+                                }
+                            </select>
+                            break;
+
+                        case SettingEditor.Number:
+                            <input id="@def.Key" type="number" step="any" class="cu-form-input cu-num"
+                                   value="@values[def.Key]"
+                                   @onchange="e => Set(def.Key, e.Value?.ToString() ?? string.Empty)" />
+                            break;
+
+                        case SettingEditor.Password:
+                            <input id="@def.Key" type="password" class="cu-form-input"
+                                   placeholder="belum diisi" autocomplete="new-password"
+                                   value="@values[def.Key]"
+                                   @onchange="e => Set(def.Key, e.Value?.ToString() ?? string.Empty)" />
+                            break;
+
+                        case SettingEditor.Date:
+                            <input id="@def.Key" type="date" class="cu-form-input"
+                                   value="@values[def.Key]"
+                                   @onchange="e => Set(def.Key, e.Value?.ToString() ?? string.Empty)" />
+                            break;
+
+                        case SettingEditor.TextArea:
+                            <textarea id="@def.Key" class="cu-form-input" rows="2"
+                                      value="@values[def.Key]"
+                                      @onchange="e => Set(def.Key, e.Value?.ToString() ?? string.Empty)"></textarea>
+                            break;
+
+                        default:
+                            <input id="@def.Key" class="cu-form-input"
+                                   value="@values[def.Key]"
+                                   @onchange="e => Set(def.Key, e.Value?.ToString() ?? string.Empty)" />
+                            break;
+                    }
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@if (activeGroup == SettingsCatalog.GroupAccounting)
+{
+    <div class="cu-card">
+        <div class="cu-card-header"><span class="cu-card-title">Pemeliharaan</span></div>
+        <div class="cu-flex-between">
+            <div>
+                <strong style="font-size:0.85rem;">Hitung ulang saldo seluruh akun</strong>
+                <div class="cu-form-hint">
+                    Menyusun ulang saldo dari saldo awal ditambah semua jurnal yang sudah diposting.
+                    Dipakai setelah impor data atau bila saldo dicurigai melenceng.
+                </div>
+            </div>
+            <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="Recalculate" disabled="@recalculating">
+                <Icon Name="calculator" Size="14" /> @(recalculating ? "Menghitung…" : "Hitung ulang")
+            </button>
+        </div>
+    </div>
+}
+
 @code {
-    private List<SystemSetting> settings = new();
-    private Dictionary<string, List<string>> selectOptions = new();
+    private Dictionary<string, string> values = new();
+    private Dictionary<string, string> original = new();
+    private List<ChartOfAccount> accounts = new();
+    private List<Currency> currencies = new();
+
+    private string activeGroup = SettingsCatalog.GroupCompany;
+    private string? message;
+    private string messageClass = "cu-alert-success";
+    private bool saving, recalculating;
+
+    private bool IsDirty => DirtyCount > 0;
+    private int DirtyCount => values.Count(kv => original.GetValueOrDefault(kv.Key) != kv.Value);
+    private bool IsDirtyKey(string key) => original.GetValueOrDefault(key) != values.GetValueOrDefault(key);
+    private int DirtyInGroup(string group) => SettingsCatalog.All
+        .Where(d => d.Group == group).Count(d => IsDirtyKey(d.Key));
 
     protected override async Task OnInitializedAsync()
     {
-        settings = await DbContext.SystemSettings.OrderBy(s => s.Group).ThenBy(s => s.SettingKey).ToListAsync();
+        await Settings.EnsureLoadedAsync();
 
-        var currencies = await DbContext.Currencies.OrderBy(c => c.Code).Select(c => c.Code).ToListAsync();
-        var taxRates = await DbContext.Taxes.OrderBy(t => t.Rate).Select(t => t.Rate.ToString("0.##")).Distinct().ToListAsync();
+        accounts = await DbContext.ChartOfAccounts
+            .Where(a => !a.IsHeader)
+            .OrderBy(a => a.AccountCode)
+            .ToListAsync();
+        currencies = await DbContext.Currencies.OrderBy(c => c.Code).ToListAsync();
 
-        selectOptions = new Dictionary<string, List<string>>
-        {
-            ["EnableMultiCurrency"] = new List<string> { "true", "false" },
-            ["EnableMultiWarehouse"] = new List<string> { "true", "false" },
-            ["EnableAuditLog"] = new List<string> { "true", "false" },
-            ["AutoPostJournal"] = new List<string> { "true", "false" },
-            ["BaseCurrency"] = currencies,
-            ["DefaultTaxRate"] = taxRates,
-            ["ItemsPerPage"] = new List<string> { "10", "20", "50", "100" },
-            ["FiscalYearStart"] = new List<string> { "01-01", "04-01", "07-01", "10-01" },
-            ["FiscalYearEnd"] = new List<string> { "12-31", "03-31", "06-30", "09-30" }
-        };
+        Load();
     }
 
-    private async Task SaveSettings()
+    private void Load()
     {
-        foreach (var s in settings) { s.UpdatedAt = DateTime.UtcNow; }
-        await DbContext.SaveChangesAsync();
+        values = SettingsCatalog.All.ToDictionary(d => d.Key, d => Settings.Get(d.Key));
+        original = new Dictionary<string, string>(values);
+    }
+
+    private bool IsOn(string key) => values.GetValueOrDefault(key) == "true";
+
+    private void Set(string key, string value)
+    {
+        values[key] = value;
+        message = null;
+    }
+
+    private void SetBool(string key, ChangeEventArgs e)
+        => Set(key, e.Value is true ? "true" : "false");
+
+    private void Reset()
+    {
+        values = new Dictionary<string, string>(original);
+        message = null;
+    }
+
+    private async Task Save()
+    {
+        saving = true;
+        try
+        {
+            var changed = values
+                .Where(kv => original.GetValueOrDefault(kv.Key) != kv.Value)
+                .ToDictionary(kv => kv.Key, kv => kv.Value);
+
+            await Settings.SaveAsync(changed);
+            original = new Dictionary<string, string>(values);
+
+            message = $"{changed.Count} parameter tersimpan dan langsung berlaku.";
+            messageClass = "cu-alert-success";
+        }
+        catch (Exception ex)
+        {
+            message = $"Gagal menyimpan: {ex.Message}";
+            messageClass = "cu-alert-error";
+        }
+        finally { saving = false; }
+    }
+
+    private async Task Recalculate()
+    {
+        recalculating = true;
+        try
+        {
+            var count = await Posting.RecalculateAllBalancesAsync();
+            message = $"Saldo {count} akun dihitung ulang dari jurnal yang sudah diposting.";
+            messageClass = "cu-alert-success";
+        }
+        catch (Exception ex)
+        {
+            message = $"Gagal menghitung ulang: {ex.Message}";
+            messageClass = "cu-alert-error";
+        }
+        finally { recalculating = false; }
     }
 }

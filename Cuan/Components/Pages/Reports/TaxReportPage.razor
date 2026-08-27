@@ -1,10 +1,199 @@
 @page "/reports/tax"
-@attribute [Authorize(Roles = "Admin,Akuntan")]
+@rendermode @(RenderMode.InteractiveServer)
+@attribute [Authorize(Roles = "Admin,Akuntan,Viewer")]
 @inject AppDbContext DbContext
-<PageTitle>Laporan Pajak - CUAN</PageTitle>
-<div class="cu-flex-between cu-mb-2"><div><h2 style="margin:0;">🧾 Laporan Pajak</h2></div></div>
-<div class="cu-card"><h3>Ringkasan Pajak - Tahun 2024</h3>
-<table class="cu-table" style="max-width:500px;"><thead><tr><th>Jenis Pajak</th><th>Tarif</th><th>DPP</th><th>Pajak</th></tr></thead><tbody>
-@foreach (var t in taxes){<tr><td>@t.Name</td><td>@t.Rate%</td><td class="cu-text-right">0</td><td class="cu-text-right">0</td></tr>}
-</tbody></table></div>
-@code { private List<Tax> taxes = new(); protected override async Task OnInitializedAsync() { taxes = await DbContext.Taxes.Where(t => t.IsActive).ToListAsync(); } }
+@inject SettingsService Settings
+@inject TaxService Tax
+@inject IJSRuntime JS
+
+<PageTitle>Laporan Pajak — CUAN</PageTitle>
+
+<PageHead Section="Laporan" Title="Laporan Pajak"
+          Subtitle="@($"{Settings.CompanyName} · NPWP {Settings.CompanyNpwp} · tahun {year}")">
+    <Actions>
+        <select class="cu-select cu-btn-sm" style="width:110px;" value="@year" @onchange="OnYearChanged">
+            @foreach (var y in years)
+            {
+                <option value="@y">@y</option>
+            }
+        </select>
+        <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="Print">
+            <Icon Name="printer" Size="14" /> Cetak
+        </button>
+        <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportCsv">
+            <Icon Name="download" Size="14" /> CSV
+        </button>
+    </Actions>
+</PageHead>
+
+@if (!Settings.IsPkp)
+{
+    <div class="cu-alert cu-alert-info">
+        Perusahaan berstatus non-PKP, jadi PPN tidak dipungut. Yang berlaku hanya bagian PPh di bawah.
+    </div>
+}
+
+<div class="cu-grid cu-grid-4 cu-mb-3">
+    <div class="cu-card cu-stat cu-stat-debit" style="margin-bottom:0;">
+        <div class="cu-stat-label">PPN keluaran</div>
+        <div class="cu-stat-value">@Settings.Money(summaries.Sum(s => s.OutputTax))</div>
+        <div class="cu-stat-foot">DPP @Settings.Money(summaries.Sum(s => s.OutputDpp))</div>
+    </div>
+    <div class="cu-card cu-stat cu-stat-credit" style="margin-bottom:0;">
+        <div class="cu-stat-label">PPN masukan</div>
+        <div class="cu-stat-value">@Settings.Money(summaries.Sum(s => s.InputTax))</div>
+        <div class="cu-stat-foot">DPP @Settings.Money(summaries.Sum(s => s.InputDpp))</div>
+    </div>
+    <div class="cu-card cu-stat cu-stat-primary" style="margin-bottom:0;">
+        <div class="cu-stat-label">PPN kurang bayar</div>
+        <div class="cu-stat-value">@Settings.Money(summaries.Sum(s => s.PpnPayable))</div>
+        <div class="cu-stat-foot">Tarif @Tax.PpnPercent.ToString("0.##")%</div>
+    </div>
+    <div class="cu-card cu-stat cu-stat-warning" style="margin-bottom:0;">
+        <div class="cu-stat-label">PPh dipotong</div>
+        <div class="cu-stat-value">@Settings.Money(summaries.Sum(s => s.TotalWithholding))</div>
+        <div class="cu-stat-foot">PPh 21, 23, dan 4(2)</div>
+    </div>
+</div>
+
+<div class="cu-card cu-card-flush cu-mb-3">
+    <div class="cu-card-header">
+        <span class="cu-card-title">Rekapitulasi per masa pajak</span>
+        <a href="/tax/spt" class="cu-btn cu-btn-ghost cu-btn-sm">
+            Kelola SPT <Icon Name="chevron-right" Size="13" />
+        </a>
+    </div>
+    <div class="cu-table-wrap">
+        <table class="cu-table">
+            <thead>
+                <tr>
+                    <th>Masa</th>
+                    <th class="cu-text-right cu-col-debit">DPP keluaran</th>
+                    <th class="cu-text-right cu-col-debit">PPN keluaran</th>
+                    <th class="cu-text-right cu-col-credit">DPP masukan</th>
+                    <th class="cu-text-right cu-col-credit">PPN masukan</th>
+                    <th class="cu-text-right">PPh 21</th>
+                    <th class="cu-text-right">PPh 23</th>
+                    <th class="cu-text-right">Kurang bayar PPN</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var s in summaries)
+                {
+                    <tr>
+                        <td>@TaxPeriodSummary.MonthName(s.Month)</td>
+                        <td class="cu-text-right">@Settings.Number(s.OutputDpp)</td>
+                        <td class="cu-text-right cu-col-debit">@Settings.Number(s.OutputTax)</td>
+                        <td class="cu-text-right">@Settings.Number(s.InputDpp)</td>
+                        <td class="cu-text-right cu-col-credit">@Settings.Number(s.InputTax)</td>
+                        <td class="cu-text-right">@Settings.Number(s.Pph21)</td>
+                        <td class="cu-text-right">@Settings.Number(s.Pph23)</td>
+                        <td class="cu-text-right" style="font-weight:600;">@Settings.Number(s.PpnPayable)</td>
+                    </tr>
+                }
+                <tr class="cu-total-row">
+                    <td>Setahun</td>
+                    <td class="cu-text-right">@Settings.Number(summaries.Sum(s => s.OutputDpp))</td>
+                    <td class="cu-text-right">@Settings.Number(summaries.Sum(s => s.OutputTax))</td>
+                    <td class="cu-text-right">@Settings.Number(summaries.Sum(s => s.InputDpp))</td>
+                    <td class="cu-text-right">@Settings.Number(summaries.Sum(s => s.InputTax))</td>
+                    <td class="cu-text-right">@Settings.Number(summaries.Sum(s => s.Pph21))</td>
+                    <td class="cu-text-right">@Settings.Number(summaries.Sum(s => s.Pph23))</td>
+                    <td class="cu-text-right">@Settings.Number(summaries.Sum(s => s.PpnPayable))</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="cu-card cu-card-flush" style="margin-bottom:0;">
+    <div class="cu-card-header">
+        <span class="cu-card-title">Jenis pajak yang berlaku</span>
+        <a href="/admin/settings" class="cu-btn cu-btn-ghost cu-btn-sm">
+            Ubah tarif <Icon Name="chevron-right" Size="13" />
+        </a>
+    </div>
+    <div class="cu-table-wrap">
+        <table class="cu-table">
+            <thead>
+                <tr><th>Jenis pajak</th><th class="cu-text-right">Tarif berlaku</th><th>Sumber tarif</th><th>Batas setor</th></tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>PPN</td>
+                    <td class="cu-text-right">@Tax.PpnPercent.ToString("0.##")%</td>
+                    <td class="cu-mono cu-text-faint">PpnRate</td>
+                    <td class="cu-text-faint">akhir bulan berikutnya</td>
+                </tr>
+                <tr>
+                    <td>PPh Pasal 21</td>
+                    <td class="cu-text-right">@Settings.GetDecimal(SettingsCatalog.Pph21Rate, 5).ToString("0.##")%</td>
+                    <td class="cu-mono cu-text-faint">Pph21Rate</td>
+                    <td class="cu-text-faint">tanggal 10 bulan berikutnya</td>
+                </tr>
+                <tr>
+                    <td>PPh Pasal 23</td>
+                    <td class="cu-text-right">@Settings.GetDecimal(SettingsCatalog.Pph23Rate, 2).ToString("0.##")%</td>
+                    <td class="cu-mono cu-text-faint">Pph23Rate</td>
+                    <td class="cu-text-faint">tanggal 10 bulan berikutnya</td>
+                </tr>
+                <tr>
+                    <td>PPh Pasal 4 ayat 2</td>
+                    <td class="cu-text-right">@Settings.GetDecimal(SettingsCatalog.Pph42Rate, 10).ToString("0.##")%</td>
+                    <td class="cu-mono cu-text-faint">Pph42Rate</td>
+                    <td class="cu-text-faint">tanggal 10 bulan berikutnya</td>
+                </tr>
+                <tr>
+                    <td>PPnBM</td>
+                    <td class="cu-text-right">@Settings.GetDecimal(SettingsCatalog.PpnbmRate, 20).ToString("0.##")%</td>
+                    <td class="cu-mono cu-text-faint">PpnbmRate</td>
+                    <td class="cu-text-faint">mengikuti PPN</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@code {
+    private int year = DateTime.Today.Year;
+    private int[] years = Array.Empty<int>();
+    private List<TaxPeriodSummary> summaries = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Settings.EnsureLoadedAsync();
+        var current = DateTime.Today.Year;
+        years = Enumerable.Range(current - 3, 5).ToArray();
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync() => summaries = await Tax.SummarizeYearAsync(year);
+
+    private async Task OnYearChanged(ChangeEventArgs e)
+    {
+        year = int.Parse(e.Value?.ToString() ?? DateTime.Today.Year.ToString());
+        await LoadAsync();
+    }
+
+    private async Task Print() => await JS.InvokeVoidAsync("cuanPrint");
+
+    private async Task ExportCsv()
+    {
+        var data = summaries.Select(s => new
+        {
+            Masa = TaxPeriodSummary.MonthName(s.Month),
+            Tahun = s.Year,
+            DppKeluaran = s.OutputDpp,
+            PpnKeluaran = s.OutputTax,
+            DppMasukan = s.InputDpp,
+            PpnMasukan = s.InputTax,
+            Pph21 = s.Pph21,
+            Pph23 = s.Pph23,
+            KurangBayarPpn = s.PpnPayable
+        }).ToList();
+
+        var bytes = ExportService.ExportToCsv(data);
+        await JS.InvokeVoidAsync("downloadFileFromBytes",
+            $"laporan-pajak-{year}.csv", "text/csv", Convert.ToBase64String(bytes));
+    }
+}

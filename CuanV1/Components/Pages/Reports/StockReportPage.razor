@@ -1,0 +1,17 @@
+@page "/reports/stock"
+@rendermode @(RenderMode.InteractiveServer)
+@attribute [Authorize(Roles = "Admin,Akuntan,StafGudang")]
+@inject AppDbContext DbContext
+
+<PageTitle>Laporan Stok - CUAN</PageTitle>
+<div class="cu-flex-between cu-mb-2"><div><h2 style="margin:0;">📦 Laporan Stok</h2></div><button class="cu-btn cu-btn-outline cu-btn-sm">📥 Excel</button></div>
+
+<div class="cu-grid cu-grid-3 cu-mb-3">
+    <div class="cu-card"><div class="cu-text-muted">TOTAL ITEM</div><div style="font-size:1.5rem;font-weight:700;">@totalItems</div></div>
+    <div class="cu-card"><div class="cu-text-muted">TOTAL NILAI STOK</div><div style="font-size:1.5rem;font-weight:700;color:var(--cu-primary);">@totalValue.ToString("N0")</div></div>
+    <div class="cu-card"><div class="cu-text-muted">ITEM STOK RENDAH</div><div style="font-size:1.5rem;font-weight:700;color:#dc2626;">@lowStockCount ⚠️</div></div>
+</div>
+
+<div class="cu-card"><h3>Semua Barang</h3><table class="cu-table"><thead><tr><th>Kode</th><th>Nama</th><th>Kategori</th><th>Harga Beli</th><th>Harga Jual</th><th class="cu-text-right">Stok</th><th class="cu-text-right">Nilai</th><th>Status</th></tr></thead><tbody>@foreach(var i in items){<tr><td style="font-family:monospace;">@i.ItemCode</td><td>@i.ItemName</td><td>@i.Category?.Name</td><td>@i.CostPrice.ToString("N0")</td><td>@i.SellingPrice.ToString("N0")</td><td class="cu-text-right"><span class="@(i.StockQuantity<=i.MinimumStock?"cu-text-danger":"")">@i.StockQuantity</span></td><td class="cu-text-right">@(i.StockQuantity*i.CostPrice).ToString("N0")</td><td><span class="cu-badge @(i.StockQuantity<=i.MinimumStock?"cu-badge-danger":"cu-badge-success")">@(i.StockQuantity<=i.MinimumStock?"⚠️ Low":"OK")</span></td></tr>}</tbody></table></div>
+
+@code {private List<Item> items=new();private int totalItems;private int lowStockCount;private decimal totalValue;protected override async Task OnInitializedAsync(){items=await DbContext.Items.Include(i=>i.Category).OrderBy(i=>i.ItemCode).ToListAsync();totalItems=items.Count;lowStockCount=items.Count(i=>i.StockQuantity<=i.MinimumStock);totalValue=items.Sum(i=>i.StockQuantity*i.CostPrice);}}

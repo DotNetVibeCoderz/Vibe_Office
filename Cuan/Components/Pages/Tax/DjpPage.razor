@@ -1,0 +1,219 @@
+@page "/tax/djp"
+@rendermode @(RenderMode.InteractiveServer)
+@attribute [Authorize(Roles = "Admin,Akuntan")]
+@inject AppDbContext DbContext
+@inject SettingsService Settings
+@inject DjpClient Djp
+
+<PageTitle>Integrasi DJP — CUAN</PageTitle>
+
+<PageHead Section="Pajak" Title="Integrasi DJP"
+          Subtitle="@($"Lingkungan {Djp.Mode} · {(string.IsNullOrWhiteSpace(Djp.BaseUrl) ? "alamat belum diisi" : Djp.BaseUrl)}")">
+    <Actions>
+        <a href="/admin/settings" class="cu-btn cu-btn-outline cu-btn-sm">
+            <Icon Name="settings" Size="14" /> Ubah kredensial
+        </a>
+        <button class="cu-btn cu-btn-primary cu-btn-sm" @onclick="Test" disabled="@busy">
+            <Icon Name="cloud" Size="14" /> @(busy ? "Menghubungi…" : "Uji koneksi")
+        </button>
+    </Actions>
+</PageHead>
+
+@if (result is not null)
+{
+    <div class="cu-alert @(result.Success ? "cu-alert-success" : "cu-alert-warning")">
+        @result.Message
+        @if (result.HttpStatus is not null)
+        {
+            <span class="cu-mono"> (HTTP @result.HttpStatus)</span>
+        }
+    </div>
+}
+
+@* Kesiapan integrasi diperlihatkan sebagai daftar periksa, karena yang paling
+   sering jadi penghalang bukan kode melainkan kredensial yang belum lengkap. *@
+<div class="cu-grid cu-grid-2 cu-mb-3">
+    <div class="cu-card" style="margin-bottom:0;">
+        <div class="cu-card-header">
+            <span class="cu-card-title">Kesiapan</span>
+            <span class="cu-badge @(problem is null ? "cu-badge-success" : "cu-badge-warning")">
+                @(problem is null ? "Siap" : "Belum siap")
+            </span>
+        </div>
+
+        <div class="cu-table-wrap" style="border:0;">
+            <table class="cu-table">
+                <tbody>
+                    @foreach (var check in Checklist())
+                    {
+                        <tr>
+                            <td style="width:28px;">
+                                <Icon Name="@(check.Ok ? "check" : "close")" Size="15"
+                                      CssClass="@(check.Ok ? "cu-text-success" : "cu-text-danger")" />
+                            </td>
+                            <td>
+                                <strong style="font-size:0.82rem;">@check.Label</strong>
+                                <div class="cu-form-hint">@check.Hint</div>
+                            </td>
+                            <td class="cu-text-right cu-mono cu-text-faint" style="font-size:0.72rem;">@check.Value</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        @if (problem is not null)
+        {
+            <div class="cu-alert cu-alert-info" style="margin:0.8rem 0 0;">@problem</div>
+        }
+    </div>
+
+    <div class="cu-card" style="margin-bottom:0;">
+        <div class="cu-card-header"><span class="cu-card-title">Cara kerja pelaporan</span></div>
+
+        <p class="cu-text-muted" style="margin-top:0;">
+            Ada dua jalur pelaporan, dan keduanya siap dipakai:
+        </p>
+
+        <div style="border-left:2px solid var(--cu-primary);padding-left:0.85rem;margin-bottom:0.9rem;">
+            <strong style="font-size:0.85rem;">Jalur berkas — selalu tersedia</strong>
+            <div class="cu-form-hint">
+                Terbitkan faktur pajak di halaman <a href="/tax/faktur">Faktur Pajak</a>, lalu unduh
+                CSV untuk aplikasi e-Faktur desktop atau XML untuk unggahan Coretax. Tidak perlu
+                kredensial apa pun.
+            </div>
+        </div>
+
+        <div style="border-left:2px solid var(--cu-border-strong);padding-left:0.85rem;">
+            <strong style="font-size:0.85rem;">Jalur host-to-host — perlu pendaftaran</strong>
+            <div class="cu-form-hint">
+                Mengirim faktur dan SPT langsung dari aplikasi. DJP hanya membuka akses ini bagi
+                wajib pajak yang sudah mendaftar dan memperoleh client id, secret, serta sertifikat
+                elektronik. Isi semuanya di Pengaturan → Integrasi DJP, uji di lingkungan Sandbox
+                lebih dulu, baru pindah ke Production.
+            </div>
+        </div>
+
+        <div class="cu-alert cu-alert-warning" style="margin:0.9rem 0 0;">
+            Tata letak berkas dan alamat layanan DJP berubah dari waktu ke waktu. Cocokkan keluaran
+            aplikasi dengan spesifikasi terbaru yang berlaku untuk perusahaan Anda sebelum melapor.
+        </div>
+    </div>
+</div>
+
+<div class="cu-card cu-card-flush" style="margin-bottom:0;">
+    <div class="cu-card-header">
+        <span class="cu-card-title">Riwayat percakapan dengan DJP</span>
+        <span class="cu-text-muted">@log.Count catatan terakhir</span>
+    </div>
+
+    @if (log.Count == 0)
+    {
+        <EmptyState Title="Belum ada percakapan tercatat"
+                    Message="Setiap uji koneksi dan pengiriman faktur atau SPT dicatat di sini lengkap dengan jawaban DJP." />
+    }
+    else
+    {
+        <div class="cu-table-wrap">
+            <table class="cu-table">
+                <thead>
+                    <tr><th>Waktu</th><th>Operasi</th><th>Dokumen</th><th>Lingkungan</th><th>HTTP</th><th>Hasil</th><th>Pesan</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var entry in log)
+                    {
+                        <tr>
+                            <td class="cu-mono">@entry.CreatedAt.ToLocalTime().ToString("dd/MM HH:mm:ss")</td>
+                            <td>@OperationLabel(entry.Operation)</td>
+                            <td class="cu-mono">@(entry.DocumentNumber ?? "—")</td>
+                            <td><span class="cu-badge">@entry.Mode</span></td>
+                            <td class="cu-mono cu-text-faint">@(entry.HttpStatus?.ToString() ?? "—")</td>
+                            <td>
+                                <span class="cu-badge @(entry.Success ? "cu-badge-success" : "cu-badge-danger")">
+                                    @(entry.Success ? "Berhasil" : "Gagal")
+                                </span>
+                            </td>
+                            <td class="cu-text-muted" style="max-width:380px;">@entry.Message</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@code {
+    private sealed record Check(string Label, string Hint, bool Ok, string Value);
+
+    private List<DjpSubmission> log = new();
+    private DjpResult? result;
+    private string? problem;
+    private bool busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Settings.EnsureLoadedAsync();
+        problem = Djp.ReadinessProblem();
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync() => log = await DbContext.DjpSubmissions
+        .OrderByDescending(d => d.CreatedAt)
+        .Take(30)
+        .ToListAsync();
+
+    private IEnumerable<Check> Checklist()
+    {
+        var npwp = Settings.CompanyNpwp;
+        var nitku = Settings.Get(SettingsCatalog.CompanyNitku);
+        var clientId = Settings.Get(SettingsCatalog.DjpClientId);
+        var secret = Settings.Get(SettingsCatalog.DjpClientSecret);
+        var npwpUser = Settings.Get(SettingsCatalog.DjpNpwpUser);
+        var cert = Settings.Get(SettingsCatalog.DjpCertificatePath);
+
+        yield return new("Status PKP", "Wajib PKP untuk memungut PPN dan menerbitkan faktur pajak.",
+            Settings.IsPkp, Settings.IsPkp ? "PKP" : "non-PKP");
+        yield return new("NPWP perusahaan", "Dipakai sebagai identitas pengirim.",
+            !string.IsNullOrWhiteSpace(npwp), Mask(npwp));
+        yield return new("NITKU", "Nomor tempat kegiatan usaha, wajib pada Coretax.",
+            !string.IsNullOrWhiteSpace(nitku), Mask(nitku));
+        yield return new("Integrasi diaktifkan", "Saklar utama di Pengaturan → Integrasi DJP.",
+            Djp.Enabled, Djp.Enabled ? "aktif" : "nonaktif");
+        yield return new("Alamat layanan", "Endpoint sandbox atau produksi.",
+            !string.IsNullOrWhiteSpace(Djp.BaseUrl), string.IsNullOrWhiteSpace(Djp.BaseUrl) ? "—" : Djp.Mode);
+        yield return new("Client ID", "Diperoleh saat mendaftar akses host-to-host.",
+            !string.IsNullOrWhiteSpace(clientId), Mask(clientId));
+        yield return new("Client secret", "Disimpan terenkripsi di basis data aplikasi.",
+            !string.IsNullOrWhiteSpace(secret), string.IsNullOrWhiteSpace(secret) ? "—" : "tersimpan");
+        yield return new("NPWP penandatangan", "NPWP pengguna yang terdaftar di akun DJP.",
+            !string.IsNullOrWhiteSpace(npwpUser), Mask(npwpUser));
+        yield return new("Sertifikat elektronik", "Berkas .p12 untuk penandatanganan dokumen.",
+            !string.IsNullOrWhiteSpace(cert), string.IsNullOrWhiteSpace(cert) ? "—" : "terpasang");
+    }
+
+    private static string Mask(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return "—";
+        return value.Length <= 6 ? value : $"{value[..3]}…{value[^3..]}";
+    }
+
+    private async Task Test()
+    {
+        busy = true;
+        try
+        {
+            result = await Djp.TestConnectionAsync();
+            problem = Djp.ReadinessProblem();
+            await LoadAsync();
+        }
+        finally { busy = false; }
+    }
+
+    private static string OperationLabel(string operation) => operation switch
+    {
+        "TestConnection" => "Uji koneksi",
+        "SubmitFaktur" => "Kirim faktur pajak",
+        "SubmitSpt" => "Lapor SPT",
+        _ => operation
+    };
+}

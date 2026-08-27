@@ -1,0 +1,293 @@
+@typeparam TEntity where TEntity : new()
+@inject AppDbContext DbContext
+@inject ImportService Importer
+@inject IJSRuntime JS
+
+@* Impor data induk dari Excel.
+
+   Alur tiga langkah yang sama untuk semua data induk: unduh template, unggah
+   berkas, periksa pratinjaunya, baru impor. Tidak ada yang tersimpan sebelum
+   tombol impor ditekan, dan baris bermasalah dilewati tanpa menggagalkan
+   sisanya. *@
+
+<div class="cu-modal-overlay" @onclick="Close">
+    <div class="cu-modal cu-modal-lg" @onclick:stopPropagation="true">
+        <div class="cu-modal-head">
+            <div>
+                <span class="cu-eyebrow">Impor Excel</span>
+                <h3>@Plan.EntityName</h3>
+                <span class="cu-page-sub">
+                    @Plan.Columns.Count kolom · @Plan.Columns.Count(c => c.Required) wajib diisi
+                </span>
+            </div>
+            <button class="cu-icon-btn" @onclick="Close" aria-label="Tutup">
+                <Icon Name="close" Size="17" />
+            </button>
+        </div>
+
+        @if (summary is not null)
+        {
+            @* ---------- Langkah 3: selesai ---------- *@
+            <div class="cu-alert cu-alert-success">
+                <strong>Impor selesai.</strong>
+                @summary.Inserted data baru ditambahkan, @summary.Updated diperbarui.
+                @if (result is not null && result.ErrorCount > 0)
+                {
+                    <text> @result.ErrorCount baris dilewati karena bermasalah.</text>
+                }
+            </div>
+
+            <div class="cu-modal-foot">
+                <button class="cu-btn cu-btn-primary" @onclick="Close">Selesai</button>
+            </div>
+        }
+        else if (result is null)
+        {
+            @* ---------- Langkah 1: template & unggah ---------- *@
+            <div class="cu-card" style="background:var(--cu-surface-sunken);">
+                <div class="cu-flex-between">
+                    <div>
+                        <strong style="font-size:0.85rem;">1 · Unduh template</strong>
+                        <div class="cu-form-hint">
+                            Template sudah berisi judul kolom, satu baris contoh, dan lembar petunjuk.
+                        </div>
+                    </div>
+                    <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="DownloadTemplate">
+                        <Icon Name="download" Size="14" /> Template .xlsx
+                    </button>
+                </div>
+            </div>
+
+            <div class="cu-card" style="background:var(--cu-surface-sunken);">
+                <strong style="font-size:0.85rem;">2 · Unggah berkas terisi</strong>
+                <div class="cu-form-hint cu-mb-1">
+                    Berkas .xlsx, maksimal 10 MB. Berkas diperiksa lebih dulu — belum ada yang tersimpan.
+                </div>
+                <InputFile OnChange="OnFileSelected" accept=".xlsx" class="cu-form-input" />
+                @if (reading)
+                {
+                    <div class="cu-text-muted cu-mt-2">Membaca berkas…</div>
+                }
+            </div>
+
+            <details>
+                <summary style="cursor:pointer;font-size:0.82rem;font-weight:550;padding:0.35rem 0;">
+                    Kolom yang dibaca
+                </summary>
+                <div class="cu-table-wrap cu-mt-2">
+                    <table class="cu-table">
+                        <thead><tr><th>Kolom</th><th>Wajib</th><th>Contoh</th><th>Keterangan</th></tr></thead>
+                        <tbody>
+                            @foreach (var column in Plan.Columns)
+                            {
+                                <tr>
+                                    <td><strong>@column.Header</strong></td>
+                                    <td>
+                                        @if (column.Required)
+                                        {
+                                            <span class="cu-badge cu-badge-warning">wajib</span>
+                                        }
+                                    </td>
+                                    <td class="cu-mono cu-text-faint">@column.Example</td>
+                                    <td class="cu-text-muted">@column.Hint</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </details>
+
+            @if (fileError is not null)
+            {
+                <div class="cu-alert cu-alert-error">@fileError</div>
+            }
+        }
+        else
+        {
+            @* ---------- Langkah 2: pratinjau ---------- *@
+            @if (result.FileErrors.Count > 0)
+            {
+                <div class="cu-alert cu-alert-error">
+                    @foreach (var error in result.FileErrors)
+                    {
+                        <div>@error</div>
+                    }
+                </div>
+            }
+            else
+            {
+                <div class="cu-grid cu-grid-4 cu-mb-2">
+                    <div class="cu-card cu-stat cu-stat-primary" style="margin-bottom:0;">
+                        <div class="cu-stat-label">Data baru</div>
+                        <div class="cu-stat-value">@result.InsertCount</div>
+                    </div>
+                    <div class="cu-card cu-stat cu-stat-debit" style="margin-bottom:0;">
+                        <div class="cu-stat-label">Diperbarui</div>
+                        <div class="cu-stat-value">@result.UpdateCount</div>
+                    </div>
+                    <div class="cu-card cu-stat @(result.ErrorCount > 0 ? "cu-stat-credit" : "")" style="margin-bottom:0;">
+                        <div class="cu-stat-label">Bermasalah</div>
+                        <div class="cu-stat-value">@result.ErrorCount</div>
+                    </div>
+                    <div class="cu-card cu-stat" style="margin-bottom:0;">
+                        <div class="cu-stat-label">Total baris</div>
+                        <div class="cu-stat-value">@result.Rows.Count</div>
+                    </div>
+                </div>
+
+                @if (result.ErrorCount > 0)
+                {
+                    <div class="cu-alert cu-alert-warning">
+                        Baris bermasalah akan dilewati. Perbaiki di berkas lalu unggah ulang bila
+                        semuanya perlu masuk.
+                    </div>
+                }
+
+                <div class="cu-table-wrap" style="max-height:320px;overflow-y:auto;">
+                    <table class="cu-table">
+                        <thead>
+                            <tr>
+                                <th style="width:60px;">Baris</th>
+                                <th>Kunci</th>
+                                <th style="width:110px;">Tindakan</th>
+                                <th>Catatan</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var row in result.Rows.OrderBy(r => r.IsValid).ThenBy(r => r.RowNumber))
+                            {
+                                <tr>
+                                    <td class="cu-mono cu-text-faint">@row.RowNumber</td>
+                                    <td class="cu-mono">@KeyLabel(row)</td>
+                                    <td>
+                                        @if (!row.IsValid)
+                                        {
+                                            <span class="cu-badge cu-badge-danger">dilewati</span>
+                                        }
+                                        else if (row.IsUpdate)
+                                        {
+                                            <span class="cu-badge cu-badge-info">perbarui</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="cu-badge cu-badge-success">tambah</span>
+                                        }
+                                    </td>
+                                    <td class="cu-text-muted">@string.Join(" · ", row.Errors)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+
+            <div class="cu-modal-foot">
+                <button class="cu-btn cu-btn-outline" @onclick="Reset">
+                    <Icon Name="refresh" Size="14" /> Pilih berkas lain
+                </button>
+                <button class="cu-btn cu-btn-primary" @onclick="Commit"
+                        disabled="@(!result.CanCommit || committing)">
+                    <Icon Name="upload" Size="14" />
+                    @(committing ? "Mengimpor…" : $"Impor {result.ValidCount} baris")
+                </button>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public ImportPlan<TEntity> Plan { get; set; } = default!;
+
+    /// <summary>Dipanggil setelah impor berhasil, supaya halaman memuat ulang datanya.</summary>
+    [Parameter] public EventCallback OnImported { get; set; }
+
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private const long MaxBytes = 10 * 1024 * 1024;
+
+    private ImportResult<TEntity>? result;
+    private ImportSummary? summary;
+    private string? fileError;
+    private bool reading, committing;
+
+    private string KeyLabel(ImportRow<TEntity> row)
+    {
+        try { return Plan.KeyOf(row.Entity) is { Length: > 0 } key ? key : "—"; }
+        catch { return "—"; }
+    }
+
+    private async Task DownloadTemplate()
+    {
+        var bytes = Importer.BuildTemplate(Plan);
+        var fileName = $"template-{Plan.SheetName.ToLowerInvariant()}.xlsx";
+        await JS.InvokeVoidAsync("downloadFileFromBytes", fileName,
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            Convert.ToBase64String(bytes));
+    }
+
+    private async Task OnFileSelected(InputFileChangeEventArgs e)
+    {
+        fileError = null;
+        var file = e.File;
+
+        if (file.Size > MaxBytes)
+        {
+            fileError = "Berkas melebihi 10 MB. Pecah menjadi beberapa berkas yang lebih kecil.";
+            return;
+        }
+
+        if (!file.Name.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
+        {
+            fileError = "Hanya berkas .xlsx yang bisa dibaca. Simpan ulang dari Excel sebagai .xlsx.";
+            return;
+        }
+
+        reading = true;
+        try
+        {
+            // ClosedXML perlu stream yang bisa dicari posisinya, jadi berkas
+            // disalin ke memori lebih dulu.
+            using var memory = new MemoryStream();
+            await using (var source = file.OpenReadStream(MaxBytes))
+            {
+                await source.CopyToAsync(memory);
+            }
+            memory.Position = 0;
+
+            result = Importer.Parse(memory, Plan);
+        }
+        catch (Exception ex)
+        {
+            fileError = $"Gagal membaca berkas: {ex.Message}";
+        }
+        finally { reading = false; }
+    }
+
+    private async Task Commit()
+    {
+        if (result is null || !result.CanCommit) return;
+
+        committing = true;
+        try
+        {
+            summary = await Plan.Commit(DbContext, result.Rows);
+            summary.Skipped = result.ErrorCount;
+            await OnImported.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            fileError = $"Gagal menyimpan: {ex.Message}";
+            result = null;
+        }
+        finally { committing = false; }
+    }
+
+    private void Reset()
+    {
+        result = null;
+        summary = null;
+        fileError = null;
+    }
+
+    private Task Close() => OnClose.InvokeAsync();
+}

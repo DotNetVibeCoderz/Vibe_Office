@@ -49,6 +49,12 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
     public DbSet<BankTransfer> BankTransfers => Set<BankTransfer>();
     public DbSet<StockMovement> StockMovements => Set<StockMovement>();
 
+    // Pajak
+    public DbSet<TaxInvoice> TaxInvoices => Set<TaxInvoice>();
+    public DbSet<WithholdingTax> WithholdingTaxes => Set<WithholdingTax>();
+    public DbSet<TaxReturn> TaxReturns => Set<TaxReturn>();
+    public DbSet<DjpSubmission> DjpSubmissions => Set<DjpSubmission>();
+
     // System
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<ApiKey> ApiKeys => Set<ApiKey>();
@@ -138,6 +144,26 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
         builder.Entity<StockMovement>().HasIndex(s => new { s.ItemId, s.WarehouseId, s.MovementDate });
         builder.Entity<AuditLog>().HasIndex(a => new { a.EntityName, a.CreatedAt });
         builder.Entity<Notification>().HasIndex(n => new { n.UserId, n.IsRead });
+
+        // Pajak
+        builder.Entity<TaxInvoice>().HasIndex(t => t.FakturNumber).IsUnique();
+        builder.Entity<TaxInvoice>().HasIndex(t => new { t.TaxPeriodYear, t.TaxPeriodMonth });
+        builder.Entity<TaxInvoice>()
+            .HasOne(t => t.SalesInvoice)
+            .WithMany()
+            .HasForeignKey(t => t.SalesInvoiceId)
+            .OnDelete(DeleteBehavior.SetNull);
+        builder.Entity<TaxInvoice>()
+            .HasOne(t => t.Customer)
+            .WithMany()
+            .HasForeignKey(t => t.CustomerId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        builder.Entity<WithholdingTax>().HasIndex(w => w.SlipNumber).IsUnique();
+        builder.Entity<WithholdingTax>().HasIndex(w => new { w.TaxPeriodYear, w.TaxPeriodMonth, w.TaxType });
+
+        builder.Entity<TaxReturn>().HasIndex(r => new { r.ReturnType, r.PeriodYear, r.PeriodMonth, r.Revision }).IsUnique();
+        builder.Entity<DjpSubmission>().HasIndex(d => d.CreatedAt);
     }
 
     public override int SaveChanges()

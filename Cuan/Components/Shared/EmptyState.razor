@@ -1,0 +1,19 @@
+@* Layar kosong sebagai ajakan bertindak, bukan sekadar keterangan "tidak ada data". *@
+
+<div class="cu-table-empty">
+    <div class="cu-table-empty-title">@Title</div>
+    @if (!string.IsNullOrEmpty(Message))
+    {
+        <div class="cu-text-muted" style="max-width:44ch;margin:0 auto;">@Message</div>
+    }
+    @if (Action is not null)
+    {
+        <div style="margin-top:0.85rem;">@Action</div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter] public string? Message { get; set; }
+    [Parameter] public RenderFragment? Action { get; set; }
+}

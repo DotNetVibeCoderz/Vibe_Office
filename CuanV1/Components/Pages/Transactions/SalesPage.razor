@@ -1,0 +1,187 @@
+@page "/transactions/sales"
+@rendermode @(RenderMode.InteractiveServer)
+@attribute [Authorize(Roles = "Admin,Akuntan,Sales")]
+@inject AppDbContext DbContext
+@inject NotificationService Notif
+@inject IJSRuntime JS
+
+<PageTitle>Penjualan - CUAN</PageTitle>
+
+<div class="cu-flex-between cu-mb-2">
+    <div><h2 style="margin:0;">🛒 Penjualan</h2></div>
+    <div class="cu-flex cu-gap-1">
+        <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportExcel">📥 Excel</button>
+        <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportCsv">📄 CSV</button>
+        <button class="cu-btn cu-btn-primary cu-btn-sm" @onclick="CreateNew">+ Faktur Baru</button>
+    </div>
+</div>
+
+<div class="cu-card cu-mb-2">
+    <input class="cu-form-input" @bind="searchTerm" @bind:event="oninput" placeholder="🔍 Cari no, customer..." />
+</div>
+
+<div class="cu-card">
+    <table class="cu-table"><thead><tr><th>No</th><th>Tgl</th><th>Customer</th><th>Jatuh Tempo</th><th class="cu-text-right">Total</th><th class="cu-text-right">Sisa</th><th>Status</th><th></th></tr></thead>
+    <tbody>@foreach(var s in filteredInvoices){<tr><td style="font-family:monospace;">@s.InvoiceNumber</td><td>@s.InvoiceDate.ToString("dd/MM/yy")</td><td>@s.Customer?.Name</td><td>@s.DueDate.ToString("dd/MM/yy")</td><td class="cu-text-right">@s.GrandTotal.ToString("N0")</td><td class="cu-text-right">@s.RemainingAmount.ToString("N0")</td><td><span class="cu-badge @(s.Status==InvoiceStatus.Paid?"cu-badge-success":s.Status==InvoiceStatus.Draft?"cu-badge-warning":"cu-badge-info")">@s.Status</span></td><td><button class="cu-btn cu-btn-sm cu-btn-outline" @onclick="() => EditInvoice(s)">✏️</button><button class="cu-btn cu-btn-sm cu-btn-danger" @onclick="() => DeleteInvoice(s)">🗑️</button></td></tr>}</tbody></table>
+</div>
+
+@if(showCreate){<div class="cu-modal-overlay" @onclick="()=>showCreate=false"><div class="cu-modal" style="min-width:650px;" @onclick:stopPropagation="true">
+<h3 style="margin-top:0;">@(isEditing?"Edit Faktur Penjualan":"Faktur Penjualan Baru")</h3>
+<div class="cu-grid cu-grid-2"><div class="cu-form-group"><label class="cu-form-label">Customer</label><select class="cu-select" @bind="newInvoice.CustomerId">@foreach(var c in customers){<option value="@c.Id">@c.Name</option>}</select></div><div class="cu-form-group"><label class="cu-form-label">Tanggal</label><InputDate @bind-Value="newInvoice.InvoiceDate" class="cu-form-input"/></div></div>
+<div class="cu-grid cu-grid-2"><div class="cu-form-group"><label class="cu-form-label">Jatuh Tempo</label><InputDate @bind-Value="newInvoice.DueDate" class="cu-form-input"/></div><div class="cu-form-group"><label class="cu-form-label">Gudang</label><select class="cu-select" @bind="newInvoice.WarehouseId">@foreach(var w in warehouses){<option value="@w.Id">@w.Name</option>}</select></div></div>
+<table class="cu-table" style="margin-bottom:1rem;"><thead><tr><th>Item</th><th class="cu-text-right">Qty</th><th class="cu-text-right">Harga</th><th class="cu-text-right">Diskon%</th><th class="cu-text-right">Total</th><th></th></tr></thead>
+<tbody>@for(int i=0;i<newLines.Count;i++){var line=newLines[i];var idx=i;<tr><td style="min-width:150px;"><select class="cu-select" @bind="line.ItemId" style="font-size:0.75rem;">@foreach(var it in items){<option value="@it.Id">@it.ItemName (@it.SellingPrice.ToString("N0"))</option>}</select></td><td style="width:80px;"><InputNumber @bind-Value="line.Quantity" class="cu-form-input" style="font-size:0.75rem;"/></td><td style="width:120px;"><InputNumber @bind-Value="line.UnitPrice" class="cu-form-input" style="font-size:0.75rem;"/></td><td style="width:80px;"><InputNumber @bind-Value="line.DiscountPercent" class="cu-form-input" style="font-size:0.75rem;"/></td><td class="cu-text-right" style="font-weight:600;">@((line.Quantity*line.UnitPrice*(1-line.DiscountPercent/100)).ToString("N0"))</td><td><button class="cu-btn cu-btn-sm cu-btn-danger" @onclick="()=>RemoveLine(idx)">✕</button></td></tr>}</tbody></table>
+<button class="cu-btn cu-btn-sm cu-btn-outline" @onclick="AddLine">+ Barang</button>
+<div class="cu-mb-1"></div>
+<div class="cu-text-muted">Subtotal: <strong>@subTotal.ToString("N0")</strong> | PPN 11%: <strong>@((subTotal*0.11m).ToString("N0"))</strong> | <strong>Grand Total: @((subTotal*1.11m).ToString("N0"))</strong></div>
+<div class="cu-flex cu-gap-1" style="justify-content:flex-end;margin-top:1rem;"><button class="cu-btn cu-btn-outline" @onclick="()=>showCreate=false">Batal</button><button class="cu-btn cu-btn-primary" @onclick="SaveInvoice">💾 Simpan</button></div>
+</div></div>}
+
+@code {
+    private List<SalesInvoice> invoices=new();private List<Customer> customers=new();private List<Item> items=new();private List<Warehouse> warehouses=new();
+    private bool showCreate;private bool isEditing;private SalesInvoice newInvoice=new(){InvoiceDate=DateTime.Today,DueDate=DateTime.Today.AddDays(30)};
+    private List<LineInv> newLines=new(){new LineInv{ItemId=1,Quantity=1,UnitPrice=0}};
+    private string searchTerm = "";
+    private decimal subTotal=>newLines.Sum(l=>l.Quantity*l.UnitPrice*(1-l.DiscountPercent/100));
+    public class LineInv{public int ItemId;public decimal Quantity=1;public decimal UnitPrice;public decimal DiscountPercent;}
+
+    private IEnumerable<SalesInvoice> filteredInvoices => invoices
+        .Where(s => string.IsNullOrEmpty(searchTerm)
+            || s.InvoiceNumber.Contains(searchTerm, StringComparison.OrdinalIgnoreCase)
+            || (s.Customer?.Name ?? "").Contains(searchTerm, StringComparison.OrdinalIgnoreCase))
+        .OrderByDescending(s => s.InvoiceDate);
+
+    protected override async Task OnInitializedAsync(){await LoadData();}
+
+    private async Task LoadData()
+    {
+        invoices=await DbContext.SalesInvoices.Include(s=>s.Customer).Include(s=>s.Details).OrderByDescending(s=>s.InvoiceDate).Take(200).ToListAsync();
+        customers=await DbContext.Customers.Where(c=>c.IsActive).ToListAsync();
+        items=await DbContext.Items.Where(i=>i.IsActive).ToListAsync();
+        warehouses=await DbContext.Warehouses.ToListAsync();
+    }
+
+    private void CreateNew(){newInvoice=new SalesInvoice{InvoiceDate=DateTime.Today,DueDate=DateTime.Today.AddDays(30)};newLines=new List<LineInv>{new LineInv{ItemId=items.FirstOrDefault()?.Id??1,Quantity=1,UnitPrice=items.FirstOrDefault()?.SellingPrice??0}};showCreate=true;isEditing=false;}
+
+    private void EditInvoice(SalesInvoice inv)
+    {
+        newInvoice = new SalesInvoice
+        {
+            Id = inv.Id,
+            InvoiceNumber = inv.InvoiceNumber,
+            InvoiceDate = inv.InvoiceDate,
+            DueDate = inv.DueDate,
+            CustomerId = inv.CustomerId,
+            WarehouseId = inv.WarehouseId,
+            Description = inv.Description,
+            Status = inv.Status
+        };
+
+        newLines = inv.Details.Select(d => new LineInv
+        {
+            ItemId = d.ItemId,
+            Quantity = d.Quantity,
+            UnitPrice = d.UnitPrice,
+            DiscountPercent = d.DiscountPercent
+        }).ToList();
+
+        if (newLines.Count == 0) newLines.Add(new LineInv{ItemId=items.FirstOrDefault()?.Id??1,Quantity=1,UnitPrice=items.FirstOrDefault()?.SellingPrice??0});
+        showCreate = true;
+        isEditing = true;
+    }
+
+    private void AddLine(){newLines.Add(new LineInv{ItemId=items.FirstOrDefault()?.Id??1,Quantity=1,UnitPrice=0});}
+    private void RemoveLine(int i){if(newLines.Count>1)newLines.RemoveAt(i);}
+
+    private async Task SaveInvoice(){
+        if (!isEditing)
+        {
+            newInvoice.CreatedAt=DateTime.UtcNow;
+            var count=await DbContext.SalesInvoices.CountAsync();
+            newInvoice.InvoiceNumber=$"INV-{DateTime.UtcNow.Year}-{count+1:D4}";
+            newInvoice.SubTotal=subTotal;newInvoice.TaxAmount=subTotal*0.11m;newInvoice.GrandTotal=subTotal*1.11m;
+            newInvoice.Details=newLines.Where(l=>l.Quantity>0).Select(l=>new SalesInvoiceDetail{ItemId=l.ItemId,Quantity=l.Quantity,UnitPrice=l.UnitPrice,DiscountPercent=l.DiscountPercent,LineTotal=l.Quantity*l.UnitPrice*(1-l.DiscountPercent/100),TaxPercent=11,TaxAmount=l.Quantity*l.UnitPrice*(1-l.DiscountPercent/100)*0.11m}).ToList();
+            DbContext.SalesInvoices.Add(newInvoice);
+            var cust=await DbContext.Customers.FindAsync(newInvoice.CustomerId);
+            if(cust!=null)cust.Balance+=newInvoice.GrandTotal;
+        }
+        else
+        {
+            var existing = await DbContext.SalesInvoices.Include(s=>s.Details).FirstOrDefaultAsync(s=>s.Id==newInvoice.Id);
+            if (existing != null)
+            {
+                var custOld = await DbContext.Customers.FindAsync(existing.CustomerId);
+                if (custOld != null) custOld.Balance -= existing.GrandTotal;
+
+                existing.CustomerId = newInvoice.CustomerId;
+                existing.InvoiceDate = newInvoice.InvoiceDate;
+                existing.DueDate = newInvoice.DueDate;
+                existing.WarehouseId = newInvoice.WarehouseId;
+                existing.SubTotal = subTotal;
+                existing.TaxAmount = subTotal * 0.11m;
+                existing.GrandTotal = subTotal * 1.11m;
+
+                DbContext.SalesInvoiceDetails.RemoveRange(existing.Details);
+                existing.Details = newLines.Where(l=>l.Quantity>0).Select(l=>new SalesInvoiceDetail{ItemId=l.ItemId,Quantity=l.Quantity,UnitPrice=l.UnitPrice,DiscountPercent=l.DiscountPercent,LineTotal=l.Quantity*l.UnitPrice*(1-l.DiscountPercent/100),TaxPercent=11,TaxAmount=l.Quantity*l.UnitPrice*(1-l.DiscountPercent/100)*0.11m}).ToList();
+
+                var custNew = await DbContext.Customers.FindAsync(existing.CustomerId);
+                if (custNew != null) custNew.Balance += existing.GrandTotal;
+            }
+        }
+
+        await DbContext.SaveChangesAsync();
+        await Notif.NotifyAsync("🛒 Penjualan",$"Faktur #{newInvoice.InvoiceNumber} — Rp {(subTotal*1.11m):N0}","Info");
+        showCreate=false;isEditing=false;await LoadData();
+    }
+
+    private async Task DeleteInvoice(SalesInvoice inv)
+    {
+        if (!await ConfirmAsync($"Hapus penjualan {inv.InvoiceNumber}?") ) return;
+        var cust = await DbContext.Customers.FindAsync(inv.CustomerId);
+        if (cust != null) cust.Balance -= inv.GrandTotal;
+        DbContext.SalesInvoices.Remove(inv);
+        await DbContext.SaveChangesAsync();
+        await LoadData();
+    }
+
+    private async Task ExportCsv()
+    {
+        var data = filteredInvoices.Select(s => new
+        {
+            s.InvoiceNumber,
+            s.InvoiceDate,
+            Customer = s.Customer?.Name,
+            s.DueDate,
+            s.GrandTotal,
+            s.Status
+        });
+
+        var bytes = ExportService.ExportToCsv(data);
+        await DownloadAsync(bytes, "sales.csv", "text/csv");
+    }
+
+    private async Task ExportExcel()
+    {
+        var data = filteredInvoices.Select(s => new
+        {
+            s.InvoiceNumber,
+            s.InvoiceDate,
+            Customer = s.Customer?.Name,
+            s.DueDate,
+            s.GrandTotal,
+            s.Status
+        });
+
+        var bytes = ExportService.ExportToExcel(data, "Sales");
+        await DownloadAsync(bytes, "sales.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    }
+
+    private async Task DownloadAsync(byte[] data, string fileName, string contentType)
+    {
+        var base64 = Convert.ToBase64String(data);
+        await JS.InvokeVoidAsync("downloadFileFromBytes", fileName, contentType, base64);
+    }
+
+    private async Task<bool> ConfirmAsync(string message) =>
+        await JS.InvokeAsync<bool>("confirm", message);
+}

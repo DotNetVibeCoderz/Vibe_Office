@@ -2,24 +2,100 @@
 @rendermode @(RenderMode.InteractiveServer)
 @attribute [Authorize(Roles = "Admin,Akuntan,Kasir")]
 @inject AppDbContext DbContext
+@inject SettingsService Settings
+@inject PostingService Posting
+@inject DocumentNumberService Numbers
 @inject IJSRuntime JS
-<PageTitle>Giro - CUAN</PageTitle>
-<div class="cu-flex-between cu-mb-2"><div><h2 style="margin:0;">📜 Giro</h2></div><div class="cu-flex cu-gap-1"><button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportExcel">📥 Excel</button><button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportCsv">📄 CSV</button><button class="cu-btn cu-btn-primary cu-btn-sm" @onclick="CreateNew">+ Giro Baru</button></div></div>
 
-<div class="cu-card cu-mb-2">
-    <input class="cu-form-input" @bind="searchTerm" @bind:event="oninput" placeholder="🔍 Cari no, bank, status..." />
+<PageTitle>Giro — CUAN</PageTitle>
+
+<PageHead Section="Transaksi" Title="Giro"
+          Subtitle="@($"{giros.Count(g => g.Status == GiroStatus.Pending)} belum cair · {Settings.Money(giros.Where(g => g.Status == GiroStatus.Pending).Sum(g => g.Amount))} menggantung")">
+    <Actions>
+        <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportExcel">
+            <Icon Name="download" Size="14" /> Excel
+        </button>
+        <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportCsv">
+            <Icon Name="download" Size="14" /> CSV
+        </button>
+        <button class="cu-btn cu-btn-primary cu-btn-sm" @onclick="CreateNew">
+            <Icon Name="plus" Size="14" /> Giro baru
+        </button>
+    </Actions>
+</PageHead>
+
+<div class="cu-filterbar">
+    <div class="cu-search">
+        <span class="cu-search-icon"><Icon Name="search" Size="15" /></span>
+        <input class="cu-form-input" placeholder="Cari nomor giro, bank, atau status…" @bind="searchTerm" @bind:event="oninput" />
+    </div>
 </div>
 
-<div class="cu-card"><table class="cu-table"><thead><tr><th>No</th><th>Tgl</th><th>Efektif</th><th>No. Giro</th><th>Bank</th><th class="cu-text-right">Jumlah</th><th>Status</th><th></th></tr></thead>
-<tbody>@foreach(var g in filteredGiros){<tr><td style="font-family:monospace;">@g.TransactionNumber</td><td>@g.TransactionDate.ToString("dd/MM/yy")</td><td>@g.EffectiveDate.ToString("dd/MM/yy")</td><td>@g.GiroNumber</td><td>@g.BankName</td><td class="cu-text-right">@g.Amount.ToString("N0")</td><td><span class="cu-badge @(g.Status==GiroStatus.Cleared?"cu-badge-success":g.Status==GiroStatus.Bounced?"cu-badge-danger":"cu-badge-warning")">@g.Status</span></td><td><button class="cu-btn cu-btn-sm cu-btn-outline" @onclick="() => EditTx(g)">✏️</button><button class="cu-btn cu-btn-sm cu-btn-danger" @onclick="() => DeleteTx(g)">🗑️</button></td></tr>}</tbody></table></div>
+<div class="cu-card cu-card-flush" style="margin-bottom:0;">
+    @if (!filteredGiros.Any())
+    {
+        <EmptyState Title="Belum ada giro tercatat"
+                    Message="Giro masuk menggantung di akun giro belum cair sampai statusnya diubah menjadi cair." />
+    }
+    else
+    {
+        <div class="cu-table-wrap">
+            <table class="cu-table">
+                <thead>
+                    <tr>
+                        <th>Nomor</th><th>Tanggal</th><th>Jatuh tempo</th><th>No. giro</th><th>Bank</th>
+                        <th class="cu-text-right cu-col-debit">Masuk</th>
+                        <th class="cu-text-right cu-col-credit">Keluar</th>
+                        <th>Status</th><th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var g in filteredGiros)
+                    {
+                        <tr>
+                            <td class="cu-mono">@g.TransactionNumber</td>
+                            <td class="cu-mono">@Settings.FormatDate(g.TransactionDate)</td>
+                            <td class="cu-mono @(g.Status == GiroStatus.Pending && g.EffectiveDate < DateTime.Today ? "cu-text-danger" : "cu-text-faint")">
+                                @Settings.FormatDate(g.EffectiveDate)
+                            </td>
+                            <td class="cu-mono">@g.GiroNumber</td>
+                            <td>@g.BankName</td>
+                            <td class="cu-text-right cu-col-debit">@(g.Type == GiroType.GiroIn ? Settings.Number(g.Amount) : "")</td>
+                            <td class="cu-text-right cu-col-credit">@(g.Type == GiroType.GiroOut ? Settings.Number(g.Amount) : "")</td>
+                            <td>
+                                <span class="cu-badge @StatusClass(g.Status)">@StatusLabel(g.Status)</span>
+                            </td>
+                            <td class="cu-text-right">
+                                <div class="cu-row-actions">
+                                    <button class="cu-btn cu-btn-outline cu-btn-icon" title="Ubah" @onclick="() => EditTx(g)">
+                                        <Icon Name="edit" Size="13" />
+                                    </button>
+                                    <button class="cu-btn cu-btn-danger cu-btn-icon" title="Hapus" @onclick="() => DeleteTx(g)">
+                                        <Icon Name="trash" Size="13" />
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                    <tr class="cu-total-row">
+                        <td colspan="5">Jumlah</td>
+                        <td class="cu-text-right">@Settings.Number(filteredGiros.Where(g => g.Type == GiroType.GiroIn).Sum(g => g.Amount))</td>
+                        <td class="cu-text-right">@Settings.Number(filteredGiros.Where(g => g.Type == GiroType.GiroOut).Sum(g => g.Amount))</td>
+                        <td colspan="2"></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
 
-@if(showCreate){<div class="cu-modal-overlay" @onclick="()=>showCreate=false"><div class="cu-modal" style="min-width:450px;" @onclick:stopPropagation="true"><h3>@(newTx.Id==0?"Giro Baru":"Edit Giro")</h3>
-<div class="cu-form-group"><label class="cu-form-label">Tipe</label><select class="cu-select" @bind="newTx.Type"><option value="@GiroType.GiroIn">📥 Giro Masuk</option><option value="@GiroType.GiroOut">📤 Giro Keluar</option></select></div>
-<div class="cu-grid cu-grid-2"><div class="cu-form-group"><label class="cu-form-label">Tanggal Terima</label><InputDate @bind-Value="newTx.TransactionDate" class="cu-form-input"/></div><div class="cu-form-group"><label class="cu-form-label">Tanggal Efektif</label><InputDate @bind-Value="newTx.EffectiveDate" class="cu-form-input"/></div></div>
-<div class="cu-grid cu-grid-2"><div class="cu-form-group"><label class="cu-form-label">No. Giro</label><InputText @bind-Value="newTx.GiroNumber" class="cu-form-input"/></div><div class="cu-form-group"><label class="cu-form-label">Bank</label><InputText @bind-Value="newTx.BankName" class="cu-form-input"/></div></div>
-<div class="cu-grid cu-grid-2"><div class="cu-form-group"><label class="cu-form-label">Jumlah</label><InputNumber @bind-Value="newTx.Amount" class="cu-form-input"/></div><div class="cu-form-group"><label class="cu-form-label">Status</label><select class="cu-select" @bind="newTx.Status"><option value="@GiroStatus.Pending">Pending</option><option value="@GiroStatus.Cleared">Cleared</option><option value="@GiroStatus.Bounced">Bounced</option><option value="@GiroStatus.Canceled">Canceled</option></select></div></div>
-<div class="cu-form-group"><label class="cu-form-label">Deskripsi</label><InputText @bind-Value="newTx.Description" class="cu-form-input"/></div>
-<div class="cu-flex cu-gap-1" style="justify-content:flex-end;"><button class="cu-btn cu-btn-outline" @onclick="()=>showCreate=false">Batal</button><button class="cu-btn cu-btn-primary" @onclick="SaveTx">💾 Simpan</button></div></div></div>}
+@if(showCreate){<div class="cu-modal-overlay" @onclick="()=>showCreate=false"><div class="cu-modal" style="min-width:450px;" @onclick:stopPropagation="true"><h3 style="margin-top:0;">@(newTx.Id==0?"Giro baru":$"Ubah {newTx.TransactionNumber}")</h3>
+<div class="cu-form-group"><label class="cu-form-label">Tipe</label><select class="cu-select" @bind="newTx.Type"><option value="@GiroType.GiroIn">Giro masuk</option><option value="@GiroType.GiroOut">Giro keluar</option></select></div>
+<div class="cu-grid cu-grid-2"><div class="cu-form-group"><label class="cu-form-label">Tanggal terima</label><InputDate @bind-Value="newTx.TransactionDate" class="cu-form-input"/></div><div class="cu-form-group"><label class="cu-form-label">Tanggal jatuh tempo</label><InputDate @bind-Value="newTx.EffectiveDate" class="cu-form-input"/></div></div>
+<div class="cu-grid cu-grid-2"><div class="cu-form-group"><label class="cu-form-label">Nomor giro</label><InputText @bind-Value="newTx.GiroNumber" class="cu-form-input"/></div><div class="cu-form-group"><label class="cu-form-label">Bank</label><InputText @bind-Value="newTx.BankName" class="cu-form-input"/></div></div>
+<div class="cu-grid cu-grid-2"><div class="cu-form-group"><label class="cu-form-label">Jumlah</label><InputNumber @bind-Value="newTx.Amount" class="cu-form-input"/></div><div class="cu-form-group"><label class="cu-form-label">Status</label><select class="cu-select" @bind="newTx.Status"><option value="@GiroStatus.Pending">Belum cair</option><option value="@GiroStatus.Cleared">Cair</option><option value="@GiroStatus.Bounced">Ditolak</option><option value="@GiroStatus.Canceled">Batal</option></select></div></div>
+<div class="cu-form-group"><label class="cu-form-label">Keterangan</label><InputText @bind-Value="newTx.Description" class="cu-form-input"/></div>
+<div class="cu-flex cu-gap-1" style="justify-content:flex-end;"><button class="cu-btn cu-btn-outline" @onclick="()=>showCreate=false">Batal</button><button class="cu-btn cu-btn-primary" @onclick="SaveTx"><Icon Name="save" Size="14" /> Simpan</button></div></div></div>}
 
 @code {
     private List<GiroTransaction> giros=new();
@@ -35,7 +111,7 @@
             || g.Status.ToString().Contains(searchTerm, StringComparison.OrdinalIgnoreCase))
         .OrderByDescending(g => g.TransactionDate);
 
-    protected override async Task OnInitializedAsync(){await LoadData();}
+    protected override async Task OnInitializedAsync(){await Settings.EnsureLoadedAsync();await LoadData();}
 
     private async Task LoadData(){giros=await DbContext.GiroTransactions.OrderByDescending(g=>g.TransactionDate).Take(200).ToListAsync();}
 
@@ -62,17 +138,47 @@
     private async Task SaveTx(){
         if (newTx.Id == 0)
         {
-            newTx.CreatedAt=DateTime.UtcNow;var c=await DbContext.GiroTransactions.CountAsync();newTx.TransactionNumber=$"GIRO-{DateTime.UtcNow.Year}-{c+1:D4}";DbContext.GiroTransactions.Add(newTx);
+            var kind = newTx.Type == GiroType.GiroIn ? DocumentKind.GiroIn : DocumentKind.GiroOut;
+            newTx.TransactionNumber = await Numbers.NextAsync(DbContext, kind, newTx.TransactionDate);
+            newTx.CreatedAt = DateTime.UtcNow;
+            DbContext.GiroTransactions.Add(newTx);
+            await DbContext.SaveChangesAsync();
+            await Posting.PostGiroAsync(newTx);
         }
         else
         {
+            // Jurnal lama dibatalkan supaya saldo akun tidak terhitung dua kali.
+            var existing = await DbContext.GiroTransactions.AsNoTracking().FirstOrDefaultAsync(g => g.Id == newTx.Id);
+            await Posting.ReverseDocumentJournalAsync(existing?.JournalEntryId);
+            newTx.JournalEntryId = null;
+            newTx.IsPosted = false;
             DbContext.GiroTransactions.Update(newTx);
+            await DbContext.SaveChangesAsync();
+            await Posting.PostGiroAsync(newTx);
         }
         await DbContext.SaveChangesAsync();showCreate=false;await LoadData();}
 
+    private static string StatusLabel(GiroStatus status) => status switch
+    {
+        GiroStatus.Pending => "Belum cair",
+        GiroStatus.Cleared => "Cair",
+        GiroStatus.Bounced => "Ditolak",
+        GiroStatus.Canceled => "Batal",
+        _ => status.ToString()
+    };
+
+    private static string StatusClass(GiroStatus status) => status switch
+    {
+        GiroStatus.Cleared => "cu-badge-success",
+        GiroStatus.Bounced => "cu-badge-danger",
+        GiroStatus.Canceled => "cu-badge-danger",
+        _ => "cu-badge-warning"
+    };
+
     private async Task DeleteTx(GiroTransaction tx)
     {
-        if (!await ConfirmAsync($"Hapus giro {tx.TransactionNumber}?") ) return;
+        if (!await ConfirmAsync($"Hapus giro {tx.TransactionNumber}? Jurnalnya ikut dibatalkan.")) return;
+        await Posting.ReverseDocumentJournalAsync(tx.JournalEntryId);
         DbContext.GiroTransactions.Remove(tx);
         await DbContext.SaveChangesAsync();
         await LoadData();
@@ -119,5 +225,5 @@
     }
 
     private async Task<bool> ConfirmAsync(string message) =>
-        await JS.InvokeAsync<bool>("confirm", message);
+        await JS.InvokeAsync<bool>("cuanConfirm", message);
 }

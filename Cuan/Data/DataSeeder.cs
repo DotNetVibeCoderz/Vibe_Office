@@ -1,4 +1,5 @@
 using Cuan.Models;
+using Cuan.Services;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 
@@ -44,21 +45,17 @@ public static class DataSeeder
         }
 
         // ===== SETTINGS =====
+        // Seluruh parameter berasal dari SettingsCatalog — satu-satunya daftar
+        // yang juga dipakai halaman Pengaturan untuk merender formulirnya.
         ctx.SystemSettings.AddRange(
-            new SystemSetting { SettingKey = "CompanyName", SettingValue = "PT. CUAN MAKMUR SENTOSA", Group = "General" },
-            new SystemSetting { SettingKey = "CompanyAddress", SettingValue = "Jl. Sudirman No. 123, Jakarta Pusat", Group = "General" },
-            new SystemSetting { SettingKey = "CompanyPhone", SettingValue = "021-555-0123", Group = "General" },
-            new SystemSetting { SettingKey = "CompanyEmail", SettingValue = "info@cuanmakmur.id", Group = "General" },
-            new SystemSetting { SettingKey = "CompanyTaxNumber", SettingValue = "01.234.567.8-012.000", Group = "General" },
-            new SystemSetting { SettingKey = "BaseCurrency", SettingValue = "IDR", Group = "General" },
-            new SystemSetting { SettingKey = "EnableMultiCurrency", SettingValue = "true", Group = "Feature" },
-            new SystemSetting { SettingKey = "EnableMultiWarehouse", SettingValue = "true", Group = "Feature" },
-            new SystemSetting { SettingKey = "EnableAuditLog", SettingValue = "true", Group = "Feature" },
-            new SystemSetting { SettingKey = "DefaultTaxRate", SettingValue = "11", Group = "Tax" },
-            new SystemSetting { SettingKey = "FiscalYearStart", SettingValue = "01-01", Group = "Accounting" },
-            new SystemSetting { SettingKey = "FiscalYearEnd", SettingValue = "12-31", Group = "Accounting" },
-            new SystemSetting { SettingKey = "AutoPostJournal", SettingValue = "false", Group = "Accounting" },
-            new SystemSetting { SettingKey = "ItemsPerPage", SettingValue = "20", Group = "UI" }
+            SettingsCatalog.All.Select(def => new SystemSetting
+            {
+                SettingKey = def.Key,
+                SettingValue = def.Default,
+                Group = def.Group,
+                Description = def.Description ?? def.Label,
+                UpdatedAt = DateTime.UtcNow
+            })
         );
 
         // ===== CURRENCIES =====
@@ -155,7 +152,8 @@ public static class DataSeeder
         var coaPersediaan = new ChartOfAccount { AccountCode = "1-1500", AccountName = "Persediaan Barang", AccountType = 1, ParentId = coaCurrentAsset.Id, OpeningBalance = 200000000 };
         var coaPpnMasukan = new ChartOfAccount { AccountCode = "1-1600", AccountName = "PPN Masukan", AccountType = 1, ParentId = coaCurrentAsset.Id };
         var coaPrepaid = new ChartOfAccount { AccountCode = "1-1700", AccountName = "Uang Muka / Prepaid", AccountType = 1, ParentId = coaCurrentAsset.Id };
-        ctx.ChartOfAccounts.AddRange(coaKasKecil, coaBankBCA, coaBankMandiri, coaPiutang, coaPersediaan, coaPpnMasukan, coaPrepaid);
+        var coaGiroMasuk = new ChartOfAccount { AccountCode = "1-1800", AccountName = "Giro Masuk Belum Cair", AccountType = 1, ParentId = coaCurrentAsset.Id };
+        ctx.ChartOfAccounts.AddRange(coaKasKecil, coaBankBCA, coaBankMandiri, coaPiutang, coaPersediaan, coaPpnMasukan, coaPrepaid, coaGiroMasuk);
 
         // Fixed Assets
         var coaFixedAsset = new ChartOfAccount { AccountCode = "1-2000", AccountName = "Aktiva Tetap", AccountType = 1, IsHeader = true, ParentId = coaAsset.Id };
@@ -178,12 +176,16 @@ public static class DataSeeder
             new ChartOfAccount { AccountCode = "2-1300", AccountName = "Hutang PPh 21", AccountType = 2, ParentId = coaShortTerm.Id },
             new ChartOfAccount { AccountCode = "2-1400", AccountName = "Hutang PPh 23", AccountType = 2, ParentId = coaShortTerm.Id },
             new ChartOfAccount { AccountCode = "2-1500", AccountName = "Biaya Masih Harus Dibayar", AccountType = 2, ParentId = coaShortTerm.Id },
-            new ChartOfAccount { AccountCode = "2-1600", AccountName = "Pendapatan Diterima Dimuka", AccountType = 2, ParentId = coaShortTerm.Id }
+            new ChartOfAccount { AccountCode = "2-1600", AccountName = "Pendapatan Diterima Dimuka", AccountType = 2, ParentId = coaShortTerm.Id },
+            new ChartOfAccount { AccountCode = "2-1700", AccountName = "Giro Keluar Belum Cair", AccountType = 2, ParentId = coaShortTerm.Id }
         );
 
         // Equity
         ctx.ChartOfAccounts.AddRange(
-            new ChartOfAccount { AccountCode = "3-1100", AccountName = "Modal Saham", AccountType = 3, ParentId = coaEquity.Id, OpeningBalance = 1500000000 },
+            // Modal disetel supaya saldo awal seimbang: aktiva 3.075.000.000
+            // = kewajiban 35.000.000 + modal 3.040.000.000. Tanpa ini neraca
+            // saldo sudah timpang sejak baris pertama.
+            new ChartOfAccount { AccountCode = "3-1100", AccountName = "Modal Saham", AccountType = 3, ParentId = coaEquity.Id, OpeningBalance = 2790000000 },
             new ChartOfAccount { AccountCode = "3-1200", AccountName = "Laba Ditahan", AccountType = 3, ParentId = coaEquity.Id, OpeningBalance = 250000000 },
             new ChartOfAccount { AccountCode = "3-1300", AccountName = "Laba Tahun Berjalan", AccountType = 3, ParentId = coaEquity.Id }
         );
@@ -195,7 +197,8 @@ public static class DataSeeder
             new ChartOfAccount { AccountCode = "4-1200", AccountName = "Penjualan Jasa", AccountType = 4, ParentId = coaRevenue.Id },
             new ChartOfAccount { AccountCode = "4-1300", AccountName = "Pendapatan Bunga", AccountType = 4, ParentId = coaRevenue.Id },
             new ChartOfAccount { AccountCode = "4-1400", AccountName = "Pendapatan Lain-lain", AccountType = 4, ParentId = coaRevenue.Id },
-            new ChartOfAccount { AccountCode = "4-1500", AccountName = "Retur Penjualan", AccountType = 4, ParentId = coaRevenue.Id }
+            new ChartOfAccount { AccountCode = "4-1500", AccountName = "Retur Penjualan", AccountType = 4, ParentId = coaRevenue.Id },
+            new ChartOfAccount { AccountCode = "4-1600", AccountName = "Diskon Penjualan", AccountType = 4, ParentId = coaRevenue.Id }
         );
 
         // Expenses
@@ -209,7 +212,11 @@ public static class DataSeeder
             new ChartOfAccount { AccountCode = "5-1700", AccountName = "Beban Pemasaran", AccountType = 5, ParentId = coaExpense.Id },
             new ChartOfAccount { AccountCode = "5-1800", AccountName = "Beban Administrasi", AccountType = 5, ParentId = coaExpense.Id },
             new ChartOfAccount { AccountCode = "5-1900", AccountName = "Beban Penyusutan", AccountType = 5, ParentId = coaExpense.Id },
-            new ChartOfAccount { AccountCode = "5-2000", AccountName = "Beban Pajak", AccountType = 5, ParentId = coaExpense.Id }
+            new ChartOfAccount { AccountCode = "5-2000", AccountName = "Beban Pajak", AccountType = 5, ParentId = coaExpense.Id },
+            new ChartOfAccount { AccountCode = "5-2100", AccountName = "Beban Ongkos Kirim", AccountType = 5, ParentId = coaExpense.Id },
+            new ChartOfAccount { AccountCode = "5-2200", AccountName = "Beban Administrasi Bank", AccountType = 5, ParentId = coaExpense.Id },
+            new ChartOfAccount { AccountCode = "5-2300", AccountName = "Selisih Penyesuaian Stok", AccountType = 5, ParentId = coaExpense.Id },
+            new ChartOfAccount { AccountCode = "5-2400", AccountName = "Beban Lain-lain", AccountType = 5, ParentId = coaExpense.Id }
         );
 
         await ctx.SaveChangesAsync();
@@ -236,10 +243,15 @@ public static class DataSeeder
         await ctx.SaveChangesAsync();
 
         // ===== BANK ACCOUNTS =====
+        // Tiap rekening ditautkan ke akun buku besarnya, supaya mutasi bank
+        // bisa dijurnal dan muncul di laporan arus kas.
+        var coaBcaId = await ctx.ChartOfAccounts.Where(c => c.AccountCode == "1-1200").Select(c => c.Id).FirstAsync();
+        var coaMandiriId = await ctx.ChartOfAccounts.Where(c => c.AccountCode == "1-1300").Select(c => c.Id).FirstAsync();
+
         ctx.BankAccounts.AddRange(
-            new BankAccount { BankName = "BCA", AccountNumber = "123-456-7890", AccountHolder = "PT. CUAN MAKMUR SENTOSA", Balance = 150000000 },
-            new BankAccount { BankName = "Mandiri", AccountNumber = "098-765-4321", AccountHolder = "PT. CUAN MAKMUR SENTOSA", Balance = 75000000 },
-            new BankAccount { BankName = "BNI", AccountNumber = "555-111-2222", AccountHolder = "PT. CUAN MAKMUR SENTOSA", Balance = 25000000 }
+            new BankAccount { BankName = "BCA", AccountNumber = "123-456-7890", AccountHolder = "PT. CUAN MAKMUR SENTOSA", Balance = 150000000, ChartOfAccountId = coaBcaId },
+            new BankAccount { BankName = "Mandiri", AccountNumber = "098-765-4321", AccountHolder = "PT. CUAN MAKMUR SENTOSA", Balance = 75000000, ChartOfAccountId = coaMandiriId },
+            new BankAccount { BankName = "BNI", AccountNumber = "555-111-2222", AccountHolder = "PT. CUAN MAKMUR SENTOSA", Balance = 25000000, ChartOfAccountId = coaMandiriId }
         );
 
         // ===== ITEMS (with valid CategoryId and UnitOfMeasureId) =====
@@ -261,7 +273,7 @@ public static class DataSeeder
 
         // ===== ACCOUNTING PERIODS =====
         ctx.AccountingPeriods.AddRange(
-            new AccountingPeriod { Name = "Tahun Buku 2024", StartDate = new DateTime(2024, 1, 1), EndDate = new DateTime(2024, 12, 31), IsActive = true },
+            new AccountingPeriod { Name = $"Tahun Buku {DateTime.Today.Year}", StartDate = new DateTime(DateTime.Today.Year, 1, 1), EndDate = new DateTime(DateTime.Today.Year, 12, 31), IsActive = true },
             new AccountingPeriod { Name = "Tahun Buku 2025", StartDate = new DateTime(2025, 1, 1), EndDate = new DateTime(2025, 12, 31) }
         );
 
@@ -295,7 +307,7 @@ public static class DataSeeder
         ctx.JournalEntries.AddRange(
             new JournalEntry
             {
-                JournalNumber = "JU-2024-0001", TransactionDate = new DateTime(2024, 1, 15),
+                JournalNumber = $"JU-{DateTime.Today.Year}-0001", TransactionDate = new DateTime(DateTime.Today.Year, 1, 15),
                 Description = "Setoran modal awal", Reference = "MOD-001", IsPosted = true, SourceType = JournalSource.Manual,
                 Details = new List<JournalEntryDetail>
                 {
@@ -306,7 +318,7 @@ public static class DataSeeder
             },
             new JournalEntry
             {
-                JournalNumber = "JU-2024-0002", TransactionDate = new DateTime(2024, 2, 20),
+                JournalNumber = $"JU-{DateTime.Today.Year}-0002", TransactionDate = new DateTime(DateTime.Today.Year, 2, 20),
                 Description = "Pembelian barang dagang tunai", Reference = "PO-001", IsPosted = true, SourceType = JournalSource.PurchaseInvoice,
                 Details = new List<JournalEntryDetail>
                 {
@@ -317,7 +329,7 @@ public static class DataSeeder
             },
             new JournalEntry
             {
-                JournalNumber = "JU-2024-0003", TransactionDate = new DateTime(2024, 3, 10),
+                JournalNumber = $"JU-{DateTime.Today.Year}-0003", TransactionDate = new DateTime(DateTime.Today.Year, 3, 10),
                 Description = "Penjualan barang ke Toko Maju Jaya", Reference = "INV-001", IsPosted = true, SourceType = JournalSource.SalesInvoice,
                 Details = new List<JournalEntryDetail>
                 {
@@ -328,7 +340,7 @@ public static class DataSeeder
             },
             new JournalEntry
             {
-                JournalNumber = "JU-2024-0004", TransactionDate = new DateTime(2024, 3, 25),
+                JournalNumber = $"JU-{DateTime.Today.Year}-0004", TransactionDate = new DateTime(DateTime.Today.Year, 3, 25),
                 Description = "Pembayaran gaji karyawan", Reference = "PAY-001", IsPosted = true, SourceType = JournalSource.CashOut,
                 Details = new List<JournalEntryDetail>
                 {
@@ -338,7 +350,7 @@ public static class DataSeeder
             },
             new JournalEntry
             {
-                JournalNumber = "JU-2024-0005", TransactionDate = new DateTime(2024, 4, 5),
+                JournalNumber = $"JU-{DateTime.Today.Year}-0005", TransactionDate = new DateTime(DateTime.Today.Year, 4, 5),
                 Description = "Penerimaan pembayaran dari Toko Maju Jaya", Reference = "RCV-001", IsPosted = true, SourceType = JournalSource.CashIn,
                 Details = new List<JournalEntryDetail>
                 {
@@ -368,37 +380,23 @@ public static class DataSeeder
 
         var itemStockChanges = items.ToDictionary(i => i.Id, _ => 0m);
 
+        // Data contoh dibuat bergulir: 12 bulan terakhir yang berakhir di bulan
+        // berjalan, supaya dasbor dan laporan pajak tidak pernah kosong berapa
+        // pun tahun aplikasi ini dijalankan.
+        var thisMonth = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
+        DateTime MonthOf(int index) => thisMonth.AddMonths(index - 12);
+
         int invCounter = 1;
         int pinvCounter = 1;
         int cashCounter = 1;
         int bankCounter = 1;
 
-        // Beban operasional bulanan (biar jurnal lebih ramai)
-        for (int m = 1; m <= 12; m++)
-        {
-            var amount = 8000000 + (m * 350000);
-            extraJournals.Add(new JournalEntry
-            {
-                JournalNumber = $"JU-2024-{(100 + m):0000}",
-                TransactionDate = new DateTime(2024, m, 25),
-                Description = "Beban operasional bulanan",
-                Reference = $"OPS-{m:000}",
-                IsPosted = true,
-                SourceType = JournalSource.CashOut,
-                Details = new List<JournalEntryDetail>
-                {
-                    new() { ChartOfAccountId = bebanAdmin.Id, Description = "Beban Administrasi", Debit = amount },
-                    new() { ChartOfAccountId = bankBca.Id, Description = "Bank BCA", Credit = amount }
-                }
-            });
-        }
-
-        // Sales invoices 2024 (3 per bulan)
+        // Faktur penjualan: 3 per bulan selama 12 bulan terakhir
         for (int month = 1; month <= 12; month++)
         {
             for (int i = 0; i < 3; i++)
             {
-                var invoiceDate = new DateTime(2024, month, (i * 7 + 3) % 28 + 1);
+                var invoiceDate = MonthOf(month).AddDays((i * 7 + 3) % 27);
                 var customer = customers[(month + i) % customers.Count];
                 var warehouse = warehouses[(month + i) % warehouses.Count];
 
@@ -450,7 +448,7 @@ public static class DataSeeder
 
                 var invoice = new SalesInvoice
                 {
-                    InvoiceNumber = $"INV-2024-{invCounter:0000}",
+                    InvoiceNumber = $"INV-{invoiceDate.Year}-{invCounter:0000}",
                     InvoiceDate = invoiceDate,
                     DueDate = invoiceDate.AddDays(30),
                     CustomerId = customer.Id,
@@ -476,7 +474,7 @@ public static class DataSeeder
                     {
                         cashTransactions.Add(new CashTransaction
                         {
-                            TransactionNumber = $"CSHIN-2024-{cashCounter:0000}",
+                            TransactionNumber = $"KM-{invoiceDate.Year}-{cashCounter:0000}",
                             TransactionDate = invoiceDate.AddDays(1),
                             Type = CashTransactionType.CashIn,
                             ChartOfAccountId = kasKecil.Id,
@@ -495,7 +493,7 @@ public static class DataSeeder
                         var bank = bankAccounts[(month + i) % bankAccounts.Count];
                         bankTransactions.Add(new BankTransaction
                         {
-                            TransactionNumber = $"BNKIN-2024-{bankCounter:0000}",
+                            TransactionNumber = $"BM-{invoiceDate.Year}-{bankCounter:0000}",
                             TransactionDate = invoiceDate.AddDays(2),
                             Type = BankTransactionType.BankIn,
                             BankAccountId = bank.Id,
@@ -514,12 +512,12 @@ public static class DataSeeder
             }
         }
 
-        // Purchase invoices 2024 (2 per bulan)
+        // Faktur pembelian: 2 per bulan selama 12 bulan terakhir
         for (int month = 1; month <= 12; month++)
         {
             for (int i = 0; i < 2; i++)
             {
-                var invoiceDate = new DateTime(2024, month, (i * 10 + 5) % 28 + 1);
+                var invoiceDate = MonthOf(month).AddDays((i * 10 + 5) % 27);
                 var supplier = suppliers[(month + i) % suppliers.Count];
                 var warehouse = warehouses[(month + i) % warehouses.Count];
 
@@ -571,7 +569,7 @@ public static class DataSeeder
 
                 var purchase = new PurchaseInvoice
                 {
-                    InvoiceNumber = $"PINV-2024-{pinvCounter:0000}",
+                    InvoiceNumber = $"PB-{invoiceDate.Year}-{pinvCounter:0000}",
                     InvoiceDate = invoiceDate,
                     DueDate = invoiceDate.AddDays(30),
                     SupplierId = supplier.Id,
@@ -597,7 +595,7 @@ public static class DataSeeder
                     {
                         cashTransactions.Add(new CashTransaction
                         {
-                            TransactionNumber = $"CSHOUT-2024-{cashCounter:0000}",
+                            TransactionNumber = $"KK-{invoiceDate.Year}-{cashCounter:0000}",
                             TransactionDate = invoiceDate.AddDays(1),
                             Type = CashTransactionType.CashOut,
                             ChartOfAccountId = kasKecil.Id,
@@ -616,7 +614,7 @@ public static class DataSeeder
                         var bank = bankAccounts[(month + i) % bankAccounts.Count];
                         bankTransactions.Add(new BankTransaction
                         {
-                            TransactionNumber = $"BNKOUT-2024-{bankCounter:0000}",
+                            TransactionNumber = $"BK-{invoiceDate.Year}-{bankCounter:0000}",
                             TransactionDate = invoiceDate.AddDays(2),
                             Type = BankTransactionType.BankOut,
                             BankAccountId = bank.Id,
@@ -652,51 +650,335 @@ public static class DataSeeder
             }
         }
 
-        // Update saldo COA biar laporan hidup
-        foreach (var coa in allCoa)
+        // Setiap dokumen contoh dibuatkan jurnalnya, lalu seluruh saldo akun
+        // dihitung dari saldo awal ditambah jurnal-jurnal itu. Dengan begitu
+        // Neraca Saldo benar-benar seimbang dan angka di laporan bisa
+        // ditelusuri balik ke transaksinya — bukan angka yang ditanam langsung.
+        await ctx.SaveChangesAsync();
+
+        var demoJournals = new List<JournalEntry>();
+        var journalSeq = 1000;
+
+        JournalEntry NewJournal(DateTime date, string description, string reference, JournalSource source)
         {
-            if (coa.CurrentBalance == 0) coa.CurrentBalance = coa.OpeningBalance;
+            var journal = new JournalEntry
+            {
+                JournalNumber = $"JU-{date.Year}-{journalSeq++:0000}",
+                TransactionDate = date,
+                Description = description,
+                Reference = reference,
+                SourceType = source,
+                IsPosted = true,
+                PostedAt = DateTime.UtcNow,
+                Details = new List<JournalEntryDetail>()
+            };
+            demoJournals.Add(journal);
+            return journal;
         }
 
-        var totalSales = salesInvoices.Sum(s => s.SubTotal);
-        var totalSalesTax = salesInvoices.Sum(s => s.TaxAmount);
-        var totalPurchaseTax = purchaseInvoices.Sum(p => p.TaxAmount);
-        var totalHpp = salesInvoices.Sum(s => s.Details.Sum(d => d.Quantity * items.First(i => i.Id == d.ItemId).CostPrice));
-        var inventoryValue = items.Sum(i => i.StockQuantity * i.CostPrice);
-        var cashIn = cashTransactions.Where(t => t.Type == CashTransactionType.CashIn).Sum(t => t.Amount);
-        var cashOut = cashTransactions.Where(t => t.Type == CashTransactionType.CashOut).Sum(t => t.Amount);
-        var bankIn = bankTransactions.Where(t => t.Type == BankTransactionType.BankIn).Sum(t => t.Amount);
-        var bankOut = bankTransactions.Where(t => t.Type == BankTransactionType.BankOut).Sum(t => t.Amount);
+        void Line(JournalEntry journal, ChartOfAccount account, decimal debit, decimal credit, string note)
+        {
+            if (debit == 0 && credit == 0) return;
+            journal.Details.Add(new JournalEntryDetail
+            {
+                ChartOfAccountId = account.Id,
+                Debit = debit,
+                Credit = credit,
+                Description = note
+            });
+        }
 
-        kasKecil.CurrentBalance = kasKecil.OpeningBalance + cashIn - cashOut;
-        bankBca.CurrentBalance = bankBca.OpeningBalance + bankIn - bankOut;
-        bankMandiri.CurrentBalance = bankMandiri.OpeningBalance + 15000000;
-        piutang.CurrentBalance = customers.Sum(c => c.Balance);
-        persediaan.CurrentBalance = inventoryValue;
-        ppnMasukan.CurrentBalance = totalPurchaseTax;
-        ppnKeluaran.CurrentBalance = totalSalesTax;
-        hutangUsaha.CurrentBalance = suppliers.Sum(s => s.Balance);
-        penjualan.CurrentBalance = totalSales;
-        bebanHpp.CurrentBalance = totalHpp;
+        // Faktur penjualan: piutang, pendapatan, PPN keluaran, dan harga pokok.
+        foreach (var invoice in salesInvoices)
+        {
+            var journal = NewJournal(invoice.InvoiceDate, $"Faktur penjualan {invoice.InvoiceNumber}",
+                invoice.InvoiceNumber, JournalSource.SalesInvoice);
 
-        var bebanGajiValue = 120000000m;
-        var bebanSewaValue = 60000000m;
-        var bebanListrikValue = 18000000m;
-        var bebanInternetValue = 12000000m;
-        var bebanTransportValue = 15000000m;
-        var bebanMarketingValue = 22000000m;
-        var bebanAdminValue = 35000000m;
+            Line(journal, piutang, invoice.GrandTotal, 0, "Piutang usaha");
+            Line(journal, penjualan, 0, invoice.SubTotal, "Penjualan barang");
+            Line(journal, ppnKeluaran, 0, invoice.TaxAmount, "PPN keluaran");
 
-        bebanGaji.CurrentBalance = bebanGajiValue;
-        bebanSewa.CurrentBalance = bebanSewaValue;
-        bebanListrik.CurrentBalance = bebanListrikValue;
-        bebanInternet.CurrentBalance = bebanInternetValue;
-        bebanTransport.CurrentBalance = bebanTransportValue;
-        bebanMarketing.CurrentBalance = bebanMarketingValue;
-        bebanAdmin.CurrentBalance = bebanAdminValue;
+            var cost = invoice.Details.Sum(d => d.Quantity * items.First(i => i.Id == d.ItemId).CostPrice);
+            Line(journal, bebanHpp, cost, 0, "Harga pokok penjualan");
+            Line(journal, persediaan, 0, cost, "Pengurangan persediaan");
+        }
 
-        var totalExpense = bebanHpp.CurrentBalance + bebanGajiValue + bebanSewaValue + bebanListrikValue + bebanInternetValue + bebanTransportValue + bebanMarketingValue + bebanAdminValue;
-        labaBerjalan.CurrentBalance = penjualan.CurrentBalance - totalExpense;
+        // Faktur pembelian: persediaan, PPN masukan, dan hutang usaha.
+        foreach (var invoice in purchaseInvoices)
+        {
+            var journal = NewJournal(invoice.InvoiceDate, $"Faktur pembelian {invoice.InvoiceNumber}",
+                invoice.InvoiceNumber, JournalSource.PurchaseInvoice);
+
+            Line(journal, persediaan, invoice.SubTotal, 0, "Persediaan barang");
+            Line(journal, ppnMasukan, invoice.TaxAmount, 0, "PPN masukan");
+            Line(journal, hutangUsaha, 0, invoice.GrandTotal, "Hutang usaha");
+        }
+
+        // Penerimaan dan pengeluaran kas.
+        foreach (var trx in cashTransactions)
+        {
+            var isIn = trx.Type == CashTransactionType.CashIn;
+            var journal = NewJournal(trx.TransactionDate, trx.Description ?? (isIn ? "Kas masuk" : "Kas keluar"),
+                trx.TransactionNumber, isIn ? JournalSource.CashIn : JournalSource.CashOut);
+
+            if (isIn)
+            {
+                Line(journal, kasKecil, trx.Amount, 0, "Kas masuk");
+                Line(journal, piutang, 0, trx.Amount, "Pelunasan piutang");
+            }
+            else
+            {
+                Line(journal, hutangUsaha, trx.Amount, 0, "Pelunasan hutang");
+                Line(journal, kasKecil, 0, trx.Amount, "Kas keluar");
+            }
+        }
+
+        // Mutasi bank, memakai akun buku besar rekening yang bersangkutan.
+        foreach (var trx in bankTransactions)
+        {
+            var bankCoa = bankAccounts.FirstOrDefault(b => b.Id == trx.BankAccountId)?.ChartOfAccountId == bankMandiri.Id
+                ? bankMandiri
+                : bankBca;
+            var isIn = trx.Type == BankTransactionType.BankIn;
+            var journal = NewJournal(trx.TransactionDate, trx.Description ?? (isIn ? "Bank masuk" : "Bank keluar"),
+                trx.TransactionNumber, isIn ? JournalSource.BankIn : JournalSource.BankOut);
+
+            if (isIn)
+            {
+                Line(journal, bankCoa, trx.Amount, 0, "Penerimaan bank");
+                Line(journal, piutang, 0, trx.Amount, "Pelunasan piutang");
+            }
+            else
+            {
+                Line(journal, hutangUsaha, trx.Amount, 0, "Pembayaran hutang");
+                Line(journal, bankCoa, 0, trx.Amount, "Pengeluaran bank");
+            }
+        }
+
+        // Beban operasional bulanan, dibayar lewat bank.
+        var monthlyExpenses = new (ChartOfAccount Account, decimal Monthly, string Note)[]
+        {
+            (bebanGaji, 800_000m, "Gaji karyawan"),
+            (bebanSewa, 400_000m, "Sewa kantor"),
+            (bebanListrik, 150_000m, "Listrik & air"),
+            (bebanInternet, 100_000m, "Internet & telepon"),
+            (bebanTransport, 120_000m, "Transportasi"),
+            (bebanMarketing, 150_000m, "Pemasaran")
+        };
+
+        for (var m = 1; m <= 12; m++)
+        {
+            var monthEnd = MonthOf(m).AddDays(27);
+            foreach (var (account, monthly, note) in monthlyExpenses)
+            {
+                var journal = NewJournal(monthEnd, note, $"OPS-{monthEnd:yyyyMM}", JournalSource.BankOut);
+                Line(journal, account, monthly, 0, note);
+                Line(journal, bankBca, 0, monthly, "Bank BCA");
+            }
+        }
+
+        ctx.JournalEntries.AddRange(demoJournals);
+        await ctx.SaveChangesAsync();
+
+        // Saldo akun = saldo awal + seluruh mutasi jurnal yang sudah diposting.
+        var postedLines = await ctx.JournalEntryDetails
+            .Include(d => d.JournalEntry)
+            .Where(d => d.JournalEntry!.IsPosted)
+            .Select(d => new { d.ChartOfAccountId, d.Debit, d.Credit })
+            .ToListAsync();
+
+        var movement = postedLines
+            .GroupBy(l => l.ChartOfAccountId)
+            .ToDictionary(g => g.Key, g => (Debit: g.Sum(x => x.Debit), Credit: g.Sum(x => x.Credit)));
+
+        foreach (var coa in allCoa.Where(c => !c.IsHeader))
+        {
+            var delta = movement.TryGetValue(coa.Id, out var mv)
+                ? (coa.AccountType is 1 or 5 ? mv.Debit - mv.Credit : mv.Credit - mv.Debit)
+                : 0m;
+            coa.CurrentBalance = coa.OpeningBalance + delta;
+        }
+
+        // Akun header menampung jumlah keturunannya.
+        var childrenOf = allCoa.Where(c => c.ParentId.HasValue)
+            .GroupBy(c => c.ParentId!.Value)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        decimal Roll(ChartOfAccount node)
+        {
+            if (!node.IsHeader) return node.CurrentBalance;
+            var sum = 0m;
+            if (childrenOf.TryGetValue(node.Id, out var kids)) sum = kids.Sum(Roll);
+            node.CurrentBalance = sum;
+            return sum;
+        }
+
+        foreach (var root in allCoa.Where(c => c.ParentId is null)) Roll(root);
+
+        // Saldo rekening bank mengikuti akun buku besarnya.
+        foreach (var bank in bankAccounts)
+        {
+            var coa = allCoa.FirstOrDefault(c => c.Id == bank.ChartOfAccountId);
+            if (coa is not null) bank.Balance = coa.CurrentBalance;
+        }
+
+        // Piutang dan hutang per mitra disamakan dengan saldo akun kontrolnya.
+        var totalCustomerBalance = customers.Sum(c => c.Balance);
+        if (totalCustomerBalance > 0)
+        {
+            var factor = piutang.CurrentBalance / totalCustomerBalance;
+            foreach (var customer in customers) customer.Balance = Math.Round(customer.Balance * factor, 0);
+        }
+
+        var totalSupplierBalance = suppliers.Sum(sp => sp.Balance);
+        if (totalSupplierBalance > 0)
+        {
+            var factor = hutangUsaha.CurrentBalance / totalSupplierBalance;
+            foreach (var supplier in suppliers) supplier.Balance = Math.Round(supplier.Balance * factor, 0);
+        }
+
+        await ctx.SaveChangesAsync();
+
+        // ===== PAJAK =====
+        await SeedTaxAsync(ctx, salesInvoices, customers, suppliers, thisMonth);
+    }
+
+    /// <summary>
+    /// Faktur pajak, bukti potong PPh, dan SPT Masa PPN untuk data contoh.
+    /// Masa berjalan sengaja ditinggalkan berstatus draf supaya alur
+    /// "terbitkan faktur → susun SPT → lapor" bisa dicoba dari awal.
+    /// </summary>
+    private static async Task SeedTaxAsync(AppDbContext ctx, List<SalesInvoice> salesInvoices,
+        List<Customer> customers, List<Supplier> suppliers, DateTime thisMonth)
+    {
+        var ppnRate = decimal.Parse(SettingsCatalog.DefaultOf(SettingsCatalog.PpnRate));
+        var branch = SettingsCatalog.DefaultOf(SettingsCatalog.NsfpPrefix);
+        var serial = 1L;
+
+        // Faktur pajak diterbitkan untuk semua masa kecuali bulan berjalan.
+        var invoiced = salesInvoices
+            .Where(s => s.TaxAmount > 0 && s.InvoiceDate < thisMonth)
+            .OrderBy(s => s.InvoiceDate)
+            .ToList();
+
+        foreach (var invoice in invoiced)
+        {
+            var customer = customers.FirstOrDefault(c => c.Id == invoice.CustomerId);
+            var year2 = (invoice.InvoiceDate.Year % 100).ToString("00");
+
+            ctx.TaxInvoices.Add(new TaxInvoice
+            {
+                FakturNumber = $"010.{branch}-{year2}.{serial:00000000}",
+                TransactionCode = "01",
+                StatusCode = "0",
+                FakturDate = invoice.InvoiceDate,
+                TaxPeriodMonth = invoice.InvoiceDate.Month,
+                TaxPeriodYear = invoice.InvoiceDate.Year,
+                SalesInvoiceId = invoice.Id,
+                CustomerId = invoice.CustomerId,
+                BuyerNpwp = customer?.TaxNumber,
+                BuyerName = customer?.Name,
+                BuyerAddress = customer?.Address,
+                Dpp = invoice.SubTotal - invoice.DiscountAmount,
+                PpnAmount = invoice.TaxAmount,
+                PpnRate = ppnRate,
+                Status = invoice.InvoiceDate < thisMonth.AddMonths(-1)
+                    ? TaxInvoiceStatus.Approved
+                    : TaxInvoiceStatus.Issued,
+                DjpApprovalCode = invoice.InvoiceDate < thisMonth.AddMonths(-1)
+                    ? $"APV{invoice.InvoiceDate:yyyyMM}{serial:0000}"
+                    : null,
+                DjpSubmittedAt = invoice.InvoiceDate < thisMonth.AddMonths(-1)
+                    ? invoice.InvoiceDate.AddDays(3)
+                    : null
+            });
+            serial++;
+        }
+
+        // Nomor seri berikutnya melanjutkan yang sudah terpakai.
+        var nsfpNext = await ctx.SystemSettings.FirstOrDefaultAsync(s => s.SettingKey == SettingsCatalog.NsfpNext);
+        if (nsfpNext is not null) nsfpNext.SettingValue = serial.ToString("00000000");
+
+        // Bukti potong PPh 23 atas jasa dari pemasok.
+        var slip = 1;
+        for (var i = 11; i >= 1; i--)
+        {
+            var month = thisMonth.AddMonths(-i);
+            var supplier = suppliers[i % suppliers.Count];
+            var dpp = 12_000_000m + i * 750_000m;
+
+            ctx.WithholdingTaxes.Add(new WithholdingTax
+            {
+                SlipNumber = $"BP23-{month:yyyyMM}-{slip:0000}",
+                TaxType = "PPh23",
+                SlipDate = month.AddDays(19),
+                TaxPeriodMonth = month.Month,
+                TaxPeriodYear = month.Year,
+                IsWithholder = true,
+                PartyName = supplier.Name,
+                PartyNpwp = supplier.TaxNumber,
+                SupplierId = supplier.Id,
+                Description = "Jasa perawatan dan perbaikan",
+                Dpp = dpp,
+                Rate = 2,
+                TaxAmount = Math.Round(dpp * 0.02m, 0),
+                IsReported = true
+            });
+            slip++;
+
+            // PPh 21 gaji karyawan.
+            var gaji = 95_000_000m;
+            ctx.WithholdingTaxes.Add(new WithholdingTax
+            {
+                SlipNumber = $"BP21-{month:yyyyMM}-{slip:0000}",
+                TaxType = "PPh21",
+                SlipDate = month.AddDays(24),
+                TaxPeriodMonth = month.Month,
+                TaxPeriodYear = month.Year,
+                IsWithholder = true,
+                PartyName = "Karyawan tetap",
+                Description = "PPh 21 atas gaji bulanan",
+                Dpp = gaji,
+                Rate = 5,
+                TaxAmount = Math.Round(gaji * 0.05m, 0),
+                IsReported = true
+            });
+            slip++;
+        }
+
+        await ctx.SaveChangesAsync();
+
+        // SPT Masa PPN untuk masa-masa yang sudah lewat.
+        var fakturs = await ctx.TaxInvoices.ToListAsync();
+        var purchases = await ctx.PurchaseInvoices.ToListAsync();
+
+        for (var i = 11; i >= 1; i--)
+        {
+            var month = thisMonth.AddMonths(-i);
+            var outputs = fakturs.Where(f => f.TaxPeriodMonth == month.Month && f.TaxPeriodYear == month.Year).ToList();
+            var inputs = purchases.Where(p => p.InvoiceDate.Month == month.Month && p.InvoiceDate.Year == month.Year).ToList();
+
+            var outputTax = outputs.Sum(o => o.PpnAmount);
+            var inputTax = inputs.Sum(p => p.TaxAmount);
+            var submitted = i > 1;
+
+            ctx.TaxReturns.Add(new TaxReturn
+            {
+                PeriodMonth = month.Month,
+                PeriodYear = month.Year,
+                ReturnType = "PPN",
+                OutputDpp = outputs.Sum(o => o.Dpp),
+                OutputTax = outputTax,
+                InputDpp = inputs.Sum(p => p.SubTotal - p.DiscountAmount),
+                InputTax = inputTax,
+                PayableAmount = outputTax - inputTax,
+                Status = submitted ? TaxReturnStatus.Paid : TaxReturnStatus.Draft,
+                NtteNumber = submitted ? $"NTTE{month:yyyyMM}00{i:00}" : null,
+                NtpnNumber = submitted ? $"NTPN{month:yyyyMM}77{i:00}" : null,
+                SubmittedAt = submitted ? month.AddMonths(1).AddDays(14) : null,
+                PaidAt = submitted ? month.AddMonths(1).AddDays(9) : null
+            });
+        }
 
         await ctx.SaveChangesAsync();
     }

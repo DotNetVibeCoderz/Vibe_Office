@@ -2,127 +2,392 @@
 @rendermode @(RenderMode.InteractiveServer)
 @attribute [Authorize(Roles = "Admin,Akuntan,Kasir")]
 @inject AppDbContext DbContext
+@inject SettingsService Settings
+@inject PostingService Posting
+@inject DocumentNumberService Numbers
 @inject NotificationService Notif
 @inject IJSRuntime JS
 
-<PageTitle>Kas - CUAN</PageTitle>
-<div class="cu-flex-between cu-mb-2"><div><h2 style="margin:0;">💵 Transaksi Kas</h2></div><div class="cu-flex cu-gap-1"><button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportExcel">📥 Excel</button><button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportCsv">📄 CSV</button><button class="cu-btn cu-btn-primary cu-btn-sm" @onclick="CreateNew">+ Transaksi Baru</button></div></div>
+<PageTitle>Kas — CUAN</PageTitle>
 
-<div class="cu-card cu-mb-2">
-    <input class="cu-form-input" @bind="searchTerm" @bind:event="oninput" placeholder="🔍 Cari no, deskripsi..." />
+<PageHead Section="Transaksi" Title="Transaksi Kas"
+          Subtitle="@($"Masuk {Settings.Money(TotalIn)} · keluar {Settings.Money(TotalOut)} · bersih {Settings.Money(TotalIn - TotalOut)}")">
+    <Actions>
+        <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportExcel">
+            <Icon Name="download" Size="14" /> Excel
+        </button>
+        <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="ExportCsv">
+            <Icon Name="download" Size="14" /> CSV
+        </button>
+        <button class="cu-btn cu-btn-primary cu-btn-sm" @onclick="() => CreateNew(CashTransactionType.CashIn)">
+            <Icon Name="plus" Size="14" /> Kas masuk
+        </button>
+        <button class="cu-btn cu-btn-outline cu-btn-sm" @onclick="() => CreateNew(CashTransactionType.CashOut)">
+            <Icon Name="plus" Size="14" /> Kas keluar
+        </button>
+    </Actions>
+</PageHead>
+
+@if (message is not null)
+{
+    <div class="cu-alert @messageClass">@message</div>
+}
+
+<div class="cu-filterbar">
+    <div class="cu-search">
+        <span class="cu-search-icon"><Icon Name="search" Size="15" /></span>
+        <input class="cu-form-input" placeholder="Cari nomor atau keterangan…" @bind="searchTerm" @bind:event="oninput" />
+    </div>
+    <select class="cu-select" style="width:170px;" @bind="typeFilter">
+        <option value="">Masuk &amp; keluar</option>
+        <option value="CashIn">Kas masuk</option>
+        <option value="CashOut">Kas keluar</option>
+    </select>
 </div>
 
-<div class="cu-card"><table class="cu-table"><thead><tr><th>No</th><th>Tanggal</th><th>Tipe</th><th>Deskripsi</th><th class="cu-text-right">Jumlah</th><th></th></tr></thead>
-<tbody>@foreach(var t in filteredTransactions){<tr><td style="font-family:monospace;">@t.TransactionNumber</td><td>@t.TransactionDate.ToString("dd/MM/yy")</td><td><span class="cu-badge @(t.Type==CashTransactionType.CashIn?"cu-badge-success":"cu-badge-danger")">@t.Type</span></td><td>@t.Description</td><td class="cu-text-right" style="font-weight:600;">@t.Amount.ToString("N0")</td><td><button class="cu-btn cu-btn-sm cu-btn-outline" @onclick="() => EditTx(t)">✏️</button><button class="cu-btn cu-btn-sm cu-btn-danger" @onclick="() => DeleteTx(t)">🗑️</button></td></tr>}</tbody></table></div>
+<div class="cu-card cu-card-flush" style="margin-bottom:0;">
+    @if (!Filtered().Any())
+    {
+        <EmptyState Title="Belum ada transaksi kas"
+                    Message="Setiap penerimaan dan pengeluaran kas langsung membentuk jurnalnya sendiri." />
+    }
+    else
+    {
+        <div class="cu-table-wrap">
+            <table class="cu-table">
+                <thead>
+                    <tr>
+                        <th>Nomor</th><th>Tanggal</th><th>Akun kas</th><th>Keterangan</th><th>Pihak</th>
+                        <th class="cu-text-right cu-col-debit">Masuk</th>
+                        <th class="cu-text-right cu-col-credit">Keluar</th>
+                        <th>Jurnal</th><th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var trx in Filtered())
+                    {
+                        <tr>
+                            <td class="cu-mono">@trx.TransactionNumber</td>
+                            <td class="cu-mono">@Settings.FormatDate(trx.TransactionDate)</td>
+                            <td class="cu-text-faint">@AccountName(trx.ChartOfAccountId)</td>
+                            <td>@trx.Description</td>
+                            <td class="cu-text-faint">@PartyName(trx)</td>
+                            <td class="cu-text-right cu-col-debit">
+                                @(trx.Type == CashTransactionType.CashIn ? Settings.Number(trx.Amount) : "")
+                            </td>
+                            <td class="cu-text-right cu-col-credit">
+                                @(trx.Type == CashTransactionType.CashOut ? Settings.Number(trx.Amount) : "")
+                            </td>
+                            <td>
+                                <span class="cu-badge @(trx.JournalEntryId is not null ? "cu-badge-success" : "")">
+                                    @(trx.JournalEntryId is not null ? "Terjurnal" : "—")
+                                </span>
+                            </td>
+                            <td class="cu-text-right">
+                                <div class="cu-row-actions">
+                                    <button class="cu-btn cu-btn-outline cu-btn-icon" title="Ubah" @onclick="() => EditTx(trx)">
+                                        <Icon Name="edit" Size="13" />
+                                    </button>
+                                    <button class="cu-btn cu-btn-danger cu-btn-icon" title="Hapus" @onclick="() => DeleteTx(trx)">
+                                        <Icon Name="trash" Size="13" />
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                    <tr class="cu-total-row">
+                        <td colspan="5">Jumlah</td>
+                        <td class="cu-text-right">@Settings.Number(Filtered().Where(t => t.Type == CashTransactionType.CashIn).Sum(t => t.Amount))</td>
+                        <td class="cu-text-right">@Settings.Number(Filtered().Where(t => t.Type == CashTransactionType.CashOut).Sum(t => t.Amount))</td>
+                        <td colspan="2"></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
 
-@if(showCreate){<div class="cu-modal-overlay" @onclick="()=>showCreate=false"><div class="cu-modal" style="min-width:450px;" @onclick:stopPropagation="true">
-<h3 style="margin-top:0;">@(newTx.Id==0?"Transaksi Kas Baru":"Edit Transaksi Kas")</h3>
-<div class="cu-form-group"><label class="cu-form-label">Tipe</label><select class="cu-select" @bind="newTx.Type"><option value="@CashTransactionType.CashIn">💵 Kas Masuk</option><option value="@CashTransactionType.CashOut">💸 Kas Keluar</option></select></div>
-<div class="cu-form-group"><label class="cu-form-label">Tanggal</label><InputDate @bind-Value="newTx.TransactionDate" class="cu-form-input"/></div>
-<div class="cu-form-group"><label class="cu-form-label">Jumlah</label><InputNumber @bind-Value="newTx.Amount" class="cu-form-input"/></div>
-<div class="cu-form-group"><label class="cu-form-label">Deskripsi</label><InputText @bind-Value="newTx.Description" class="cu-form-input"/></div>
-<div class="cu-grid cu-grid-2"><div class="cu-form-group"><label class="cu-form-label">Customer (opsional)</label><select class="cu-select" @bind="newTx.CustomerId"><option value="">--</option>@foreach(var c in customers){<option value="@c.Id">@c.Name</option>}</select></div><div class="cu-form-group"><label class="cu-form-label">Supplier (opsional)</label><select class="cu-select" @bind="newTx.SupplierId"><option value="">--</option>@foreach(var s in suppliers){<option value="@s.Id">@s.Name</option>}</select></div></div>
-<div class="cu-flex cu-gap-1" style="justify-content:flex-end;margin-top:1rem;"><button class="cu-btn cu-btn-outline" @onclick="()=>showCreate=false">Batal</button><button class="cu-btn cu-btn-primary" @onclick="SaveTransaction">💾 Simpan</button></div></div></div>}
+@if (showCreate)
+{
+    <div class="cu-modal-overlay" @onclick="() => showCreate = false">
+        <div class="cu-modal" @onclick:stopPropagation="true">
+            <div class="cu-modal-head">
+                <div>
+                    <span class="cu-eyebrow">Transaksi</span>
+                    <h3>@(newTx.Id == 0 ? "Transaksi kas baru" : $"Ubah {newTx.TransactionNumber}")</h3>
+                </div>
+                <button class="cu-icon-btn" @onclick="() => showCreate = false" aria-label="Tutup">
+                    <Icon Name="close" Size="17" />
+                </button>
+            </div>
+
+            @if (formError is not null)
+            {
+                <div class="cu-alert cu-alert-error">@formError</div>
+            }
+
+            <div class="cu-grid cu-grid-2">
+                <div class="cu-form-group">
+                    <label class="cu-form-label">Jenis</label>
+                    <select class="cu-select" @bind="newTx.Type">
+                        <option value="@CashTransactionType.CashIn">Kas masuk</option>
+                        <option value="@CashTransactionType.CashOut">Kas keluar</option>
+                    </select>
+                </div>
+                <div class="cu-form-group">
+                    <label class="cu-form-label">Tanggal</label>
+                    <InputDate @bind-Value="newTx.TransactionDate" class="cu-form-input" />
+                </div>
+                <div class="cu-form-group">
+                    <label class="cu-form-label">Akun kas</label>
+                    <select class="cu-select" @bind="newTx.ChartOfAccountId">
+                        @foreach (var account in cashAccounts)
+                        {
+                            <option value="@account.Id">@account.AccountCode — @account.AccountName</option>
+                        }
+                    </select>
+                </div>
+                <div class="cu-form-group">
+                    <label class="cu-form-label">Jumlah</label>
+                    <InputNumber @bind-Value="newTx.Amount" class="cu-form-input cu-num" />
+                </div>
+            </div>
+
+            <div class="cu-form-group">
+                <label class="cu-form-label">Keterangan</label>
+                <InputText @bind-Value="newTx.Description" class="cu-form-input"
+                           placeholder="Contoh: pelunasan piutang Toko Maju Jaya" />
+            </div>
+
+            @* Pihak lawan menentukan akun lawan jurnalnya: pelanggan menutup
+               piutang, pemasok menutup hutang. *@
+            <div class="cu-grid cu-grid-2">
+                <div class="cu-form-group">
+                    <label class="cu-form-label">Pelanggan</label>
+                    <select class="cu-select" @bind="newTx.CustomerId">
+                        <option value="">— tidak terkait —</option>
+                        @foreach (var customer in customers)
+                        {
+                            <option value="@customer.Id">@customer.Name</option>
+                        }
+                    </select>
+                    <span class="cu-form-hint">Kalau diisi, jurnalnya mengurangi piutang usaha.</span>
+                </div>
+                <div class="cu-form-group">
+                    <label class="cu-form-label">Pemasok</label>
+                    <select class="cu-select" @bind="newTx.SupplierId">
+                        <option value="">— tidak terkait —</option>
+                        @foreach (var supplier in suppliers)
+                        {
+                            <option value="@supplier.Id">@supplier.Name</option>
+                        }
+                    </select>
+                    <span class="cu-form-hint">Kalau diisi, jurnalnya mengurangi hutang usaha.</span>
+                </div>
+            </div>
+
+            <div class="cu-modal-foot">
+                <button class="cu-btn cu-btn-outline" @onclick="() => showCreate = false">Batal</button>
+                <button class="cu-btn cu-btn-primary" @onclick="SaveTransaction" disabled="@saving">
+                    <Icon Name="save" Size="14" /> @(saving ? "Menyimpan…" : "Simpan")
+                </button>
+            </div>
+        </div>
+    </div>
+}
 
 @code {
-    private List<CashTransaction> transactions=new();
-    private List<Customer> customers=new();
-    private List<Supplier> suppliers=new();
-    private bool showCreate;
-    private CashTransaction newTx=new(){TransactionDate=DateTime.Today};
-    private string searchTerm = "";
+    private List<CashTransaction> transactions = new();
+    private List<Customer> customers = new();
+    private List<Supplier> suppliers = new();
+    private List<ChartOfAccount> cashAccounts = new();
 
-    private IEnumerable<CashTransaction> filteredTransactions => transactions
-        .Where(t => string.IsNullOrEmpty(searchTerm)
-            || t.TransactionNumber.Contains(searchTerm, StringComparison.OrdinalIgnoreCase)
-            || (t.Description ?? "").Contains(searchTerm, StringComparison.OrdinalIgnoreCase))
-        .OrderByDescending(t => t.TransactionDate);
+    private bool showCreate, saving;
+    private CashTransaction newTx = new() { TransactionDate = DateTime.Today };
 
-    protected override async Task OnInitializedAsync(){await LoadData();}
+    private string searchTerm = "", typeFilter = "";
+    private string? message, formError;
+    private string messageClass = "cu-alert-success";
 
-    private async Task LoadData()
+    private decimal TotalIn => transactions.Where(t => t.Type == CashTransactionType.CashIn).Sum(t => t.Amount);
+    private decimal TotalOut => transactions.Where(t => t.Type == CashTransactionType.CashOut).Sum(t => t.Amount);
+
+    protected override async Task OnInitializedAsync()
     {
-        transactions=await DbContext.CashTransactions.OrderByDescending(t=>t.TransactionDate).Take(200).ToListAsync();
-        customers=await DbContext.Customers.ToListAsync();
-        suppliers=await DbContext.Suppliers.ToListAsync();
-    }
-
-    private void CreateNew(){newTx=new CashTransaction{TransactionDate=DateTime.Today};showCreate=true;}
-
-    private void EditTx(CashTransaction tx)
-    {
-        newTx = new CashTransaction
-        {
-            Id = tx.Id,
-            TransactionNumber = tx.TransactionNumber,
-            TransactionDate = tx.TransactionDate,
-            Type = tx.Type,
-            Amount = tx.Amount,
-            Description = tx.Description,
-            CustomerId = tx.CustomerId,
-            SupplierId = tx.SupplierId
-        };
-        showCreate = true;
-    }
-
-    private async Task SaveTransaction(){
-        if (newTx.Id == 0)
-        {
-            newTx.CreatedAt=DateTime.UtcNow;var c=await DbContext.CashTransactions.CountAsync();newTx.TransactionNumber=$"CSH-{DateTime.UtcNow.Year}-{c+1:D4}";DbContext.CashTransactions.Add(newTx);
-        }
-        else
-        {
-            DbContext.CashTransactions.Update(newTx);
-        }
-        await DbContext.SaveChangesAsync();
-        await Notif.NotifyAsync("💵 Kas",$"#{newTx.TransactionNumber} — Rp {newTx.Amount:N0}","Info");
-        showCreate=false;await LoadData();
-    }
-
-    private async Task DeleteTx(CashTransaction tx)
-    {
-        if (!await ConfirmAsync($"Hapus transaksi {tx.TransactionNumber}?") ) return;
-        DbContext.CashTransactions.Remove(tx);
-        await DbContext.SaveChangesAsync();
+        await Settings.EnsureLoadedAsync();
         await LoadData();
     }
 
+    private async Task LoadData()
+    {
+        transactions = await DbContext.CashTransactions
+            .OrderByDescending(t => t.TransactionDate).ThenByDescending(t => t.Id)
+            .Take(200).ToListAsync();
+        customers = await DbContext.Customers.Where(c => c.IsActive).OrderBy(c => c.Name).ToListAsync();
+        suppliers = await DbContext.Suppliers.Where(s => s.IsActive).OrderBy(s => s.Name).ToListAsync();
+
+        // Akun kas: seluruh akun aktiva lancar yang namanya mengandung "kas".
+        cashAccounts = await DbContext.ChartOfAccounts
+            .Where(a => !a.IsHeader && a.AccountType == 1 &&
+                        (a.AccountName.Contains("Kas") || a.AccountName.Contains("Bank")))
+            .OrderBy(a => a.AccountCode)
+            .ToListAsync();
+    }
+
+    private IEnumerable<CashTransaction> Filtered() => transactions
+        .Where(t => string.IsNullOrEmpty(typeFilter) || t.Type.ToString() == typeFilter)
+        .Where(t => string.IsNullOrWhiteSpace(searchTerm)
+                    || t.TransactionNumber.Contains(searchTerm, StringComparison.OrdinalIgnoreCase)
+                    || (t.Description ?? "").Contains(searchTerm, StringComparison.OrdinalIgnoreCase));
+
+    private string AccountName(int id) => cashAccounts.FirstOrDefault(a => a.Id == id)?.AccountName ?? "—";
+
+    private string PartyName(CashTransaction trx)
+    {
+        if (trx.CustomerId is not null)
+            return customers.FirstOrDefault(c => c.Id == trx.CustomerId)?.Name ?? "—";
+        if (trx.SupplierId is not null)
+            return suppliers.FirstOrDefault(s => s.Id == trx.SupplierId)?.Name ?? "—";
+        return "—";
+    }
+
+    private void CreateNew(CashTransactionType type)
+    {
+        var defaultCode = Settings.Get(SettingsCatalog.AccountCash);
+        var defaultAccount = cashAccounts.FirstOrDefault(a => a.AccountCode == defaultCode)
+                             ?? cashAccounts.FirstOrDefault();
+
+        newTx = new CashTransaction
+        {
+            TransactionDate = DateTime.Today,
+            Type = type,
+            ChartOfAccountId = defaultAccount?.Id ?? 0
+        };
+        formError = null;
+        showCreate = true;
+    }
+
+    private void EditTx(CashTransaction trx)
+    {
+        newTx = new CashTransaction
+        {
+            Id = trx.Id,
+            TransactionNumber = trx.TransactionNumber,
+            TransactionDate = trx.TransactionDate,
+            Type = trx.Type,
+            ChartOfAccountId = trx.ChartOfAccountId,
+            Amount = trx.Amount,
+            Description = trx.Description,
+            CustomerId = trx.CustomerId,
+            SupplierId = trx.SupplierId,
+            JournalEntryId = trx.JournalEntryId,
+            IsPosted = trx.IsPosted
+        };
+        formError = null;
+        showCreate = true;
+    }
+
+    private async Task SaveTransaction()
+    {
+        formError = null;
+
+        if (newTx.Amount <= 0) { formError = "Jumlah harus lebih besar dari nol."; return; }
+        if (newTx.ChartOfAccountId == 0) { formError = "Pilih akun kas lebih dulu."; return; }
+
+        saving = true;
+        try
+        {
+            if (newTx.Id == 0)
+            {
+                var kind = newTx.Type == CashTransactionType.CashIn ? DocumentKind.CashIn : DocumentKind.CashOut;
+                newTx.TransactionNumber = await Numbers.NextAsync(DbContext, kind, newTx.TransactionDate);
+                newTx.CreatedAt = DateTime.UtcNow;
+                DbContext.CashTransactions.Add(newTx);
+                await DbContext.SaveChangesAsync();
+
+                await Posting.PostCashAsync(newTx);
+                await DbContext.SaveChangesAsync();
+
+                await Notif.NotifyAsync(
+                    newTx.Type == CashTransactionType.CashIn ? "Kas masuk" : "Kas keluar",
+                    $"{newTx.TransactionNumber} — {Settings.Money(newTx.Amount)}",
+                    "Info", link: "/transactions/cash");
+            }
+            else
+            {
+                var existing = await DbContext.CashTransactions.FirstOrDefaultAsync(t => t.Id == newTx.Id);
+                if (existing is not null)
+                {
+                    await Posting.ReverseDocumentJournalAsync(existing.JournalEntryId);
+                    existing.JournalEntryId = null;
+                    existing.IsPosted = false;
+
+                    existing.TransactionDate = newTx.TransactionDate;
+                    existing.Type = newTx.Type;
+                    existing.ChartOfAccountId = newTx.ChartOfAccountId;
+                    existing.Amount = newTx.Amount;
+                    existing.Description = newTx.Description;
+                    existing.CustomerId = newTx.CustomerId;
+                    existing.SupplierId = newTx.SupplierId;
+                    await DbContext.SaveChangesAsync();
+
+                    await Posting.PostCashAsync(existing);
+                    await DbContext.SaveChangesAsync();
+                }
+            }
+
+            Say($"Transaksi {newTx.TransactionNumber} tersimpan.", true);
+            showCreate = false;
+            await LoadData();
+        }
+        catch (InvalidOperationException ex)
+        {
+            formError = ex.Message;
+        }
+        finally { saving = false; }
+    }
+
+    private async Task DeleteTx(CashTransaction trx)
+    {
+        if (!await JS.InvokeAsync<bool>("cuanConfirm",
+            $"Hapus transaksi {trx.TransactionNumber}? Jurnalnya ikut dibatalkan.")) return;
+
+        await Posting.ReverseDocumentJournalAsync(trx.JournalEntryId);
+        DbContext.CashTransactions.Remove(trx);
+        await DbContext.SaveChangesAsync();
+
+        Say($"Transaksi {trx.TransactionNumber} dihapus.", true);
+        await LoadData();
+    }
+
+    private void Say(string text, bool ok)
+    {
+        message = text;
+        messageClass = ok ? "cu-alert-success" : "cu-alert-warning";
+    }
+
+    private List<object> ExportRows() => Filtered().Select(t => (object)new
+    {
+        Nomor = t.TransactionNumber,
+        Tanggal = t.TransactionDate.ToString("yyyy-MM-dd"),
+        Jenis = t.Type == CashTransactionType.CashIn ? "Kas masuk" : "Kas keluar",
+        Jumlah = t.Amount,
+        Keterangan = t.Description
+    }).ToList();
+
     private async Task ExportCsv()
     {
-        var data = filteredTransactions.Select(t => new
-        {
-            t.TransactionNumber,
-            t.TransactionDate,
-            t.Type,
-            t.Amount,
-            t.Description
-        });
-
-        var bytes = ExportService.ExportToCsv(data);
-        await DownloadAsync(bytes, "cash_transactions.csv", "text/csv");
+        var bytes = ExportService.ExportToCsv(ExportRows());
+        await Download(bytes, "transaksi-kas.csv", "text/csv");
     }
 
     private async Task ExportExcel()
     {
-        var data = filteredTransactions.Select(t => new
-        {
-            t.TransactionNumber,
-            t.TransactionDate,
-            t.Type,
-            t.Amount,
-            t.Description
-        });
-
-        var bytes = ExportService.ExportToExcel(data, "CashTransactions");
-        await DownloadAsync(bytes, "cash_transactions.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        var bytes = ExportService.ExportToExcel(ExportRows(), "Kas");
+        await Download(bytes, "transaksi-kas.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     }
 
-    private async Task DownloadAsync(byte[] data, string fileName, string contentType)
-    {
-        var base64 = Convert.ToBase64String(data);
-        await JS.InvokeVoidAsync("downloadFileFromBytes", fileName, contentType, base64);
-    }
-
-    private async Task<bool> ConfirmAsync(string message) =>
-        await JS.InvokeAsync<bool>("confirm", message);
+    private async Task Download(byte[] data, string fileName, string contentType)
+        => await JS.InvokeVoidAsync("downloadFileFromBytes", fileName, contentType, Convert.ToBase64String(data));
 }
