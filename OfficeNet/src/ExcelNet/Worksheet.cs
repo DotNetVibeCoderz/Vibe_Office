@@ -5,6 +5,7 @@ using System.Globalization;
 using ExcelNet.Styles;
 using OfficeNet.Core;
 using ExcelNet.Charts;
+using ExcelNet.Pivot;
 using OfficeNet.Core.Charts;
 using OfficeNet.Core.Drawing;
 using OfficeNet.Core.Packaging;
@@ -816,6 +817,23 @@ public sealed class Worksheet
         Workbook.Package.MarkDirty();
         return rule;
     }
+
+    // ---- Pivot tables --------------------------------------------------------------------------
+
+    /// <summary>Adds a pivot table summarising a range on another sheet (or this one).</summary>
+    /// <remarks>
+    /// Excel computes the result grid when it opens the file; the parts written here are the cache
+    /// and the layout. See <see cref="Pivot.PivotTable"/> for why.
+    /// </remarks>
+    public PivotTable AddPivotTable(PivotTableDefinition definition) =>
+        PivotTable.Create(this, definition);
+
+    /// <summary>The pivot tables on this sheet.</summary>
+    public IReadOnlyList<OpcPart> PivotTableParts =>
+        [.. Part.RelationshipsByType(RelationshipTypes.PivotTable)
+            .Select(r => Part.RelatedPart(r.Id))
+            .Where(p => p is not null)
+            .Select(p => p!)];
 
     // ---- Charts --------------------------------------------------------------------------------
 

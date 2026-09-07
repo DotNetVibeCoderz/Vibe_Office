@@ -36,7 +36,6 @@ orang lain.
 
 | Butir | Alasan ia masuk v1.0 |
 |---|---|
-| Chart & pivot table ExcelNet | Diminta eksplisit di spesifikasi; laporan tanpa chart terasa setengah jadi |
 | Rasterisasi (`OfficeNet.Rendering`) | Memblokir screenshot dokumentasi, thumbnail, dan preview web |
 | Lima aplikasi contoh | Spesifikasi menyebutnya; juga uji integrasi terbaik yang ada |
 | Dokumentasi bilingual + screenshot | Library tanpa dokumen adalah library yang tidak dipakai |

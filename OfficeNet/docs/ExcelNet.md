@@ -264,6 +264,45 @@ foreach (var chart in sheet.Charts)
 The same twelve types as [PowerPointNet](PowerPointNet.md#charts). **The PDF exporter does not draw
 worksheet charts** — only PowerPoint's are rendered on export. Excel itself shows them normally.
 
+## Pivot tables
+
+```csharp
+using ExcelNet.Pivot;
+
+var summary = workbook.AddSheet("Ringkasan");
+
+summary.AddPivotTable(new PivotTableDefinition
+{
+    Source = workbook["Data"],
+    SourceRange = CellRangeReference.Parse("A1:D100"),   // headers included
+    Target = CellReference.Parse("A3"),
+    Rows = ["Wilayah"],
+    Columns = ["Produk"],
+    Values = [new PivotValue("Total", PivotFunction.Sum)],
+});
+```
+
+Fields are addressed by their header text, so the source range must start at the header row. Eleven
+functions: `Sum` (the default), `Count`, `CountNumbers`, `Average`, `Max`, `Min`, `Product`,
+`StdDev`, `StdDevP`, `Var`, `VarP`.
+
+A pivot is four parts, not one:
+
+```
+workbook.xml  --pivotCacheDefinition-->  pivotCacheDefinition1.xml  --pivotCacheRecords-->  records
+sheet2.xml    --pivotTable-->            pivotTable1.xml            --pivotCacheDefinition-->  ^
+```
+
+The cache is a snapshot of the source data — which is why editing the source changes nothing until
+someone refreshes — and the table holds only the layout. Both the workbook and the table must name
+the same `cacheId`, or Excel reports the file as damaged.
+
+**The result grid is not written.** The parts describe the cache and the layout; Excel computes the
+cells when it opens the file, which is what `refreshOnLoad` asks for. So Excel shows a complete
+pivot table, and a non-Excel consumer — including this library's own PDF export — sees that area as
+empty. Computing the grid here would mean reimplementing Excel's aggregation and subtotal layout,
+and any disagreement would show up as a table that changes the moment someone opens it.
+
 ## CSV, JSON and SQL
 
 ```csharp

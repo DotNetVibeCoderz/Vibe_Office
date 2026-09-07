@@ -174,9 +174,40 @@ public static class Office
             OfficeFormat.LegacyBinaryOffice => throw new OfficeNetNotSupportedException(
                 $"'{Path.GetFileName(path)}' is a legacy binary Office file (.doc, .xls or .ppt). " +
                 "OfficeNet reads the XML formats only — convert it to .docx, .xlsx or .pptx first."),
-            _ => throw new OfficeNetException(
-                $"'{Path.GetFileName(path)}' is not a document OfficeNet recognises."),
+            _ => OpenWithPlugin(path),
         };
+    }
+
+    /// <summary>
+    /// Last resort for <see cref="Open"/>: a format a plugin registered.
+    /// </summary>
+    /// <remarks>
+    /// Reached only after the built-ins have declined, so a plugin can add formats but never
+    /// intercept an existing one.
+    /// </remarks>
+    private static IOfficeDocument OpenWithPlugin(string path)
+    {
+        using var stream = File.OpenRead(path);
+
+        // Buffered because a handler sniffs and then reads, and a FileStream that a handler leaves
+        // mid-way is awkward to rewind for the next one.
+        using var buffer = new MemoryStream();
+        stream.CopyTo(buffer);
+        buffer.Position = 0;
+
+        if (OfficeFormats.FindByContent(buffer) is { } handler)
+        {
+            buffer.Position = 0;
+            return handler.Open(buffer);
+        }
+
+        var registered = OfficeFormats.Registered.Count;
+
+        throw new OfficeNetException(
+            $"'{Path.GetFileName(path)}' is not a document OfficeNet recognises." +
+            (registered == 0
+                ? " Register a handler with OfficeFormats.Register to add a format."
+                : $" {registered} plugin handler(s) were asked and none claimed it."));
     }
 
     /// <summary>Extracts a file's text whatever format it is, PDF included.</summary>
@@ -257,14 +288,25 @@ public static class Office
         return pdfPath;
     }
 
-    /// <summary>The file extensions <see cref="Open"/> and <see cref="ConvertToPdf"/> handle.</summary>
-    public static IReadOnlyList<string> SupportedExtensions { get; } =
+    /// <summary>The extensions the four built-in formats use.</summary>
+    public static IReadOnlyList<string> BuiltInExtensions { get; } =
     [
         ".docx", ".docm", ".dotx",
         ".xlsx", ".xlsm", ".xltx",
         ".pptx", ".pptm", ".ppsx", ".potx",
         ".pdf",
     ];
+
+    /// <summary>
+    /// The file extensions <see cref="Open"/> handles, including any a plugin registered.
+    /// </summary>
+    /// <remarks>
+    /// Computed rather than cached: a handler can be registered at any point, and a list captured
+    /// at startup would silently omit whatever was added afterwards.
+    /// </remarks>
+    public static IReadOnlyList<string> SupportedExtensions =>
+        [.. BuiltInExtensions.Concat(OfficeFormats.Extensions)
+            .Distinct(StringComparer.OrdinalIgnoreCase)];
 
     /// <summary>True when a path's extension is one OfficeNet handles.</summary>
     /// <remarks>

@@ -138,6 +138,52 @@ var png = DocumentRenderer.RenderThumbnail(uploaded, widthPixels: 320);
 return Results.File(png, "image/png");
 ```
 
+## Adding a format
+
+`Office` handles four formats. A fifth — Visio's `.vsdx`, OneNote's `.one`, or something of your
+own — is added by registering a handler:
+
+```csharp
+using OfficeNet;
+
+public sealed class VisioHandler : IOfficeFormatHandler
+{
+    public string Name => "Visio";
+
+    public IReadOnlyList<string> Extensions => [".vsdx"];
+
+    // Looks inside. Extensions lie — a renamed download is the normal case — so this is what
+    // actually decides, and Extensions is only a hint for filtering a folder listing.
+    public bool CanOpen(Stream stream)
+    {
+        using var package = OpcPackage.Open(stream);
+        return package.MainDocumentPart?.ContentType == "application/vnd.ms-visio.drawing.main+xml";
+    }
+
+    public IOfficeDocument Open(Stream stream) => VisioDocument.Open(stream);
+}
+
+OfficeFormats.Register(new VisioHandler());
+```
+
+After that `Office.Open`, `Office.ExtractText`, `Office.SupportedExtensions` and
+`Office.IsSupportedExtension` all know about it.
+
+Two guarantees worth relying on:
+
+- **Built-in formats always win.** A handler cannot claim `.docx` out from under WordNet, so adding
+  a plugin can never change how existing files are read.
+- **A handler that throws while sniffing is skipped**, not propagated. One misbehaving plugin does
+  not break detection for the others.
+
+Registration is explicit — there is no assembly scanning. Scanning would make the supported formats
+depend on which assemblies happened to load, turning a missing format into a mystery rather than a
+missing line of code.
+
+`.vsdx` and `.one` are both OPC packages, so `OfficeNet.Core.Packaging` already handles the
+container and only the document model is new work. That is the whole reason the container lives in
+Core.
+
 ## See also
 
 - [Core concepts](Core.md) — what the formats share

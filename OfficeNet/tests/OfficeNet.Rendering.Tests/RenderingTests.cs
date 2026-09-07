@@ -263,29 +263,3 @@ public class RenderingTests
         Assert.Contains(".txt", exception.Message, StringComparison.Ordinal);
     }
 }
-
-/// <summary>A directory that deletes itself.</summary>
-internal sealed class TempDirectory : IDisposable
-{
-    public TempDirectory()
-    {
-        Path = System.IO.Path.Combine(
-            System.IO.Path.GetTempPath(), "officenet-render-" + Guid.NewGuid().ToString("N")[..8]);
-
-        Directory.CreateDirectory(Path);
-    }
-
-    public string Path { get; }
-
-    public void Dispose()
-    {
-        try
-        {
-            Directory.Delete(Path, recursive: true);
-        }
-        catch (IOException)
-        {
-            // A file still held open by a failed test must not mask the test's own failure.
-        }
-    }
-}

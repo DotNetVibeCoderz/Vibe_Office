@@ -138,6 +138,52 @@ var png = DocumentRenderer.RenderThumbnail(uploaded, widthPixels: 320);
 return Results.File(png, "image/png");
 ```
 
+## Menambahkan format
+
+`Office` menangani empat format. Format kelima — `.vsdx` milik Visio, `.one` milik OneNote, atau
+format Anda sendiri — ditambahkan dengan mendaftarkan sebuah handler:
+
+```csharp
+using OfficeNet;
+
+public sealed class VisioHandler : IOfficeFormatHandler
+{
+    public string Name => "Visio";
+
+    public IReadOnlyList<string> Extensions => [".vsdx"];
+
+    // Melihat ke dalam berkas. Ekstensi bisa berbohong — berkas yang diganti namanya adalah kasus
+    // biasa, bukan kasus aneh — jadi inilah yang benar-benar memutuskan, sementara Extensions hanya
+    // petunjuk untuk menyaring daftar folder.
+    public bool CanOpen(Stream stream)
+    {
+        using var package = OpcPackage.Open(stream);
+        return package.MainDocumentPart?.ContentType == "application/vnd.ms-visio.drawing.main+xml";
+    }
+
+    public IOfficeDocument Open(Stream stream) => VisioDocument.Open(stream);
+}
+
+OfficeFormats.Register(new VisioHandler());
+```
+
+Setelah itu `Office.Open`, `Office.ExtractText`, `Office.SupportedExtensions`, dan
+`Office.IsSupportedExtension` semuanya mengenalinya.
+
+Dua jaminan yang bisa Anda andalkan:
+
+- **Format bawaan selalu menang.** Sebuah handler tidak bisa merebut `.docx` dari WordNet, sehingga
+  menambahkan plugin tidak pernah mengubah cara berkas yang sudah ada dibaca.
+- **Handler yang melempar saat mengendus dilewati**, bukan diteruskan. Satu plugin yang bermasalah
+  tidak merusak deteksi untuk yang lain.
+
+Pendaftaran bersifat eksplisit — tidak ada pemindaian assembly. Pemindaian akan membuat daftar
+format yang didukung bergantung pada assembly mana yang kebetulan termuat, sehingga format yang
+hilang menjadi misteri alih-alih satu baris kode yang belum ditulis.
+
+`.vsdx` dan `.one` sama-sama paket OPC, jadi `OfficeNet.Core.Packaging` sudah menangani
+kontainernya dan yang baru hanyalah model dokumennya. Itulah alasan kontainer tersebut hidup di Core.
+
 ## Lihat juga
 
 - [Konsep inti](Core.md) — apa yang dimiliki bersama format-formatnya

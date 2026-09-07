@@ -36,6 +36,11 @@ public sealed class Workbook : OfficeDocument, IReadOnlyList<Worksheet>
 
     private readonly OpcPart _workbookPart;
     private readonly List<Worksheet> _sheets = [];
+
+    // Pivot caches are workbook-wide: the cacheId ties the workbook's <pivotCaches> entry to the
+    // pivot table that uses it, and the two must agree or Excel reports the file as damaged.
+    private readonly List<(int CacheId, OpcPart Definition)> _pivotCaches = [];
+    private int _nextPivotCacheId = 1;
     private OpcPart? _sharedStringsPart;
 
     private Workbook(OpcPackage package, OpcPart workbookPart) : base(package)
@@ -51,6 +56,12 @@ public sealed class Workbook : OfficeDocument, IReadOnlyList<Worksheet>
 
     /// <summary>The workbook's shared string table.</summary>
     public SharedStrings SharedStrings { get; private set; } = new();
+
+    internal int NextPivotCacheId() => _nextPivotCacheId++;
+
+    /// <summary>Records a pivot cache so the workbook part can list it on save.</summary>
+    internal void RegisterPivotCache(int cacheId, OpcPart definition) =>
+        _pivotCaches.Add((cacheId, definition));
 
     /// <summary>The worksheets, in tab order.</summary>
     public IReadOnlyList<Worksheet> Worksheets => _sheets;
@@ -466,7 +477,43 @@ public sealed class Workbook : OfficeDocument, IReadOnlyList<Worksheet>
         views.Add(new XElement(Ns.S + "workbookView",
             new XAttribute("activeTab", activeIndex)));
 
+        WritePivotCaches(root);
+
         Package.MarkDirty();
+    }
+
+    /// <summary>
+    /// Lists the pivot caches on the workbook part.
+    /// </summary>
+    /// <remarks>
+    /// <c>pivotCaches</c> sits near the end of the CT_Workbook sequence — after <c>sheets</c> and
+    /// <c>definedNames</c> — so it is appended rather than inserted. A cache the workbook does not
+    /// list is a cache no pivot table can reach, and Excel reports the file as damaged.
+    /// </remarks>
+    private void WritePivotCaches(XElement root)
+    {
+        root.Elements(Ns.S + "pivotCaches").Remove();
+
+        if (_pivotCaches.Count == 0)
+        {
+            return;
+        }
+
+        var caches = new XElement(Ns.S + "pivotCaches");
+
+        foreach (var (cacheId, definition) in _pivotCaches)
+        {
+            var relationship = _workbookPart
+                .RelationshipsByType(RelationshipTypes.PivotCacheDefinition)
+                .FirstOrDefault(r => r.TargetPartName == definition.Name)
+                ?? _workbookPart.AddRelationship(definition, RelationshipTypes.PivotCacheDefinition);
+
+            caches.Add(new XElement(Ns.S + "pivotCache",
+                new XAttribute("cacheId", cacheId),
+                new XAttribute(Ns.R + "id", relationship.Id)));
+        }
+
+        root.Add(caches);
     }
 
     private void WriteStyles()

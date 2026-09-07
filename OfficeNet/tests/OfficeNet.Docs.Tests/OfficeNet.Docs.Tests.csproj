@@ -11,6 +11,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\OfficeNet\OfficeNet.csproj" />
     <ProjectReference Include="..\..\src\OfficeNet.Rendering\OfficeNet.Rendering.csproj" />
+    <ProjectReference Include="..\OfficeNet.TestKit\OfficeNet.TestKit.csproj" />
   </ItemGroup>
 
   <ItemGroup>

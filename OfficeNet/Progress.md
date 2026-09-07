@@ -148,7 +148,11 @@ Dibuat oleh Gravicode Studios, dipimpin oleh Kang Fadhil.
 
 - [x] Facade `Office.Open(path)` yang mendeteksi format dari isi, bukan ekstensi
 - [x] `Office.DetectFormat`, `Office.ExtractText`, `Office.ConvertToPdf`, `SupportedExtensions`
-- [ ] Registry plugin (`VisioNet`, `OneNoteNet`)
+- [x] **Registry plugin** (`OfficeFormats` + `IOfficeFormatHandler`) — `Office.Open`,
+      `ExtractText`, `SupportedExtensions`, dan `IsSupportedExtension` berkonsultasi ke registry.
+      Format bawaan selalu menang, handler yang melempar saat mengendus dilewati, dan pendaftaran
+      bersifat eksplisit (tanpa pemindaian assembly). Dibuktikan oleh 10 tes yang mendaftarkan
+      format OPC baru dari ujung ke ujung.
 
 ## OfficeNet.Rendering — `Gravicode.OfficeNet.Rendering`
 
@@ -162,18 +166,18 @@ sehingga kelima paket lainnya tetap murni terkelola.
 - [x] Rotasi halaman diterapkan seperti yang dilakukan penampil
 - [ ] Gradien, pattern, soft mask, clipping — di luar cakupan renderer pratinjau
 
-## Pengujian — **361 tes, semua lulus**
+## Pengujian — **389 tes, semua lulus**
 
 - [x] `tests/OfficeNet.TestKit` — `OpcValidator` (pembaca independen), `TempFile`, `TestImages`
 - [x] `tests/OfficeNet.Core.Tests` — 41 tes
 - [x] `tests/PdfNet.Tests` — 45 tes
 - [x] `tests/WordNet.Tests` — 34 tes (termasuk `DocxValidator`: urutan skema, sectPr, w:tc, r:id)
-- [x] `tests/ExcelNet.Tests` — 94 tes (termasuk `XlsxValidator`: urutan anak, fill 0/1, sharedStrings)
+- [x] `tests/ExcelNet.Tests` — 111 tes (termasuk `XlsxValidator`: urutan anak, fill 0/1, sharedStrings)
 - [x] `tests/PowerPointNet.Tests` — 109 tes (termasuk `PptxValidator`: sldId ≥ 256, spTree, tema,
       dan round-trip chart untuk kesepuluh tipe)
 - [x] `tests/OfficeNet.Rendering.Tests` — 11 tes; memeriksa **piksel** pada posisi yang diketahui,
       bukan sekadar "menghasilkan PNG"
-- [x] `tests/OfficeNet.Docs.Tests` — 25 tes: **setiap contoh kode di `docs/` dan setiap sel kode di
+- [x] `tests/OfficeNet.Docs.Tests` — 36 tes: **setiap contoh kode di `docs/` dan setiap sel kode di
       `notebooks/` dikompilasi dan dijalankan**
 - [x] `WordNet.Tests.ScalingTests` — menjaga *bentuk biaya*, bukan kecepatan: membandingkan waktu N
       terhadap 4N sehingga kembalinya jalur O(N²) membuat tes gagal
@@ -276,6 +280,4 @@ Tes tidak bisa melihat keduanya: keluarannya benar, hanya lambat.
 
 ## Yang masih tersisa
 
-- [ ] Chart & pivot table ExcelNet
-- [ ] Registry plugin `VisioNet` / `OneNoteNet`
 - [ ] Publikasi ke NuGet (paket sudah pack bersih: 7 paket + symbol)

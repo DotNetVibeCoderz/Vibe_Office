@@ -269,6 +269,45 @@ Dua belas tipe yang sama seperti di [PowerPointNet](PowerPointNet.md#chart). **P
 menggambar chart worksheet** — hanya chart PowerPoint yang dirender saat ekspor. Excel sendiri
 menampilkannya seperti biasa.
 
+## Pivot table
+
+```csharp
+using ExcelNet.Pivot;
+
+var summary = workbook.AddSheet("Ringkasan");
+
+summary.AddPivotTable(new PivotTableDefinition
+{
+    Source = workbook["Data"],
+    SourceRange = CellRangeReference.Parse("A1:D100"),   // termasuk baris header
+    Target = CellReference.Parse("A3"),
+    Rows = ["Wilayah"],
+    Columns = ["Produk"],
+    Values = [new PivotValue("Total", PivotFunction.Sum)],
+});
+```
+
+Field dialamatkan lewat teks header-nya, jadi rentang sumber harus dimulai dari baris header.
+Sebelas fungsi: `Sum` (baku), `Count`, `CountNumbers`, `Average`, `Max`, `Min`, `Product`,
+`StdDev`, `StdDevP`, `Var`, `VarP`.
+
+Satu pivot adalah empat part, bukan satu:
+
+```
+workbook.xml  --pivotCacheDefinition-->  pivotCacheDefinition1.xml  --pivotCacheRecords-->  records
+sheet2.xml    --pivotTable-->            pivotTable1.xml            --pivotCacheDefinition-->  ^
+```
+
+Cache adalah cuplikan data sumber — itulah sebabnya menyunting sumber tidak mengubah apa pun sampai
+seseorang me-refresh — sedangkan tabelnya hanya menyimpan tata letak. Workbook dan tabel harus
+menyebut `cacheId` yang sama, atau Excel melaporkan berkasnya rusak.
+
+**Grid hasilnya tidak ditulis.** Part-nya menjelaskan cache dan tata letak; Excel menghitung selnya
+saat membuka berkas, sesuai permintaan `refreshOnLoad`. Jadi Excel menampilkan pivot table yang
+lengkap, sementara konsumen non-Excel — termasuk ekspor PDF library ini sendiri — melihat area itu
+kosong. Menghitung grid-nya di sini berarti menulis ulang agregasi dan tata letak subtotal Excel,
+dan setiap ketidakcocokan akan tampak sebagai tabel yang berubah begitu seseorang membukanya.
+
 ## CSV, JSON, dan SQL
 
 ```csharp
