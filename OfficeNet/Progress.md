@@ -298,11 +298,31 @@ Tujuh paket beserta symbol package, dipublikasikan 8 September 2026:
 - [x] **Diverifikasi dengan mengonsumsinya dari proyek baru** lewat nuget.org: Word, Excel dengan
       chart dan pivot, `SUM` yang benar-benar dihitung, konversi PDF, dan render PNG
 
+## CI — gagal, lalu diperbaiki
+
+Workflow memang terpicu di ketiga commit pertama, dan **gagal di ketiganya**. Klaim "seharusnya
+jalan" ternyata setengah benar: ia jalan, tetapi tidak hijau.
+
+Penyebabnya satu, dan asalnya dari sini:
+
+- `Avalonia.Diagnostics` direferensikan pada versi **12.1.1, yang tidak pernah ada** — paket itu
+  berhenti di 11.3.20. Referensinya bersyarat `Configuration == Debug`, sedangkan setiap build
+  lokal memakai `-c Release`, sehingga tidak pernah dievaluasi di sini. CI menjalankan
+  `dotnet restore` **tanpa** konfigurasi, yang berarti Debug, jadi paket itu diminta dan restore
+  gagal sebelum satu baris pun dikompilasi. Paketnya juga tidak pernah dipakai:
+  `AttachDevTools()` tidak ada di mana-mana.
+
+Dua perbaikan:
+
+- [x] Referensi dan versinya dibuang, dengan catatan di `Directory.Packages.props` supaya tidak
+      ditambahkan kembali begitu saja
+- [x] `Configuration: Release` diset di level workflow dan diteruskan ke `restore`, sehingga
+      restore dan build tidak bisa lagi mengevaluasi konfigurasi yang berbeda
+
+Pelajarannya: **membangun hanya dengan `-c Release` di lokal menyembunyikan seluruh graf dependensi
+Debug.** `dotnet restore` tanpa argumen adalah cara termurah menemukannya.
+
 ## Yang masih tersisa
 
-- [ ] **CI belum pernah terlihat berjalan.** Workflow ada di akar repo dengan filter
-      `paths: OfficeNet/**` dan commit terakhir menyentuh path itu, jadi seharusnya terpicu —
-      tetapi belum ada yang memeriksa tab Actions. Sampai ada yang melihatnya hijau di ketiga
-      sistem operasi, ini masih klaim, bukan fakta.
-- [ ] `NUGET_API_KEY` perlu disimpan di Settings → Secrets and variables → Actions agar rilis
-      berikutnya bisa lewat tag `officenet-v*` alih-alih `dotnet nuget push` manual.
+- [ ] Menunggu run CI berikutnya hijau di Windows, Linux, dan macOS. Job `generated files are
+      current` dan `documentation links` sudah hijau sejak awal; yang gagal hanya ketiga job build.

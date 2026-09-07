@@ -34,8 +34,12 @@
     <PackageVersion Include="Avalonia" Version="12.1.1" />
     <PackageVersion Include="Avalonia.Desktop" Version="12.1.1" />
     <PackageVersion Include="Avalonia.Fonts.Inter" Version="12.1.1" />
+    <!--
+      Avalonia.Diagnostics sengaja tidak ada di sini. Paket itu berhenti di 11.3.20 dan tidak
+      pernah punya rilis 12.x, jadi mereferensikannya bersama Avalonia 12.1.1 membuat `restore`
+      gagal. Sampelnya juga tidak pernah memanggil AttachDevTools().
+    -->
     <PackageVersion Include="Avalonia.Themes.Fluent" Version="12.1.1" />
-    <PackageVersion Include="Avalonia.Diagnostics" Version="12.1.1" />
     <!-- Package is Avalonia.AvaloniaEdit but the assembly is AvaloniaEdit; the style include is
          avares://AvaloniaEdit/Themes/Fluent/AvaloniaEdit.xaml -->
     <PackageVersion Include="Avalonia.AvaloniaEdit" Version="12.0.0" />

@@ -24,6 +24,11 @@ env:
   DOTNET_CLI_TELEMETRY_OPTOUT: true
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
 
+  # Restore and build must evaluate the same configuration. Without this, `dotnet restore` defaults
+  # to Debug while the build asks for Release, so a Debug-only PackageReference is restored but
+  # never built — and a missing one fails CI while every local `-c Release` build stays green.
+  Configuration: Release
+
 # Applies to every `run` step in the file; `uses` steps take explicit paths instead.
 defaults:
   run:
@@ -57,7 +62,7 @@ jobs:
           restore-keys: nuget-${{ matrix.os }}-
 
       - name: Restore
-        run: dotnet restore OfficeNet.sln
+        run: dotnet restore OfficeNet.sln -p:Configuration=$Configuration
 
       # -warnaserror rather than a per-project setting: a warning that only appears on one platform
       # is exactly the kind this project needs to fail on.
