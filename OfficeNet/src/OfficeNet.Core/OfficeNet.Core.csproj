@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>OfficeNet.Core</RootNamespace>
+    <AssemblyName>Gravicode.OfficeNet.Core</AssemblyName>
+    <PackageId>Gravicode.OfficeNet.Core</PackageId>
+    <IsPackable>true</IsPackable>
+    <!-- Set here rather than in Directory.Build.targets: that file is imported
+         after the SDK has already decided whether to emit documentation, so the
+         property has no effect there and the .xml never reaches the package. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <Description>
+      Shared foundation for OfficeNet: the Open Packaging Conventions (OPC) container that .docx,
+      .xlsx and .pptx all sit on, OOXML namespace and unit conversions, colour and image handling,
+      document metadata, and the unified IOfficeDocument surface.
+      Dibuat oleh Gravicode Studios, dipimpin oleh Kang Fadhil.
+    </Description>
+  </PropertyGroup>
+
+</Project>

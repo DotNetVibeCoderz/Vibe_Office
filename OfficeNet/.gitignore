@@ -1,0 +1,106 @@
+# OfficeNet - Dibuat oleh Gravicode Studios, dipimpin oleh Kang Fadhil.
+
+# ---------------------------------------------------------------------------------------------
+# Secrets
+# ---------------------------------------------------------------------------------------------
+# Requirements.md is NOT ignored: it is the specification of record and contains no credentials.
+# Publish credentials belong in CI secrets (see .github/workflows/release.yml).
+
+*.env
+.env.*
+secrets.json
+appsettings.Development.json
+appsettings.Local.json
+*.pfx
+*.snk
+
+# ---------------------------------------------------------------------------------------------
+# .NET build output
+# ---------------------------------------------------------------------------------------------
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Ww][Ii][Nn]32/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+artifacts/
+publish/
+*.dll
+*.exe
+*.pdb
+*.so
+*.dylib
+*.nupkg
+*.snupkg
+
+# NuGet
+*.nuget.props
+*.nuget.targets
+project.lock.json
+project.fragment.lock.json
+.nuget/
+
+# ---------------------------------------------------------------------------------------------
+# Test and benchmark output
+# ---------------------------------------------------------------------------------------------
+TestResults/
+[Tt]est[Rr]esult*/
+*.trx
+*.coverage
+*.coverlet.json
+coverage*.json
+coverage*.xml
+coverage*.info
+BenchmarkDotNet.Artifacts/
+
+# ---------------------------------------------------------------------------------------------
+# Generated but tracked, on purpose
+# ---------------------------------------------------------------------------------------------
+# Two directories hold generated files that are committed anyway, because ignoring them would
+# break a fresh clone:
+#
+#   tests/OfficeNet.Docs.Tests/Notebooks/  — lifted from notebooks/*.ipynb by
+#       tools/gen_notebook_tests.py. Tracked so `dotnet test` works without Python installed;
+#       CI regenerates and fails if the result differs, so they cannot go stale.
+#
+#   docs/screenshots/ — produced by tools/ScreenshotGen. Tracked because the documentation embeds
+#       them and someone reading the repository on the web needs them present.
+
+# ---------------------------------------------------------------------------------------------
+# IDE and OS
+# ---------------------------------------------------------------------------------------------
+.vs/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/tasks.json
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.userprefs
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Notebook checkpoints
+.ipynb_checkpoints/
+
+# Python (the tooling under tools/)
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# ---------------------------------------------------------------------------------------------
+# Scratch
+# ---------------------------------------------------------------------------------------------
+*.tmp
+*.bak
+*.log
+scratch/
+tmp/

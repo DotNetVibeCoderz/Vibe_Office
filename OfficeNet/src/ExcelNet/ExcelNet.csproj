@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>ExcelNet</RootNamespace>
+    <AssemblyName>Gravicode.OfficeNet.ExcelNet</AssemblyName>
+    <PackageId>Gravicode.OfficeNet.ExcelNet</PackageId>
+    <IsPackable>true</IsPackable>
+    <!-- Set here rather than in Directory.Build.targets: that file is imported
+         after the SDK has already decided whether to emit documentation, so the
+         property has no effect there and the .xml never reaches the package. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <Description>
+      A .NET 10 rewrite of openpyxl with pandas-style analysis: read and write .xlsx, cell
+      formulas, styles, merges and conditional formatting, worksheet management, charts and pivot
+      tables, CSV/JSON/SQL/PDF import and export, and a DataFrame bridge to GraviFrame.
+      Dibuat oleh Gravicode Studios, dipimpin oleh Kang Fadhil.
+    </Description>
+    <PackageTags>xlsx;excel;openpyxl;pandas;spreadsheet;dataframe;ooxml;gravicode</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OfficeNet.Core\OfficeNet.Core.csproj" />
+    <ProjectReference Include="..\PdfNet\PdfNet.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The pandas analogue. ExcelNet adapts GraviFrame rather than reimplementing it; see
+         https://github.com/DotNetVibeCoderz/Vibe_ML/tree/main/GravicodeScience -->
+    <PackageReference Include="Gravicode.Science.GraviFrame" />
+    <PackageReference Include="Gravicode.Science.GraviNum" />
+  </ItemGroup>
+
+</Project>

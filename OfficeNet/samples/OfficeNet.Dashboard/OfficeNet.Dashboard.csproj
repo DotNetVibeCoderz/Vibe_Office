@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <RootNamespace>OfficeNet.Dashboard</RootNamespace>
+    <AssemblyName>OfficeNet.Dashboard</AssemblyName>
+    <IsPackable>false</IsPackable>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\OfficeNet\OfficeNet.csproj" />
+    <ProjectReference Include="..\..\src\OfficeNet.Rendering\OfficeNet.Rendering.csproj" />
+  </ItemGroup>
+
+</Project>

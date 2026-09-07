@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>PowerPointNet</RootNamespace>
+    <AssemblyName>Gravicode.OfficeNet.PowerPointNet</AssemblyName>
+    <PackageId>Gravicode.OfficeNet.PowerPointNet</PackageId>
+    <IsPackable>true</IsPackable>
+    <!-- Set here rather than in Directory.Build.targets: that file is imported
+         after the SDK has already decided whether to emit documentation, so the
+         property has no effect there and the .xml never reaches the package. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <Description>
+      A .NET 10 rewrite of python-pptx: create, open and edit .pptx presentations — slides, layouts,
+      masters and themes, text frames, pictures, tables and charts, transitions and basic
+      animations, speaker notes, metadata — plus export to PDF through PdfNet.
+      Dibuat oleh Gravicode Studios, dipimpin oleh Kang Fadhil.
+    </Description>
+    <PackageTags>pptx;powerpoint;python-pptx;presentation;slides;ooxml;pdf;gravicode</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OfficeNet.Core\OfficeNet.Core.csproj" />
+    <ProjectReference Include="..\PdfNet\PdfNet.csproj" />
+  </ItemGroup>
+
+</Project>

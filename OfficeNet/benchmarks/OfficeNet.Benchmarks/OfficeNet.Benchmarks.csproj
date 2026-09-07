@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>OfficeNet.Benchmarks</RootNamespace>
+    <AssemblyName>OfficeNet.Benchmarks</AssemblyName>
+    <IsPackable>false</IsPackable>
+
+    <!-- BenchmarkDotNet refuses to run a Debug build, and rightly so. -->
+    <Configuration Condition="'$(Configuration)' == ''">Release</Configuration>
+    <Optimize>true</Optimize>
+    <ServerGarbageCollection>true</ServerGarbageCollection>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\OfficeNet\OfficeNet.csproj" />
+    <ProjectReference Include="..\..\src\OfficeNet.Rendering\OfficeNet.Rendering.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BenchmarkDotNet" />
+  </ItemGroup>
+
+</Project>

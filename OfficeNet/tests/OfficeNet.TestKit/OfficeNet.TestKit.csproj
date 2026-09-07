@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>OfficeNet.TestKit</RootNamespace>
+    <AssemblyName>OfficeNet.TestKit</AssemblyName>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\OfficeNet.Core\OfficeNet.Core.csproj" />
+  </ItemGroup>
+
+</Project>

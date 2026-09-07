@@ -1,0 +1,117 @@
+<!-- OfficeNet · Dibuat oleh Gravicode Studios, dipimpin oleh Kang Fadhil.
+
+     Text on the left, the page on the right. An editor whose subject is documents should put the
+     document on screen, so the preview is a real rendered page rather than an approximation drawn
+     by the app. -->
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="using:OfficeNet.Editor.ViewModels"
+        mc:Ignorable="d"
+        x:Class="OfficeNet.Editor.Views.MainWindow"
+        x:DataType="vm:EditorViewModel"
+        Title="OfficeNet Editor"
+        Width="1240" Height="820"
+        MinWidth="820" MinHeight="560"
+        Background="{DynamicResource Ink}">
+
+    <DockPanel>
+
+        <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource Line}" BorderThickness="0,0,0,1"
+                Padding="16,10">
+            <Grid ColumnDefinitions="Auto,Auto,*,Auto">
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="12"
+                            VerticalAlignment="Center">
+                    <TextBlock Text="OfficeNet" Classes="display" FontSize="16" />
+                    <TextBlock Text="EDITOR" Classes="label" VerticalAlignment="Center" />
+                </StackPanel>
+
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" Margin="24,0,0,0">
+                    <Button Content="New Word" Classes="quiet" Command="{Binding NewWordCommand}" />
+                    <Button Content="New Excel" Classes="quiet" Command="{Binding NewExcelCommand}" />
+                    <Button Content="Open…" Classes="quiet" Command="{Binding OpenCommand}" />
+                </StackPanel>
+
+                <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="6">
+                    <Button Content="Refresh preview" Classes="quiet"
+                            Command="{Binding RefreshCommand}" IsEnabled="{Binding HasDocument}" />
+                    <Button Content="Export PDF" Classes="quiet"
+                            Command="{Binding ExportPdfCommand}" IsEnabled="{Binding HasDocument}" />
+                    <Button Content="Save" Classes="action"
+                            Command="{Binding SaveCommand}" IsEnabled="{Binding HasDocument}" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0"
+                Padding="16,7">
+            <Grid ColumnDefinitions="Auto,Auto,*">
+                <TextBlock Grid.Column="0" Text="{Binding DocumentName}" Classes="muted" />
+                <TextBlock Grid.Column="1" Text=" · unsaved changes" Classes="muted"
+                           IsVisible="{Binding IsDirty}" />
+                <TextBlock Grid.Column="2" Text="{Binding Status}" Classes="muted"
+                           HorizontalAlignment="Right" TextTrimming="CharacterEllipsis" />
+            </Grid>
+        </Border>
+
+        <Grid ColumnDefinitions="*,6,*">
+
+            <!-- Content -->
+            <DockPanel Grid.Column="0" Margin="16">
+                <StackPanel DockPanel.Dock="Top" Spacing="4">
+                    <TextBlock Text="CONTENT" Classes="label" />
+                    <TextBlock Classes="muted" FontSize="11"
+                               Text="Edit a line and it changes the document. In a workbook, start with = for a formula." />
+                    <Border Classes="divider" Margin="0,8,0,8" />
+                </StackPanel>
+
+                <ScrollViewer>
+                    <ItemsControl ItemsSource="{Binding Lines}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:EditableLine">
+                                <Grid ColumnDefinitions="64,*" Margin="0,0,0,4">
+                                    <StackPanel Grid.Column="0" Margin="0,6,8,0">
+                                        <TextBlock Text="{Binding Address}" Classes="label" />
+                                        <TextBlock Text="{Binding Style}" Classes="label"
+                                                   FontSize="9" TextTrimming="CharacterEllipsis" />
+                                    </StackPanel>
+                                    <TextBox Grid.Column="1" Text="{Binding Text}"
+                                             AcceptsReturn="False" TextWrapping="Wrap" />
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </DockPanel>
+
+            <GridSplitter Grid.Column="1" Background="{DynamicResource Line}" />
+
+            <!-- Preview -->
+            <DockPanel Grid.Column="2" Margin="16">
+                <StackPanel DockPanel.Dock="Top" Spacing="4">
+                    <TextBlock Text="PAGE" Classes="label" />
+                    <TextBlock Classes="muted" FontSize="11"
+                               Text="Rendered through the same PDF exporter the libraries ship." />
+                    <Border Classes="divider" Margin="0,8,0,8" />
+                </StackPanel>
+
+                <ScrollViewer>
+                    <ItemsControl ItemsSource="{Binding Pages}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Background="{DynamicResource Paper}" CornerRadius="2"
+                                        Margin="0,0,0,12" BoxShadow="0 8 24 -12 #99000000">
+                                    <Image Source="{Binding}" Stretch="Uniform" />
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </DockPanel>
+
+        </Grid>
+
+    </DockPanel>
+
+</Window>

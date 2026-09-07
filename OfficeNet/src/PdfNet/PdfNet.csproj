@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>PdfNet</RootNamespace>
+    <AssemblyName>Gravicode.OfficeNet.PdfNet</AssemblyName>
+    <PackageId>Gravicode.OfficeNet.PdfNet</PackageId>
+    <IsPackable>true</IsPackable>
+    <!-- Set here rather than in Directory.Build.targets: that file is imported
+         after the SDK has already decided whether to emit documentation, so the
+         property has no effect there and the .xml never reaches the package. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <Description>
+      A .NET 10 rewrite of PyPDF2: read and write PDF, merge, split, rotate, extract text and
+      metadata, fill and read form fields, encrypt and decrypt, annotate, and draw new content.
+      No native dependency and no Office install required.
+      Dibuat oleh Gravicode Studios, dipimpin oleh Kang Fadhil.
+    </Description>
+    <PackageTags>pdf;pypdf2;merge;split;extract;acroform;encryption;gravicode</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OfficeNet.Core\OfficeNet.Core.csproj" />
+  </ItemGroup>
+
+</Project>

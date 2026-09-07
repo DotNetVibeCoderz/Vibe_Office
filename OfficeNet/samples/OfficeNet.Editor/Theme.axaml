@@ -1,0 +1,146 @@
+<!-- OfficeNet - Dibuat oleh Gravicode Studios, dipimpin oleh Kang Fadhil.
+
+     The same identity as the web dashboard: the four format colours are the real Office product
+     identities and carry meaning, paper is the only bright field, and everything structural is set
+     in mono. Fluent supplies the control behaviour; this supplies the look. -->
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <Styles.Resources>
+        <ResourceDictionary>
+            <Color x:Key="InkColor">#10131A</Color>
+            <SolidColorBrush x:Key="Ink" Color="#10131A" />
+            <SolidColorBrush x:Key="Panel" Color="#171B23" />
+            <SolidColorBrush x:Key="PanelHigh" Color="#1E232D" />
+            <SolidColorBrush x:Key="Line" Color="#262C38" />
+            <SolidColorBrush x:Key="Text" Color="#E7EAF0" />
+            <SolidColorBrush x:Key="Mute" Color="#7D8797" />
+            <SolidColorBrush x:Key="Paper" Color="#FCFCF9" />
+
+            <SolidColorBrush x:Key="WordBrush" Color="#2B579A" />
+            <SolidColorBrush x:Key="ExcelBrush" Color="#217346" />
+            <SolidColorBrush x:Key="PowerPointBrush" Color="#D24726" />
+            <SolidColorBrush x:Key="PdfBrush" Color="#B30B00" />
+
+            <FontFamily x:Key="MonoFont">Cascadia Mono,Consolas,Menlo,DejaVu Sans Mono,monospace</FontFamily>
+        </ResourceDictionary>
+    </Styles.Resources>
+
+    <!-- - Type roles - -->
+
+    <Style Selector="TextBlock.display">
+        <Setter Property="FontSize" Value="19" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{DynamicResource Text}" />
+    </Style>
+
+    <Style Selector="TextBlock.body">
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="Foreground" Value="{DynamicResource Text}" />
+        <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+
+    <Style Selector="TextBlock.muted">
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="Foreground" Value="{DynamicResource Mute}" />
+        <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+
+    <!-- The micro-label that names a region. Mono, uppercase, wide tracking: it reads as a
+         specification heading rather than as prose, which is the register this subject lives in. -->
+    <Style Selector="TextBlock.label">
+        <Setter Property="FontFamily" Value="{DynamicResource MonoFont}" />
+        <Setter Property="FontSize" Value="10" />
+        <Setter Property="Foreground" Value="{DynamicResource Mute}" />
+        <Setter Property="LetterSpacing" Value="1.6" />
+    </Style>
+
+    <Style Selector="TextBlock.mono, SelectableTextBlock.mono">
+        <Setter Property="FontFamily" Value="{DynamicResource MonoFont}" />
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="Foreground" Value="{DynamicResource Text}" />
+    </Style>
+
+    <!-- - Surfaces - -->
+
+    <Style Selector="Border.panel">
+        <Setter Property="Background" Value="{DynamicResource Panel}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource Line}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="3" />
+    </Style>
+
+    <Style Selector="Border.divider">
+        <Setter Property="Background" Value="{DynamicResource Line}" />
+        <Setter Property="Height" Value="1" />
+    </Style>
+
+    <!-- - Catalog - -->
+
+    <Style Selector="ListBoxItem">
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="Margin" Value="0,1" />
+        <Setter Property="MinHeight" Value="0" />
+    </Style>
+
+    <!-- - Buttons - -->
+
+    <Style Selector="Button.action">
+        <Setter Property="Background" Value="{DynamicResource PanelHigh}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource Line}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="3" />
+        <Setter Property="Foreground" Value="{DynamicResource Text}" />
+        <Setter Property="Padding" Value="12,6" />
+        <Setter Property="FontSize" Value="12" />
+    </Style>
+
+    <Style Selector="Button.action:pointerover /template/ ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource Panel}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource Mute}" />
+    </Style>
+
+    <Style Selector="Button.quiet">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Foreground" Value="{DynamicResource Mute}" />
+        <Setter Property="Padding" Value="10,6" />
+        <Setter Property="FontSize" Value="12" />
+    </Style>
+
+    <Style Selector="Button.quiet:pointerover /template/ ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource Panel}" />
+    </Style>
+
+    <!-- - Tabs - -->
+
+    <Style Selector="TabItem">
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="Padding" Value="14,8" />
+        <Setter Property="MinHeight" Value="0" />
+        <Setter Property="Foreground" Value="{DynamicResource Mute}" />
+    </Style>
+
+    <Style Selector="TabItem:selected">
+        <Setter Property="Foreground" Value="{DynamicResource Text}" />
+    </Style>
+
+    <!-- - Inputs - -->
+
+    <Style Selector="TextBox">
+        <Setter Property="Background" Value="{DynamicResource PanelHigh}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource Line}" />
+        <Setter Property="Foreground" Value="{DynamicResource Text}" />
+        <Setter Property="CornerRadius" Value="3" />
+        <Setter Property="FontSize" Value="13" />
+    </Style>
+
+    <Style Selector="ComboBox">
+        <Setter Property="Background" Value="{DynamicResource PanelHigh}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource Line}" />
+        <Setter Property="Foreground" Value="{DynamicResource Text}" />
+        <Setter Property="CornerRadius" Value="3" />
+        <Setter Property="FontSize" Value="12" />
+    </Style>
+
+</Styles>

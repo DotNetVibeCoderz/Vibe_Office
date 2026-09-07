@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>OfficeNet.Rendering</RootNamespace>
+    <AssemblyName>Gravicode.OfficeNet.Rendering</AssemblyName>
+    <PackageId>Gravicode.OfficeNet.Rendering</PackageId>
+    <IsPackable>true</IsPackable>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <Description>
+      Rasterises OfficeNet documents to images: PDF pages, Word documents, Excel sheets and
+      PowerPoint slides to PNG or JPEG. Kept out of PdfNet so the core libraries stay free of any
+      native dependency; this package brings SkiaSharp.
+      Dibuat oleh Gravicode Studios, dipimpin oleh Kang Fadhil.
+    </Description>
+    <PackageTags>pdf;render;rasterize;thumbnail;png;image;skiasharp;gravicode</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OfficeNet.Core\OfficeNet.Core.csproj" />
+    <ProjectReference Include="..\PdfNet\PdfNet.csproj" />
+    <ProjectReference Include="..\WordNet\WordNet.csproj" />
+    <ProjectReference Include="..\ExcelNet\ExcelNet.csproj" />
+    <ProjectReference Include="..\PowerPointNet\PowerPointNet.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="SkiaSharp" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux" />
+  </ItemGroup>
+
+</Project>

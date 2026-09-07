@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <RootNamespace>OfficeNet.Gallery</RootNamespace>
+    <AssemblyName>OfficeNet.Gallery</AssemblyName>
+    <IsPackable>false</IsPackable>
+    <Nullable>enable</Nullable>
+    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\OfficeNet\OfficeNet.csproj" />
+    <ProjectReference Include="..\..\src\OfficeNet.Rendering\OfficeNet.Rendering.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" />
+    <PackageReference Include="Avalonia.Desktop" />
+    <PackageReference Include="Avalonia.Themes.Fluent" />
+    <PackageReference Include="Avalonia.Fonts.Inter" />
+    <PackageReference Include="Avalonia.Diagnostics" Condition="'$(Configuration)' == 'Debug'" />
+    <PackageReference Include="CommunityToolkit.Mvvm" />
+    <PackageReference Include="Microsoft.SemanticKernel" />
+    <PackageReference Include="Microsoft.SemanticKernel.Connectors.Google" />
+    <PackageReference Include="Markdig" />
+  </ItemGroup>
+
+  <!--
+    The demo sources are embedded so the app can show the exact lines it just executed. Displaying
+    a hand-copied string instead is how a gallery ends up documenting code that no longer compiles.
+  -->
+  <ItemGroup>
+    <EmbeddedResource Include="Demos\*.cs" LogicalName="demo-source/%(Filename)%(Extension)" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,72 @@
+<Project>
+
+  <!--
+    OfficeNet - shared MSBuild settings for every project in the solution.
+    Dibuat oleh Gravicode Studios, dipimpin oleh Kang Fadhil.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <WarningsNotAsErrors>CS1591</WarningsNotAsErrors>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <AccelerateBuildsInVisualStudio>true</AccelerateBuildsInVisualStudio>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <!--
+    InvariantGlobalization is deliberately OFF.
+    Spreadsheet number/date formatting (ExcelNet) and Word field results are culture-sensitive by
+    specification: a workbook authored in id-ID renders "1.234,50" and Excel expects that back.
+    Turning it on makes CultureInfo lookups silently fall back to invariant and the round trip loses
+    the format. Kernels that must not be culture-sensitive use CultureInfo.InvariantCulture
+    explicitly instead.
+  -->
+  <PropertyGroup>
+    <InvariantGlobalization>false</InvariantGlobalization>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <Optimize>true</Optimize>
+    <ServerGarbageCollection>true</ServerGarbageCollection>
+    <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
+    <TieredPGO>true</TieredPGO>
+  </PropertyGroup>
+
+  <!--
+    Version for every shipping package. Override from the command line or from CI with
+    `-p:Version=1.0.1`; a tag-driven release passes the tag through so the tag and the package
+    version cannot disagree.
+  -->
+  <PropertyGroup>
+    <VersionPrefix>1.0.0</VersionPrefix>
+  </PropertyGroup>
+
+  <!-- NuGet metadata shared by the shipping libraries under src/. -->
+  <PropertyGroup>
+    <Authors>Gravicode Studios</Authors>
+    <Company>Gravicode Studios</Company>
+    <Product>OfficeNet</Product>
+    <Copyright>Copyright (c) Gravicode Studios</Copyright>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/DotNetVibeCoderz/Vibe_Office/tree/main/OfficeNet</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/DotNetVibeCoderz/Vibe_Office/tree/main/OfficeNet</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>office;docx;xlsx;pptx;pdf;word;excel;powerpoint;ooxml;openxml;gravicode</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageIcon>icon.png</PackageIcon>
+    <!--
+      PublishRepositoryUrl must stay unset: SourceLink would overwrite RepositoryUrl with the git
+      origin and silently replace the deep link to the OfficeNet subdirectory.
+    -->
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+  </PropertyGroup>
+
+</Project>

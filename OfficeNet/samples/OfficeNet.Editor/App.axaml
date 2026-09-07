@@ -1,0 +1,10 @@
+<!-- OfficeNet - Dibuat oleh Gravicode Studios, dipimpin oleh Kang Fadhil. -->
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="OfficeNet.Editor.App"
+             RequestedThemeVariant="Dark">
+    <Application.Styles>
+        <FluentTheme />
+        <StyleInclude Source="avares://OfficeNet.Editor/Theme.axaml" />
+    </Application.Styles>
+</Application>

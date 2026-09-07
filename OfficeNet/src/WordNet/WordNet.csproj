@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>WordNet</RootNamespace>
+    <AssemblyName>Gravicode.OfficeNet.WordNet</AssemblyName>
+    <PackageId>Gravicode.OfficeNet.WordNet</PackageId>
+    <IsPackable>true</IsPackable>
+    <!-- Set here rather than in Directory.Build.targets: that file is imported
+         after the SDK has already decided whether to emit documentation, so the
+         property has no effect there and the .xml never reaches the package. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <Description>
+      A .NET 10 rewrite of python-docx: create, open and edit .docx documents — headings,
+      paragraphs, runs, fonts, styles, tables, images, hyperlinks, shapes, sections, headers and
+      footers, metadata — plus export to PDF through PdfNet. No Word or Office install required.
+      Dibuat oleh Gravicode Studios, dipimpin oleh Kang Fadhil.
+    </Description>
+    <PackageTags>docx;word;python-docx;ooxml;openxml;document;pdf;gravicode</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OfficeNet.Core\OfficeNet.Core.csproj" />
+    <ProjectReference Include="..\PdfNet\PdfNet.csproj" />
+  </ItemGroup>
+
+</Project>

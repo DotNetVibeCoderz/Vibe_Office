@@ -1,0 +1,45 @@
+<!-- OfficeNet · Dibuat oleh Gravicode Studios, dipimpin oleh Kang Fadhil. -->
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="using:OfficeNet.Gallery.ViewModels"
+        xmlns:views="using:OfficeNet.Gallery.Views"
+        mc:Ignorable="d"
+        x:Class="OfficeNet.Gallery.Views.MainWindow"
+        x:DataType="vm:MainViewModel"
+        Title="OfficeNet Gallery"
+        Width="1360" Height="900"
+        MinWidth="900" MinHeight="600"
+        Background="{DynamicResource Ink}">
+
+    <DockPanel>
+
+        <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource Line}" BorderThickness="0,0,0,1"
+                Padding="20,12">
+            <StackPanel Orientation="Horizontal" Spacing="14">
+                <TextBlock Text="OfficeNet" Classes="display" VerticalAlignment="Center" />
+                <TextBlock Text="GALLERY" Classes="label" VerticalAlignment="Center" />
+                <TextBlock Classes="muted" VerticalAlignment="Center"
+                           Text="Every feature, running, next to the code that produced it." />
+            </StackPanel>
+        </Border>
+
+        <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0"
+                Padding="20,8">
+            <TextBlock Classes="muted" FontSize="11"
+                       Text="Dibuat oleh Gravicode Studios, dipimpin oleh Kang Fadhil." />
+        </Border>
+
+        <TabControl Padding="0" Background="Transparent">
+            <TabItem Header="Demos">
+                <views:GalleryView DataContext="{Binding Gallery}" />
+            </TabItem>
+            <TabItem Header="Assistant">
+                <views:ChatView DataContext="{Binding Chat}" />
+            </TabItem>
+        </TabControl>
+
+    </DockPanel>
+
+</Window>

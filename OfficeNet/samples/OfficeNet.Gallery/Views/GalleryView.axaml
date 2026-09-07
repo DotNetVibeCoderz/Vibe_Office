@@ -1,0 +1,118 @@
+<!-- OfficeNet · Dibuat oleh Gravicode Studios, dipimpin oleh Kang Fadhil.
+
+     Three columns: the catalog, the output, and the source that produced it. The source is not a
+     transcription — it is read out of the embedded demo file at runtime, so it is literally the
+     code that just ran. -->
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:OfficeNet.Gallery.ViewModels"
+             mc:Ignorable="d"
+             x:Class="OfficeNet.Gallery.Views.GalleryView"
+             x:DataType="vm:GalleryViewModel">
+
+    <Grid ColumnDefinitions="290,*,*">
+
+        <!-- Catalog -->
+        <Border Grid.Column="0" BorderBrush="{DynamicResource Line}" BorderThickness="0,0,1,0">
+            <ListBox ItemsSource="{Binding Demos}"
+                     SelectedItem="{Binding Selected}"
+                     Background="Transparent"
+                     BorderThickness="0"
+                     Padding="10">
+                <ListBox.ItemTemplate>
+                    <DataTemplate x:DataType="vm:DemoItem">
+                        <Grid ColumnDefinitions="Auto,*" Height="52">
+                            <!-- The spine: the library's own identity colour, so the format reads
+                                 before the title does. -->
+                            <Border Grid.Column="0" Width="42" CornerRadius="2,0,0,2"
+                                    Background="{Binding Accent}">
+                                <TextBlock Text="{Binding Tag}"
+                                           Foreground="White"
+                                           FontFamily="{DynamicResource MonoFont}"
+                                           FontSize="10"
+                                           HorizontalAlignment="Center"
+                                           VerticalAlignment="Center" />
+                            </Border>
+                            <StackPanel Grid.Column="1" Margin="10,0,8,0" VerticalAlignment="Center">
+                                <TextBlock Text="{Binding Title}" FontSize="13"
+                                           TextTrimming="CharacterEllipsis"
+                                           Foreground="{DynamicResource Text}" />
+                                <TextBlock Text="{Binding Library}" Classes="label" />
+                            </StackPanel>
+                        </Grid>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+        </Border>
+
+        <!-- Output -->
+        <DockPanel Grid.Column="1" Margin="18">
+            <StackPanel DockPanel.Dock="Top" Spacing="8">
+                <TextBlock Text="{Binding Selected.Title}" Classes="display" />
+                <TextBlock Text="{Binding Selected.Summary}" Classes="muted" />
+
+                <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,4,0,0">
+                    <Button Content="Run again" Classes="action"
+                            Command="{Binding RunCommand}"
+                            IsEnabled="{Binding !IsRunning}" />
+                    <Button Content="Save the document" Classes="quiet"
+                            Command="{Binding SaveCommand}" />
+                    <TextBlock Text="{Binding Status}" Classes="muted"
+                               VerticalAlignment="Center" />
+                </StackPanel>
+
+                <Border Classes="divider" Margin="0,6,0,10" />
+            </StackPanel>
+
+            <ScrollViewer>
+                <StackPanel Spacing="14">
+                    <ItemsControl ItemsSource="{Binding Pages}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Background="{DynamicResource Paper}"
+                                        CornerRadius="2"
+                                        Margin="0,0,0,12"
+                                        BoxShadow="0 8 24 -12 #99000000">
+                                    <Image Source="{Binding}" Stretch="Uniform" />
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <Border Classes="panel" Padding="12"
+                            IsVisible="{Binding Log, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="RESULT" Classes="label" />
+                            <SelectableTextBlock Text="{Binding Log}" Classes="mono"
+                                                 TextWrapping="Wrap" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
+        </DockPanel>
+
+        <!-- Source -->
+        <Border Grid.Column="2" BorderBrush="{DynamicResource Line}" BorderThickness="1,0,0,0">
+            <DockPanel Margin="18">
+                <StackPanel DockPanel.Dock="Top" Spacing="4">
+                    <TextBlock Text="THE CODE THAT RAN" Classes="label" />
+                    <TextBlock Classes="muted" FontSize="11"
+                               Text="Read from the embedded source at runtime, so it cannot drift." />
+                    <Border Classes="divider" Margin="0,8,0,10" />
+                </StackPanel>
+
+                <ScrollViewer>
+                    <SelectableTextBlock Text="{Binding Source}"
+                                         Classes="mono"
+                                         FontSize="12"
+                                         LineHeight="19"
+                                         TextWrapping="NoWrap" />
+                </ScrollViewer>
+            </DockPanel>
+        </Border>
+
+    </Grid>
+
+</UserControl>

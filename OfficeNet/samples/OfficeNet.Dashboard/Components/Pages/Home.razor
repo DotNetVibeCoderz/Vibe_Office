@@ -1,0 +1,329 @@
+@* OfficeNet - Dibuat oleh Gravicode Studios, dipimpin oleh Kang Fadhil. *@
+@page "/"
+@rendermode InteractiveServer
+@inject DocumentInspector Inspector
+@inject IJSRuntime Js
+
+<PageTitle>OfficeNet Inspector</PageTitle>
+
+<div class="workbench">
+
+    @* ---- Shelf ------------------------------------------------------------------------ *@
+    <aside class="shelf">
+        <label class="dropzone @(_busy ? "is-busy" : null)">
+            <InputFile OnChange="OnFilesSelected" multiple accept=".docx,.xlsx,.pptx,.pdf" />
+            <span class="dropzone-title">@(_busy ? "Reading…" : "Add documents")</span>
+            <span class="dropzone-hint">.docx · .xlsx · .pptx · .pdf</span>
+        </label>
+
+        @if (Inspector.Documents.Count == 0)
+        {
+            <p class="shelf-empty">
+                Nothing loaded yet. Add a document to see it rendered and taken apart, or
+                <button type="button" class="link-button" @onclick="LoadSamples">load three samples</button>
+                built by the libraries themselves.
+            </p>
+        }
+        else
+        {
+            <ul class="shelf-list">
+                @foreach (var document in Inspector.Documents)
+                {
+                    var selected = Inspector.Selected?.Id == document.Id;
+
+                    <li>
+                        <button type="button"
+                                class="shelf-item @(selected ? "is-selected" : null)"
+                                data-format="@document.Format.ToString().ToLowerInvariant()"
+                                @onclick="() => Inspector.Select(document.Id)">
+                            <span class="spine">@document.Extension</span>
+                            <span class="shelf-item-body">
+                                <span class="shelf-item-name">@document.FileName</span>
+                                <span class="shelf-item-meta">
+                                    @document.SizeLabel
+                                    @if (document.PageCount > 0)
+                                    {
+                                        <text> · @document.PageCount @PageNoun(document)</text>
+                                    }
+                                </span>
+                            </span>
+                        </button>
+                    </li>
+                }
+            </ul>
+        }
+    </aside>
+
+    @* ---- Inspector -------------------------------------------------------------------- *@
+    <main class="inspector">
+        @if (Inspector.Selected is not { } current)
+        {
+            <div class="placeholder">
+                <h1 class="placeholder-title">Look inside a document</h1>
+                <p class="placeholder-body">
+                    A <code>.docx</code>, <code>.xlsx</code> and <code>.pptx</code> are the same
+                    container with different contents: a ZIP of XML parts, a manifest that types
+                    every one of them, and a graph of relationships joining them up.
+                </p>
+                <p class="placeholder-body">
+                    This dashboard renders the pages <em>and</em> shows you that container.
+                </p>
+            </div>
+        }
+        else if (current.Failed)
+        {
+            <div class="notice notice-error">
+                <h1 class="notice-title">@current.FileName could not be read</h1>
+                <p>@current.Error</p>
+            </div>
+        }
+        else
+        {
+            <div class="inspector-head">
+                <h1 class="doc-title">@(current.Title is { Length: > 0 } t ? t : current.FileName)</h1>
+
+                <dl class="facts">
+                    <div class="fact">
+                        <dt>Format</dt>
+                        <dd data-format="@current.Format.ToString().ToLowerInvariant()">@current.Format</dd>
+                    </div>
+                    <div class="fact"><dt>Size</dt><dd>@current.SizeLabel</dd></div>
+                    @if (current.PageCount > 0)
+                    {
+                        <div class="fact">
+                            <dt>@PageNoun(current, plural: false)</dt>
+                            <dd>@current.PageCount</dd>
+                        </div>
+                    }
+                    @if (current.Author is { Length: > 0 } author)
+                    {
+                        <div class="fact"><dt>Author</dt><dd>@author</dd></div>
+                    }
+                    <div class="fact"><dt>Parts</dt><dd>@current.Parts.Count</dd></div>
+                </dl>
+
+                <div class="actions">
+                    <button type="button" class="action" @onclick="() => DownloadPdf(current)">
+                        Convert to PDF
+                    </button>
+                    <button type="button" class="action action-quiet"
+                            @onclick="() => Inspector.Remove(current.Id)">
+                        Remove
+                    </button>
+                    @if (_status is { Length: > 0 })
+                    {
+                        <span class="status" role="status">@_status</span>
+                    }
+                </div>
+            </div>
+
+            <div class="panes">
+                <section class="pane pane-pages" aria-label="Rendered pages">
+                    <h2 class="pane-title">Rendered</h2>
+
+                    @if (current.PagePngs.Count == 0)
+                    {
+                        <p class="pane-empty">No preview — this document could not be rasterised.</p>
+                    }
+                    else
+                    {
+                        <div class="pages">
+                            @foreach (var (png, index) in current.PagePngs.Select((p, i) => (p, i)))
+                            {
+                                <figure class="page" style="--stagger:@(index * 40)ms">
+                                    <img src="@png" alt="Page @(index + 1) of @current.FileName" />
+                                    <figcaption>@(index + 1)</figcaption>
+                                </figure>
+                            }
+                        </div>
+                    }
+                </section>
+
+                @* The signature panel: the container itself, co-equal with the preview. *@
+                <section class="pane pane-anatomy" aria-label="Package anatomy">
+                    <h2 class="pane-title">Package anatomy</h2>
+
+                    @if (current.Parts.Count == 0)
+                    {
+                        <p class="pane-empty">
+                            A PDF is not an OPC package — no parts, no relationships. Its structure
+                            is a graph of numbered objects instead.
+                        </p>
+                    }
+                    else
+                    {
+                        <table class="parts">
+                            <thead>
+                                <tr><th class="part">Part</th><th class="type">Content type</th><th class="num">Size</th></tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var (part, index) in current.Parts.Select((p, i) => (p, i)))
+                                {
+                                    <tr style="--stagger:@(index * 18)ms">
+                                        <td class="mono part">@part.Name</td>
+                                        <td class="mono dim type">@ShortContentType(part.ContentType)</td>
+                                        <td class="mono num">@Inspection.Size(part.Bytes)</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+
+                        <h3 class="pane-subtitle">Relationships</h3>
+                        <ul class="links">
+                            @foreach (var link in current.Links.OrderBy(l => l.Source).ThenBy(l => l.Id))
+                            {
+                                <li>
+                                    <span class="mono link-source">@link.Source</span>
+                                    <span class="mono link-id">@link.Id</span>
+                                    <span class="link-arrow" aria-hidden="true">→</span>
+                                    <span class="mono link-target">@link.Target</span>
+                                    <span class="link-type">@link.ShortType</span>
+                                </li>
+                            }
+                        </ul>
+                    }
+                </section>
+            </div>
+
+            @if (current.Text is { Length: > 0 })
+            {
+                <section class="pane pane-text" aria-label="Extracted text">
+                    <h2 class="pane-title">
+                        Extracted text
+                        <span class="pane-count">@current.Text.Length characters</span>
+                    </h2>
+                    <pre class="extract">@Excerpt(current.Text)</pre>
+                </section>
+            }
+        }
+    </main>
+</div>
+
+@code {
+    private const int ExcerptLength = 4_000;
+
+    /// <summary>
+    /// <c>/?demo=1</c> populates the shelf on first load.
+    /// </summary>
+    /// <remarks>
+    /// A linkable populated state: useful for showing someone the dashboard without asking them to
+    /// find a document first, and for capturing the screenshots in the documentation.
+    /// </remarks>
+    [SupplyParameterFromQuery(Name = "demo")]
+    public string? Demo { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Demo is not null && Inspector.Documents.Count == 0)
+        {
+            await LoadSamples();
+        }
+    }
+
+    private readonly Dictionary<string, byte[]> _originals = [];
+    private bool _busy;
+    private string? _status;
+
+    private async Task OnFilesSelected(InputFileChangeEventArgs e)
+    {
+        _busy = true;
+        _status = null;
+
+        try
+        {
+            foreach (var file in e.GetMultipleFiles(maximumFileCount: 20))
+            {
+                // 32 MB: large enough for a real report with images, small enough that a circuit
+                // cannot be filled by one upload.
+                await using var stream = file.OpenReadStream(maxAllowedSize: 32L * 1024 * 1024);
+
+                using var buffer = new MemoryStream();
+                await stream.CopyToAsync(buffer);
+
+                var bytes = buffer.ToArray();
+                buffer.Position = 0;
+
+                var inspection = await Inspector.AddAsync(file.Name, buffer, CancellationToken.None);
+                _originals[inspection.Id] = bytes;
+            }
+        }
+        catch (IOException ex)
+        {
+            _status = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task LoadSamples()
+    {
+        _busy = true;
+
+        try
+        {
+            foreach (var (name, bytes) in SampleDocuments.Build())
+            {
+                using var stream = new MemoryStream(bytes, writable: false);
+                var inspection = await Inspector.AddAsync(name, stream, CancellationToken.None);
+                _originals[inspection.Id] = bytes;
+            }
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task DownloadPdf(Inspection inspection)
+    {
+        if (!_originals.TryGetValue(inspection.Id, out var source))
+        {
+            _status = "The original bytes are no longer held for this document.";
+            return;
+        }
+
+        try
+        {
+            var pdf = DocumentInspector.ConvertToPdf(inspection, source);
+            var name = Path.ChangeExtension(inspection.FileName, ".pdf");
+
+            await Js.InvokeVoidAsync("officenet.download", name, Convert.ToBase64String(pdf));
+            _status = $"Converted — {Inspection.Size(pdf.LongLength)}";
+        }
+        catch (OfficeNet.Core.OfficeNetException ex)
+        {
+            _status = ex.Message;
+        }
+    }
+
+    private static string PageNoun(Inspection inspection, bool plural = true) =>
+        (inspection.Format, plural) switch
+        {
+            (OfficeFormat.PowerPoint, true) => "slides",
+            (OfficeFormat.PowerPoint, false) => "Slides",
+            (OfficeFormat.Excel, true) => "sheets",
+            (OfficeFormat.Excel, false) => "Sheets",
+            (_, true) => "pages",
+            (_, false) => "Pages",
+        };
+
+    /// <summary>
+    /// The tail of an OOXML content type, which is the only part that differs between them.
+    /// </summary>
+    /// <remarks>
+    /// Every one begins with the same 60-odd characters of vnd.openxmlformats boilerplate. Showing
+    /// it in full would push the useful half out of the column.
+    /// </remarks>
+    private static string ShortContentType(string contentType)
+    {
+        var tail = contentType.Split('.').LastOrDefault() ?? contentType;
+        return tail.Replace("+xml", string.Empty, StringComparison.Ordinal);
+    }
+
+    private static string Excerpt(string text) =>
+        text.Length <= ExcerptLength
+            ? text
+            : text[..ExcerptLength] + "\n\n… " + (text.Length - ExcerptLength) + " more characters";
+}

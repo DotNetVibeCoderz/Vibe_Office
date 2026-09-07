@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>OfficeNet.Samples.BatchConverter</RootNamespace>
+    <AssemblyName>batchconvert</AssemblyName>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\OfficeNet\OfficeNet.csproj" />
+    <ProjectReference Include="..\..\src\OfficeNet.Rendering\OfficeNet.Rendering.csproj" />
+  </ItemGroup>
+
+</Project>

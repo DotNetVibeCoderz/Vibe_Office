@@ -1,0 +1,178 @@
+<!-- OfficeNet · Dibuat oleh Gravicode Studios, dipimpin oleh Kang Fadhil.
+
+     Sessions on the left, the conversation in the middle, examples on the right. The examples stay
+     on screen rather than only filling an empty state: they are how you discover what the assistant
+     can reach, and that is worth as much on the tenth question as on the first. -->
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:OfficeNet.Gallery.ViewModels"
+             mc:Ignorable="d"
+             x:Class="OfficeNet.Gallery.Views.ChatView"
+             x:DataType="vm:ChatViewModel">
+
+    <Grid ColumnDefinitions="230,*,270">
+
+        <!-- Sessions -->
+        <Border Grid.Column="0" BorderBrush="{DynamicResource Line}" BorderThickness="0,0,1,0">
+            <DockPanel Margin="12">
+                <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,10">
+                    <TextBlock Grid.Column="0" Text="SESSIONS" Classes="label"
+                               VerticalAlignment="Center" />
+                    <Button Grid.Column="1" Content="+ New" Classes="quiet" Padding="8,4"
+                            Command="{Binding NewSessionCommand}"
+                            ToolTip.Tip="Start a new conversation" />
+                </Grid>
+
+                <StackPanel DockPanel.Dock="Bottom" Spacing="4" Margin="0,10,0,0">
+                    <Border Classes="divider" Margin="0,0,0,8" />
+                    <Button Content="Reset this session" Classes="quiet"
+                            HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                            Command="{Binding ResetSessionCommand}"
+                            ToolTip.Tip="Clear the messages but keep the session" />
+                    <Button Content="Remove this session" Classes="quiet"
+                            HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                            Command="{Binding RemoveSessionCommand}"
+                            ToolTip.Tip="Delete the conversation" />
+                </StackPanel>
+
+                <ListBox ItemsSource="{Binding Sessions}"
+                         SelectedItem="{Binding SelectedSession}"
+                         Background="Transparent" BorderThickness="0" Padding="0">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:ChatSession">
+                            <Grid ColumnDefinitions="*,Auto" Margin="8,7">
+                                <StackPanel Grid.Column="0" Spacing="1">
+                                    <TextBlock Text="{Binding Title}" FontSize="12.5"
+                                               TextTrimming="CharacterEllipsis"
+                                               Foreground="{DynamicResource Text}" />
+                                    <TextBlock Text="{Binding Subtitle}" Classes="label" />
+                                </StackPanel>
+
+                                <Button Grid.Column="1" Content="✕" Classes="quiet"
+                                        Padding="6,2" FontSize="10"
+                                        Command="{Binding $parent[ListBox].((vm:ChatViewModel)DataContext).RemoveSessionCommand}"
+                                        CommandParameter="{Binding}"
+                                        ToolTip.Tip="Remove this session" />
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </DockPanel>
+        </Border>
+
+        <!-- Conversation -->
+        <DockPanel Grid.Column="1" Margin="16">
+
+            <Border DockPanel.Dock="Top" Classes="panel" Padding="10" Margin="0,0,0,12">
+                <Grid ColumnDefinitions="Auto,*,Auto,*,Auto">
+                    <TextBlock Grid.Column="0" Text="PROVIDER" Classes="label"
+                               VerticalAlignment="Center" Margin="0,0,8,0" />
+                    <ComboBox Grid.Column="1" ItemsSource="{Binding Providers}"
+                              SelectedItem="{Binding SelectedProvider}"
+                              HorizontalAlignment="Stretch" />
+                    <TextBlock Grid.Column="2" Text="MODEL" Classes="label"
+                               VerticalAlignment="Center" Margin="14,0,8,0" />
+                    <ComboBox Grid.Column="3" ItemsSource="{Binding Models}"
+                              SelectedItem="{Binding SelectedModel}"
+                              HorizontalAlignment="Stretch" />
+                    <TextBlock Grid.Column="4" Text="{Binding Status}" Classes="muted"
+                               VerticalAlignment="Center" Margin="14,0,0,0"
+                               MaxWidth="260" TextTrimming="CharacterEllipsis" />
+                </Grid>
+            </Border>
+
+            <Border DockPanel.Dock="Bottom" Margin="0,12,0,0">
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBox Grid.Column="0"
+                             Text="{Binding Prompt}"
+                             Watermark="Ask for OfficeNet code — Enter to send, Shift+Enter for a new line"
+                             AcceptsReturn="True" TextWrapping="Wrap"
+                             MinHeight="62" MaxHeight="150" Padding="12,10"
+                             KeyDown="OnPromptKeyDown" />
+                    <Button Grid.Column="1" Content="Send" Classes="action"
+                            Margin="10,0,0,0" VerticalAlignment="Stretch" Padding="22,0"
+                            Command="{Binding SendCommand}" IsEnabled="{Binding !IsBusy}" />
+                </Grid>
+            </Border>
+
+            <Grid>
+                <ScrollViewer>
+                    <ItemsControl ItemsSource="{Binding SelectedSession.Turns}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:ChatTurn">
+                                <StackPanel Spacing="5" Margin="0,0,0,18">
+                                    <TextBlock Text="{Binding Who}" Classes="label" />
+                                    <SelectableTextBlock Text="{Binding Text}" Classes="mono"
+                                                         FontSize="12.5" LineHeight="20"
+                                                         TextWrapping="Wrap" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+
+                <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center"
+                            MaxWidth="520" Spacing="8"
+                            IsVisible="{Binding !SelectedSession.Turns.Count}">
+                    <TextBlock Text="Ask about OfficeNet" Classes="display"
+                               HorizontalAlignment="Center" />
+                    <TextBlock Classes="muted" TextAlignment="Center"
+                               Text="It knows the four libraries and their traps, and can search the web, fetch a page, check the date and do arithmetic. Pick an example on the right to start." />
+                </StackPanel>
+            </Grid>
+        </DockPanel>
+
+        <!-- Examples -->
+        <Border Grid.Column="2" BorderBrush="{DynamicResource Line}" BorderThickness="1,0,0,0">
+            <DockPanel Margin="14">
+                <StackPanel DockPanel.Dock="Top" Spacing="8">
+                    <TextBlock Text="EXAMPLES" Classes="label" />
+                    <TextBlock Classes="muted" FontSize="11"
+                               Text="Click one to put it in the box, then edit it or send as is." />
+
+                    <!-- A ListBox rather than radio buttons: selection is exactly what this is,
+                         and binding SelectedItem needs no converter to express it. -->
+                    <ListBox ItemsSource="{Binding ExampleGroups}"
+                             SelectedItem="{Binding SelectedExampleGroup}"
+                             Background="Transparent" BorderThickness="0" Padding="0"
+                             Margin="0,4,0,0">
+                        <ListBox.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel />
+                            </ItemsPanelTemplate>
+                        </ListBox.ItemsPanel>
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="x:String">
+                                <TextBlock Text="{Binding}" FontSize="11" Margin="8,4" />
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+
+                    <Border Classes="divider" Margin="0,4,0,8" />
+                </StackPanel>
+
+                <ScrollViewer>
+                    <ItemsControl ItemsSource="{Binding VisibleExamples}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:PromptExample">
+                                <Button Classes="example"
+                                        Margin="0,0,0,6"
+                                        HorizontalAlignment="Stretch"
+                                        HorizontalContentAlignment="Left"
+                                        Command="{Binding $parent[ItemsControl].((vm:ChatViewModel)DataContext).UseExampleCommand}"
+                                        CommandParameter="{Binding}">
+                                    <TextBlock Text="{Binding Text}" TextWrapping="Wrap"
+                                               FontSize="12" LineHeight="17" />
+                                </Button>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </DockPanel>
+        </Border>
+
+    </Grid>
+
+</UserControl>

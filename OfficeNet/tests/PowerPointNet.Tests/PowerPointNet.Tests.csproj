@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>PowerPointNet.Tests</RootNamespace>
+    <AssemblyName>PowerPointNet.Tests</AssemblyName>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\OfficeNet.Core\OfficeNet.Core.csproj" />
+    <ProjectReference Include="..\..\src\PdfNet\PdfNet.csproj" />
+    <ProjectReference Include="..\..\src\PowerPointNet\PowerPointNet.csproj" />
+    <ProjectReference Include="..\OfficeNet.TestKit\OfficeNet.TestKit.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+
+</Project>

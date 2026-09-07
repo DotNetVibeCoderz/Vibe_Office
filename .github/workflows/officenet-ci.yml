@@ -1,0 +1,127 @@
+# OfficeNet - Dibuat oleh Gravicode Studios, dipimpin oleh Kang Fadhil.
+name: OfficeNet CI
+
+# OfficeNet lives at Vibe_Office/OfficeNet. GitHub reads workflows only from the repository root,
+# so this file sits here rather than beside the project, and every path is prefixed accordingly.
+#
+# The path filter matters in a monorepo: without it, a commit touching an unrelated sibling would
+# build and test OfficeNet for nothing.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "OfficeNet/**"
+      - ".github/workflows/officenet-ci.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "OfficeNet/**"
+      - ".github/workflows/officenet-ci.yml"
+  workflow_dispatch:
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+
+# Applies to every `run` step in the file; `uses` steps take explicit paths instead.
+defaults:
+  run:
+    working-directory: OfficeNet
+
+jobs:
+  build:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+
+    # The whole point of a managed-only core is that the output is identical everywhere, so all
+    # three platforms run the full suite rather than Linux running it and the others smoke-testing.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: OfficeNet/global.json
+
+      - name: Cache NuGet
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ matrix.os }}-${{ hashFiles('OfficeNet/**/Directory.Packages.props', 'OfficeNet/**/*.csproj') }}
+          restore-keys: nuget-${{ matrix.os }}-
+
+      - name: Restore
+        run: dotnet restore OfficeNet.sln
+
+      # -warnaserror rather than a per-project setting: a warning that only appears on one platform
+      # is exactly the kind this project needs to fail on.
+      - name: Build
+        run: dotnet build OfficeNet.sln -c Release --no-restore -warnaserror
+
+      - name: Test
+        run: dotnet test OfficeNet.sln -c Release --no-build --logger "trx;LogFileName=test-results.trx"
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.os }}
+          path: "OfficeNet/**/TestResults/*.trx"
+          if-no-files-found: ignore
+
+  generated:
+    name: generated files are current
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: OfficeNet/global.json
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # The notebooks and the tests lifted from them are both committed. Regenerating and diffing
+      # is what stops them drifting apart — a notebook edited by hand, or a generator changed
+      # without rerunning it, fails here rather than silently shipping.
+      - name: Regenerate notebooks and their tests
+        run: |
+          python tools/gen_notebooks.py
+          python tools/gen_notebook_tests.py
+
+      - name: Fail if regenerating changed anything
+        run: |
+          if ! git diff --exit-code -- notebooks tests/OfficeNet.Docs.Tests/Notebooks; then
+            echo "::error::Generated files are stale. Run tools/gen_notebooks.py and tools/gen_notebook_tests.py, then commit."
+            exit 1
+          fi
+
+      # Screenshots are regenerated but NOT diffed: rasterised output differs by a few pixels
+      # between font stacks, so a byte comparison would fail on every runner. Checking that the
+      # generator still runs catches the failure that matters — an API change breaking it.
+      - name: Screenshot generator still runs
+        run: dotnet run --project tools/ScreenshotGen -c Release
+
+  docs:
+    name: documentation links
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Check relative links and images resolve
+        run: python tools/check_links.py

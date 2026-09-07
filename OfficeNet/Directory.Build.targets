@@ -1,0 +1,12 @@
+<Project>
+
+  <!--
+    Packable projects (src/**) get the shared README and icon folded into the .nupkg. Kept here
+    rather than in Directory.Build.props so $(IsPackable) has already been set by the .csproj.
+  -->
+  <ItemGroup Condition="'$(IsPackable)' == 'true'">
+    <None Include="$(MSBuildThisFileDirectory)README.md" Pack="true" PackagePath="\" Visible="false" />
+    <None Include="$(MSBuildThisFileDirectory)assets\icon.png" Pack="true" PackagePath="\" Visible="false" />
+  </ItemGroup>
+
+</Project>

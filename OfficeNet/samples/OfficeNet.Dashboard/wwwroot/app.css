@@ -1,0 +1,671 @@
+/* OfficeNet - Dibuat oleh Gravicode Studios, dipimpin oleh Kang Fadhil.
+ *
+ * The palette is taken from the formats themselves: Word blue, Excel green, PowerPoint orange and
+ * PDF red are the real product identities, so a spine colour tells you what a file is before you
+ * read its name. Nothing else in the interface is coloured — paper is the only bright field, which
+ * is the right emphasis for a tool whose subject is documents.
+ */
+
+:root {
+    --ink: #10131a;
+    --panel: #171b23;
+    --panel-high: #1e232d;
+    --line: #262c38;
+    --text: #e7eaf0;
+    --mute: #7d8797;
+    --paper: #fcfcf9;
+
+    --word: #2b579a;
+    --excel: #217346;
+    --powerpoint: #d24726;
+    --pdf: #b30b00;
+    --unknown: #5b6472;
+
+    --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+    --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", "Cascadia Mono", monospace;
+
+    --gap: 1.5rem;
+    --radius: 3px;
+}
+
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
+html {
+    color-scheme: dark;
+}
+
+body {
+    margin: 0;
+    background: var(--ink);
+    color: var(--text);
+    font-family: var(--body);
+    font-size: 15px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3 {
+    font-family: var(--display);
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    margin: 0;
+}
+
+code,
+.mono {
+    font-family: var(--mono);
+    font-size: 0.82em;
+}
+
+:focus-visible {
+    outline: 2px solid var(--text);
+    outline-offset: 2px;
+}
+
+/* ---- Shell -------------------------------------------------------------------------------- */
+
+.shell {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.masthead {
+    display: flex;
+    align-items: baseline;
+    gap: 1.25rem;
+    flex-wrap: wrap;
+    padding: 1.1rem var(--gap);
+    border-bottom: 1px solid var(--line);
+}
+
+.wordmark {
+    font-family: var(--display);
+    font-size: 1.1rem;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+}
+
+.wordmark-name {
+    font-weight: 700;
+}
+
+/* The tool name sits in mono to read as a label rather than part of the brand. */
+.wordmark-tool {
+    font-family: var(--mono);
+    font-weight: 400;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--mute);
+    margin-left: 0.5rem;
+}
+
+.masthead-note {
+    margin: 0;
+    color: var(--mute);
+    font-size: 0.85rem;
+}
+
+.colophon {
+    margin-top: auto;
+    padding: 1rem var(--gap);
+    border-top: 1px solid var(--line);
+    color: var(--mute);
+    font-size: 0.78rem;
+}
+
+/* ---- Workbench ---------------------------------------------------------------------------- */
+
+.workbench {
+    display: grid;
+    grid-template-columns: minmax(240px, 300px) 1fr;
+    align-items: start;
+    gap: 0;
+    flex: 1;
+}
+
+.shelf {
+    padding: var(--gap);
+    border-right: 1px solid var(--line);
+    position: sticky;
+    top: 0;
+    align-self: stretch;
+}
+
+.inspector {
+    padding: var(--gap);
+    min-width: 0;
+}
+
+/* ---- Dropzone ----------------------------------------------------------------------------- */
+
+.dropzone {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    padding: 1.1rem 1rem;
+    border: 1px dashed var(--line);
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: border-color 120ms ease, background-color 120ms ease;
+}
+
+.dropzone:hover,
+.dropzone:focus-within {
+    border-color: var(--mute);
+    background: var(--panel);
+}
+
+.dropzone.is-busy {
+    border-style: solid;
+    color: var(--mute);
+}
+
+.dropzone input {
+    /* Clipped rather than display:none so it stays keyboard reachable. */
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+}
+
+.dropzone-title {
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: 0.98rem;
+}
+
+.dropzone-hint {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    color: var(--mute);
+}
+
+.shelf-empty {
+    margin: 1.25rem 0 0;
+    color: var(--mute);
+    font-size: 0.85rem;
+}
+
+/* ---- Shelf items -------------------------------------------------------------------------- */
+
+.shelf-list {
+    list-style: none;
+    margin: 1.25rem 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.shelf-item {
+    width: 100%;
+    display: flex;
+    align-items: stretch;
+    gap: 0.7rem;
+    padding: 0;
+    background: none;
+    border: 0;
+    border-radius: var(--radius);
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    overflow: hidden;
+    transition: background-color 120ms ease;
+}
+
+.shelf-item:hover {
+    background: var(--panel);
+}
+
+.shelf-item.is-selected {
+    background: var(--panel-high);
+}
+
+/* The spine: a file's format, as a coloured edge with the extension set into it. */
+.spine {
+    flex: 0 0 auto;
+    display: grid;
+    place-items: center;
+    width: 2.6rem;
+    padding: 0.5rem 0;
+    background: var(--unknown);
+    color: #fff;
+    font-family: var(--mono);
+    font-size: 0.62rem;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+}
+
+[data-format="word"] .spine,
+.fact dd[data-format="word"] {
+    background: var(--word);
+}
+
+[data-format="excel"] .spine,
+.fact dd[data-format="excel"] {
+    background: var(--excel);
+}
+
+[data-format="powerpoint"] .spine,
+.fact dd[data-format="powerpoint"] {
+    background: var(--powerpoint);
+}
+
+[data-format="pdf"] .spine,
+.fact dd[data-format="pdf"] {
+    background: var(--pdf);
+}
+
+.shelf-item-body {
+    min-width: 0;
+    padding: 0.45rem 0.5rem 0.45rem 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.shelf-item-name {
+    font-size: 0.88rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.shelf-item-meta {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    color: var(--mute);
+}
+
+/* ---- Placeholder and notices -------------------------------------------------------------- */
+
+.placeholder {
+    max-width: 46ch;
+    padding-top: 3rem;
+}
+
+.placeholder-title {
+    font-size: clamp(1.6rem, 3vw, 2.3rem);
+    margin-bottom: 0.9rem;
+}
+
+.placeholder-body {
+    color: var(--mute);
+    margin: 0 0 0.8rem;
+}
+
+.placeholder-body code {
+    color: var(--text);
+}
+
+.notice {
+    padding: 1rem 1.1rem;
+    border-radius: var(--radius);
+    background: var(--panel);
+    border-left: 3px solid var(--pdf);
+}
+
+.notice-title {
+    font-size: 1.05rem;
+    margin-bottom: 0.35rem;
+}
+
+/* ---- Document head ------------------------------------------------------------------------ */
+
+.doc-title {
+    font-size: clamp(1.35rem, 2.4vw, 1.9rem);
+    margin-bottom: 0.7rem;
+}
+
+.facts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 1.6rem;
+    margin: 0 0 1rem;
+}
+
+.fact {
+    display: flex;
+    align-items: baseline;
+    gap: 0.45rem;
+}
+
+.fact dt {
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--mute);
+}
+
+.fact dd {
+    margin: 0;
+    font-size: 0.88rem;
+}
+
+/* Only the format fact takes a colour, and it takes the file's own. */
+.fact dd[data-format] {
+    padding: 0.05rem 0.45rem;
+    border-radius: var(--radius);
+    color: #fff;
+    font-family: var(--mono);
+    font-size: 0.72rem;
+}
+
+.actions {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+    margin-bottom: 1.6rem;
+}
+
+.action {
+    padding: 0.42rem 0.9rem;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--panel-high);
+    color: var(--text);
+    font: inherit;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: border-color 120ms ease, background-color 120ms ease;
+}
+
+.action:hover {
+    border-color: var(--mute);
+    background: var(--panel);
+}
+
+.action-quiet {
+    background: none;
+    color: var(--mute);
+}
+
+.status {
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    color: var(--mute);
+}
+
+/* ---- Panes -------------------------------------------------------------------------------- */
+
+.panes {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: var(--gap);
+    align-items: start;
+}
+
+.pane {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 1rem 1.1rem 1.2rem;
+    min-width: 0;
+}
+
+.pane-text {
+    margin-top: var(--gap);
+}
+
+.pane-title {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--mute);
+    padding-bottom: 0.7rem;
+    margin-bottom: 0.9rem;
+    border-bottom: 1px solid var(--line);
+}
+
+.pane-subtitle {
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--mute);
+    margin: 1.4rem 0 0.6rem;
+}
+
+.pane-count {
+    text-transform: none;
+    letter-spacing: 0;
+}
+
+.pane-empty {
+    margin: 0;
+    color: var(--mute);
+    font-size: 0.85rem;
+}
+
+/* ---- Rendered pages ----------------------------------------------------------------------- */
+
+.pages {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.page {
+    margin: 0;
+    animation: rise 260ms ease-out backwards;
+    animation-delay: var(--stagger, 0ms);
+}
+
+.page img {
+    display: block;
+    width: 100%;
+    height: auto;
+    background: var(--paper);
+    border-radius: 2px;
+    /* The only shadow in the interface: paper is the thing that should look physical. */
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.5), 0 10px 24px -12px rgb(0 0 0 / 0.7);
+}
+
+.page figcaption {
+    margin-top: 0.35rem;
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    color: var(--mute);
+    text-align: right;
+}
+
+/* ---- Anatomy ------------------------------------------------------------------------------ */
+
+.parts {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+}
+
+.parts th {
+    font-family: var(--mono);
+    font-size: 0.65rem;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--mute);
+    text-align: left;
+    padding-bottom: 0.4rem;
+}
+
+.parts td {
+    padding: 0.22rem 0.5rem 0.22rem 0;
+    border-top: 1px solid var(--line);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    animation: fade 220ms ease-out backwards;
+    animation-delay: var(--stagger, 0ms);
+}
+
+.parts .dim {
+    color: var(--mute);
+}
+
+.parts .part {
+    width: 55%;
+}
+
+.parts .type {
+    width: 27%;
+}
+
+.parts .num,
+.parts th.num {
+    text-align: right;
+    width: 18%;
+    padding-right: 0;
+}
+
+.links {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+}
+
+.links li {
+    display: grid;
+    grid-template-columns: minmax(0, 1.1fr) auto auto minmax(0, 1.3fr) minmax(0, 0.7fr);
+    align-items: baseline;
+    gap: 0.5rem;
+    padding: 0.2rem 0;
+    border-top: 1px solid var(--line);
+    font-size: 0.72rem;
+}
+
+.link-source,
+.link-target {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.link-source {
+    color: var(--mute);
+}
+
+.link-id {
+    color: var(--text);
+    opacity: 0.75;
+}
+
+.link-arrow {
+    color: var(--mute);
+}
+
+/* The relationship type is the meaning of the edge, so it gets the readable face rather than mono. */
+.link-type {
+    font-size: 0.68rem;
+    color: var(--mute);
+    text-align: right;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* ---- Extracted text ----------------------------------------------------------------------- */
+
+.extract {
+    margin: 0;
+    max-height: 22rem;
+    overflow: auto;
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    line-height: 1.6;
+    color: var(--text);
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+/* ---- Motion ------------------------------------------------------------------------------- */
+
+@keyframes rise {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+}
+
+@keyframes fade {
+    from {
+        opacity: 0;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+    .page,
+    .parts td {
+        animation: none;
+    }
+}
+
+/* ---- Responsive --------------------------------------------------------------------------- */
+
+@media (max-width: 1080px) {
+    .panes {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+@media (max-width: 760px) {
+    .workbench {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .shelf {
+        position: static;
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
+    }
+}
+
+/* Blazor's own error strip, restyled so it does not arrive as unstyled browser default. */
+#blazor-error-ui {
+    display: none;
+    position: fixed;
+    inset: auto 0 0 0;
+    padding: 0.7rem var(--gap);
+    background: var(--pdf);
+    color: #fff;
+    font-size: 0.85rem;
+    z-index: 100;
+}
+
+/* A button that reads as prose, for an action offered inside a sentence. */
+.link-button {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--text);
+    font: inherit;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    cursor: pointer;
+}
+
+.link-button:hover {
+    color: var(--paper);
+}

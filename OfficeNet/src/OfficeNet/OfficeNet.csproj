@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>OfficeNet</RootNamespace>
+    <AssemblyName>Gravicode.OfficeNet</AssemblyName>
+    <PackageId>Gravicode.OfficeNet</PackageId>
+    <IsPackable>true</IsPackable>
+    <!-- Set here rather than in Directory.Build.targets: that file is imported
+         after the SDK has already decided whether to emit documentation, so the
+         property has no effect there and the .xml never reaches the package. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <Description>
+      OfficeNet — Word, Excel, PowerPoint and PDF for .NET 10 with no Office install and no native
+      dependency. This package pulls in WordNet, ExcelNet, PowerPointNet and PdfNet, and adds a
+      facade that opens any of the four formats by sniffing the file.
+      Dibuat oleh Gravicode Studios, dipimpin oleh Kang Fadhil.
+    </Description>
+    <PackageTags>office;docx;xlsx;pptx;pdf;word;excel;powerpoint;ooxml;openxml;gravicode</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OfficeNet.Core\OfficeNet.Core.csproj" />
+    <ProjectReference Include="..\PdfNet\PdfNet.csproj" />
+    <ProjectReference Include="..\WordNet\WordNet.csproj" />
+    <ProjectReference Include="..\ExcelNet\ExcelNet.csproj" />
+    <ProjectReference Include="..\PowerPointNet\PowerPointNet.csproj" />
+  </ItemGroup>
+
+</Project>

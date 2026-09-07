@@ -1,0 +1,109 @@
+# OfficeNet - Dibuat oleh Gravicode Studios, dipimpin oleh Kang Fadhil.
+name: OfficeNet Release
+
+# Tag-driven, and namespaced because this is a monorepo: `officenet-v1.0.0` publishes 1.0.0 of
+# OfficeNet and leaves the sibling projects alone. The tag is the single source of the version, so
+# a package can never be published with a version nobody can find in the history.
+on:
+  push:
+    tags:
+      - "officenet-v[0-9]+.[0-9]+.[0-9]+"
+      - "officenet-v[0-9]+.[0-9]+.[0-9]+-*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to publish (without the leading v)"
+        required: true
+      dry_run:
+        description: "Pack only; do not push"
+        type: boolean
+        default: true
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+defaults:
+  run:
+    working-directory: OfficeNet
+
+jobs:
+  publish:
+    name: Pack and publish to NuGet
+    runs-on: ubuntu-latest
+
+    # Environments gate a deployment on a human approving it. Publishing to NuGet is irreversible —
+    # a version can be unlisted but never replaced — so it is worth one click.
+    environment: nuget
+
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: OfficeNet/global.json
+
+      - name: Resolve version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${GITHUB_REF_NAME#officenet-v}"
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Publishing version $VERSION"
+
+      - name: Restore
+        run: dotnet restore OfficeNet.sln
+
+      - name: Build
+        run: dotnet build OfficeNet.sln -c Release --no-restore -warnaserror -p:Version=${{ steps.version.outputs.version }}
+
+      # The full suite, not a subset. A package that ships is a package whose tests passed on the
+      # exact commit being packed.
+      - name: Test
+        run: dotnet test OfficeNet.sln -c Release --no-build
+
+      - name: Pack
+        run: |
+          dotnet pack OfficeNet.sln -c Release --no-build \
+            -p:Version=${{ steps.version.outputs.version }} \
+            -p:ContinuousIntegrationBuild=true \
+            -o artifacts
+
+      - name: List packages
+        run: ls -la artifacts
+
+      - name: Upload packages as build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nupkg-${{ steps.version.outputs.version }}
+          path: OfficeNet/artifacts/*.nupkg
+
+      # NUGET_API_KEY is a repository secret: never echoed, never written to a file, never
+      # committed. Set it under Settings > Secrets and variables > Actions.
+      - name: Push to NuGet
+        if: github.event_name == 'push' || github.event.inputs.dry_run == 'false'
+        run: |
+          dotnet nuget push "artifacts/*.nupkg" \
+            --api-key "$NUGET_API_KEY" \
+            --source https://api.nuget.org/v3/index.json \
+            --skip-duplicate
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+
+      - name: Create GitHub release
+        if: github.event_name == 'push'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: OfficeNet/artifacts/*.nupkg
+          generate_release_notes: true
+          draft: false
