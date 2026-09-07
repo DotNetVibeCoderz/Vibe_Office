@@ -62,12 +62,26 @@ jobs:
           restore-keys: nuget-${{ matrix.os }}-
 
       - name: Restore
-        run: dotnet restore OfficeNet.sln -p:Configuration=$Configuration
+        run: dotnet restore OfficeNet.sln -p:Configuration=${{ env.Configuration }}
 
       # -warnaserror rather than a per-project setting: a warning that only appears on one platform
       # is exactly the kind this project needs to fail on.
       - name: Build
-        run: dotnet build OfficeNet.sln -c Release --no-restore -warnaserror
+        shell: bash
+        run: |
+          set -o pipefail
+
+          # GitHub's raw logs need authentication to read, but anything emitted as a ::error::
+          # workflow command becomes an annotation, and annotations are public on a public repo.
+          # So a build that fails here can be diagnosed without pulling the log down.
+          if ! dotnet build OfficeNet.sln -c "$CONFIGURATION" --no-restore -warnaserror 2>&1 | tee build.log; then
+            grep -E ": (error|warning) [A-Za-z]+[0-9]+" build.log | sort -u | head -20 | while IFS= read -r line; do
+              echo "::error::$line"
+            done
+            exit 1
+          fi
+        env:
+          CONFIGURATION: ${{ env.Configuration }}
 
       - name: Test
         run: dotnet test OfficeNet.sln -c Release --no-build --logger "trx;LogFileName=test-results.trx"

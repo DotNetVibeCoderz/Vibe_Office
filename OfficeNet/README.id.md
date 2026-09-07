@@ -15,10 +15,76 @@ sudah paham API-nya.
 | `Gravicode.OfficeNet.ExcelNet` | openpyxl + pandas | `.xlsx` — sel, formula, style, CSV/JSON/SQL, DataFrame |
 | `Gravicode.OfficeNet.PowerPointNet` | python-pptx + PptxGenJS | `.pptx` — slide, layout, tema, tabel, chart, media, **HTML → slide** |
 | `Gravicode.OfficeNet.PdfNet` | PyPDF2 | `.pdf` — gabung, pecah, rotasi, ekstraksi, form, enkripsi, anotasi, gambar |
-| `Gravicode.OfficeNet.Core` | — | Kontainer OPC dan satuan yang dipakai bersama |
-| `Gravicode.OfficeNet` | — | Paket meta yang menarik semuanya |
+| `Gravicode.OfficeNet.Rendering` | pdf2image | Halaman ke PNG/JPEG/WebP — satu-satunya paket dengan dependensi native |
+| `Gravicode.OfficeNet.Core` | — | Kontainer OPC, satuan, warna, dan model chart yang dipakai bersama |
+| `Gravicode.OfficeNet` | — | Paket meta yang menarik semuanya, plus facade `Office` |
 
 *Dibuat oleh Gravicode Studios, dipimpin oleh Kang Fadhil.*
+
+---
+
+## Seperti apa hasilnya
+
+Setiap gambar di bawah dihasilkan oleh [`tools/ScreenshotGen`](tools/ScreenshotGen) dari keluaran
+library itu sendiri dan dirender lewat `OfficeNet.Rendering` — bukan ditangkap dari Word, Excel,
+atau PowerPoint. Menjalankan ulang tool-nya membuat gambar ini dibuat ulang, jadi tidak mungkin
+menyimpang dari apa yang sebenarnya dilakukan kodenya.
+
+| | |
+|---|---|
+| **WordNet** — heading, style, header dan footer, field nomor halaman, tabel berwarna | ![Dokumen Word dirender ke PNG](docs/screenshots/wordnet-document.png) |
+| **ExcelNet** — tanggal bertipe, format Rupiah, dan `SUM` yang benar-benar dihitung mesin formula | ![Workbook Excel dirender ke PNG](docs/screenshots/excelnet-workbook.png) |
+| **PowerPointNet** — chart native, digambar pengekspor PDF dari data cache-nya sendiri | ![Slide chart dirender ke PNG](docs/screenshots/powerpointnet-deck-03.png) |
+| **HTML → slide** — heading, daftar bersarang, dan tabel menjadi deck dalam satu panggilan | ![Slide yang dihasilkan dari HTML](docs/screenshots/html-to-slides-03.png) |
+
+### Aplikasi contoh
+
+**OfficeNet Gallery** — setiap fitur berjalan di sebelah kode yang menghasilkannya. Kode itu dibaca
+dari berkas demo yang tersemat saat runtime, jadi ia benar-benar kode yang baru saja dijalankan,
+bukan cuplikan yang disalin lalu lupa diperbarui.
+
+![Gallery: katalog, keluaran yang dirender, dan kode yang menghasilkannya](docs/screenshots/sample-gallery.png)
+
+Asistennya menjawab pertanyaan tentang library-nya, dengan beberapa percakapan sekaligus dan contoh
+prompt yang dikelompokkan per library. Diuji langsung terhadap model Azure OpenAI dan DeepSeek, dan
+fungsi pencarian web, tanggal, serta matematika semuanya benar-benar terpanggil.
+
+![Asisten, dengan sesi dan contoh prompt yang bisa diklik](docs/screenshots/sample-gallery-chat.png)
+
+**OfficeNet Dashboard** — unggah dokumen lalu lihat ia dirender *dan* dibedah: setiap part di dalam
+kontainer OPC beserta tipe konten dan ukurannya, plus seluruh graf relationship. Panel itulah alasan
+sampel ini ada.
+
+![Dashboard, menampilkan sebuah deck dan anatomi paketnya](docs/screenshots/sample-dashboard.png)
+
+---
+
+## Dokumentasi
+
+Panduan lengkap ada di [`docs/`](docs/id/README.md), dwibahasa seluruhnya. Setiap contoh kode di
+halaman-halaman itu dikompilasi dan dijalankan oleh test suite, jadi tidak ada yang bisa basi.
+
+| Panduan | Bahasa Indonesia | English |
+|---|---|---|
+| Indeks | [docs/id/README.md](docs/id/README.md) | [docs/README.md](docs/README.md) |
+| Konsep inti — OPC, satuan, warna, metadata | [id/Core.md](docs/id/Core.md) | [Core.md](docs/Core.md) |
+| WordNet | [id/WordNet.md](docs/id/WordNet.md) | [WordNet.md](docs/WordNet.md) |
+| ExcelNet | [id/ExcelNet.md](docs/id/ExcelNet.md) | [ExcelNet.md](docs/ExcelNet.md) |
+| PowerPointNet | [id/PowerPointNet.md](docs/id/PowerPointNet.md) | [PowerPointNet.md](docs/PowerPointNet.md) |
+| PdfNet | [id/PdfNet.md](docs/id/PdfNet.md) | [PdfNet.md](docs/PdfNet.md) |
+| Rendering | [id/Rendering.md](docs/id/Rendering.md) | [Rendering.md](docs/Rendering.md) |
+| API terpadu dan plugin | [id/OfficeNet.md](docs/id/OfficeNet.md) | [OfficeNet.md](docs/OfficeNet.md) |
+
+Dan di tempat lain dalam repositori ini:
+
+- **[samples/](samples/README.md)** — lima aplikasi: dua CLI, satu dashboard Blazor, dan dua
+  aplikasi Avalonia termasuk Gallery
+- **[notebooks/](notebooks/README.md)** — notebook Polyglot, satu per library; cara tercepat
+  mencoba API tanpa membuat proyek
+- **[benchmarks/](benchmarks/README.md)** — hasil BenchmarkDotNet, dan dua jalur kuadratik yang
+  ditemukan saat menjalankannya
+- **[Plan.md](Plan.md)** — peta jalan, dan apa yang sengaja tidak dikerjakan
+- **[Progress.md](Progress.md)** — apa yang selesai, terverifikasi, dan masih terbuka
 
 ---
 
@@ -222,17 +288,22 @@ dotnet build OfficeNet.sln -c Release
 dotnet test
 ```
 
-310 tes, tanpa warning.
+389 tes, tanpa warning.
 
 ## Yang belum diimplementasikan
 
-Kekurangan yang jujur, dilacak di [Progress.md](Progress.md):
+Kekurangan yang jujur, dilacak di [Progress.md](Progress.md) dan [Plan.md](Plan.md):
 
 - **WordNet** — footnote, endnote, komentar, text box
-- **ExcelNet** — chart, pivot table, data validation, proteksi sheet
-- **PowerPointNet** — SmartArt, ekspor image/video
-- **PdfNet** — rasterisasi (PDF → gambar), konversi PDF → Word/Excel
+- **ExcelNet** — data validation, proteksi sheet, `INDEX`/`MATCH`/`XLOOKUP`, penulis streaming
+- **PowerPointNet** — SmartArt, ekspor video, animasi motion path
+- **PdfNet** — konversi PDF → Word/Excel, penyematan font TrueType, tanda tangan digital
 - Ekspor Word→PDF menangani layout mengalir, bukan objek mengambang, footnote, atau hifenasi
+- **Pivot table** menulis cache dan tata letaknya; Excel menghitung grid hasilnya saat membuka
+  berkas, jadi konsumen non-Excel melihat area itu kosong. [Alasannya](docs/id/ExcelNet.md#pivot-table).
+- **Renderer** menggambar path, gambar, dan teks, tetapi mengganti font tersemat dengan font sistem
+  dan tidak menangani gradien, pattern, atau clipping. Ia untuk thumbnail dan pratinjau, bukan
+  penampil.
 
 ## Lisensi
 

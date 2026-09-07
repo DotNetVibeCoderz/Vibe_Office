@@ -87,7 +87,7 @@
                 <Grid ColumnDefinitions="*,Auto">
                     <TextBox Grid.Column="0"
                              Text="{Binding Prompt}"
-                             Watermark="Ask for OfficeNet code — Enter to send, Shift+Enter for a new line"
+                             PlaceholderText="Ask for OfficeNet code — Enter to send, Shift+Enter for a new line"
                              AcceptsReturn="True" TextWrapping="Wrap"
                              MinHeight="62" MaxHeight="150" Padding="12,10"
                              KeyDown="OnPromptKeyDown" />

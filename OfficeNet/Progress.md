@@ -322,7 +322,28 @@ Dua perbaikan:
 Pelajarannya: **membangun hanya dengan `-c Release` di lokal menyembunyikan seluruh graf dependensi
 Debug.** `dotnet restore` tanpa argumen adalah cara termurah menemukannya.
 
+### Kegagalan kedua: `-warnaserror`
+
+Restore lolos, lalu Build gagal — dan penyebabnya bukan lintas platform sama sekali:
+
+- `TextBox.Watermark` sudah usang di Avalonia 12 (namanya kini `PlaceholderText`). Itu sebuah
+  *warning*, dan CI membangun dengan `-warnaserror`, sementara verifikasi lokal selama ini hanya
+  `dotnet build -c Release` tanpa flag itu. Jadi peringatannya selalu ada, hanya tidak pernah
+  fatal di mesin ini.
+- Windows gagal lebih awal, di Restore, karena `-p:Configuration=$Configuration` adalah ekspansi
+  shell POSIX; shell bawaan `windows-latest` adalah PowerShell, sehingga nilainya kosong. Diganti
+  dengan ekspresi GitHub `${{ env.Configuration }}` yang berlaku di semua shell.
+
+- [x] `Watermark` → `PlaceholderText`
+- [x] Restore memakai ekspresi GitHub, bukan ekspansi shell
+- [x] Build di CI kini memancarkan diagnostiknya sebagai anotasi `::error::`, karena log mentah
+      butuh autentikasi sementara anotasi bisa dibaca publik
+
+**Pelajarannya: verifikasi lokal harus memakai flag yang sama dengan CI.** `dotnet build -c Release`
+dan `dotnet build -c Release -warnaserror` adalah dua perintah berbeda, dan hanya satu di antaranya
+yang dijalankan CI.
+
 ## Yang masih tersisa
 
-- [ ] Menunggu run CI berikutnya hijau di Windows, Linux, dan macOS. Job `generated files are
-      current` dan `documentation links` sudah hijau sejak awal; yang gagal hanya ketiga job build.
+- [ ] Menunggu run CI hijau di Windows, Linux, dan macOS. Job `generated files are current` dan
+      `documentation links` hijau sejak awal; kegagalannya selalu di ketiga job build.
