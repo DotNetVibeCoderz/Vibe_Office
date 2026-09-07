@@ -29,21 +29,30 @@ proyeknya, bukan sekadar rencananya.
 
 ---
 
-## v1.0 — Rilis pertama
+## v1.0 — **Terbit**
 
-Semua library inti selesai dan terverifikasi. Yang tersisa sebelum rilis dianggap layak dipakai
-orang lain.
+Dirilis ke NuGet sebagai 1.0.0 pada 8 September 2026: tujuh paket beserta symbol package. Semua
+butir yang direncanakan untuk rilis pertama selesai.
 
-| Butir | Alasan ia masuk v1.0 |
+| Butir | Hasil |
 |---|---|
-| Rasterisasi (`OfficeNet.Rendering`) | Memblokir screenshot dokumentasi, thumbnail, dan preview web |
-| Lima aplikasi contoh | Spesifikasi menyebutnya; juga uji integrasi terbaik yang ada |
-| Dokumentasi bilingual + screenshot | Library tanpa dokumen adalah library yang tidak dipakai |
-| Notebook Polyglot | Cara tercepat mencoba API tanpa membuat proyek |
-| Benchmark | Klaim performa tanpa angka adalah pemasaran |
-| CI + release workflow | Rilis manual akan salah, cepat atau lambat |
+| Rasterisasi (`OfficeNet.Rendering`) | Paket terpisah; menggambar path, gambar, dan teks berwarna |
+| Chart & pivot table ExcelNet | Keduanya ada; grid pivot sengaja dihitung Excel saat membuka |
+| Lima aplikasi contoh | Dua CLI, satu Blazor, dua Avalonia (termasuk Gallery + asisten) |
+| Dokumentasi bilingual + screenshot | 16 halaman; screenshot dihasilkan, bukan ditangkap |
+| Notebook Polyglot | Lima notebook; setiap selnya dikompilasi oleh test suite |
+| Benchmark | Dijalankan dan dilaporkan; menemukan dua jalur kuadratik yang lalu diperbaiki |
+| CI + release workflow | Ada di akar repo — **belum pernah terlihat berjalan**, lihat Progress.md |
+| Registry plugin | `OfficeFormats`; dibuktikan dengan format OPC baru dari ujung ke ujung |
 
----
+Yang dipelajari dan layak dibawa ke rilis berikutnya:
+
+- **Benchmark membayar dirinya sendiri.** Dua jalur kuadratik yang tidak terlihat oleh tes mana pun
+  — keluarannya benar, hanya lambat — muncul begitu ada angka.
+- **Contoh kode yang dikompilasi menangkap 16 nama API yang salah** di draf pertama dokumentasi.
+  Dokumentasi yang tidak dikompilasi adalah dokumentasi yang salah, hanya belum ketahuan.
+- **Menguji dengan model sungguhan menemukan dua hal** yang tidak akan muncul dari membaca dokumen:
+  Anthropic tidak punya konektor SK resmi, dan model bernalar menolak `temperature` selain bawaannya.
 
 ## v1.1 — Menutup kekurangan format
 

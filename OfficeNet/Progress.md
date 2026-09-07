@@ -278,6 +278,31 @@ Tes tidak bisa melihat keduanya: keluarannya benar, hanya lambat.
   adalah menelusuri `table.Rows` sekali (36 ms) — sekarang didokumentasikan di indexer-nya dan di
   panduan WordNet, bukan disembunyikan.
 
+## Rilis — **v1.0.0 terbit di NuGet**
+
+Tujuh paket beserta symbol package, dipublikasikan 8 September 2026:
+
+| Paket | Isi |
+|---|---|
+| `Gravicode.OfficeNet` | Meta package + facade `Office` + registry plugin |
+| `Gravicode.OfficeNet.Core` | Kontainer OPC, satuan, warna, metadata, model chart |
+| `Gravicode.OfficeNet.WordNet` | `.docx` |
+| `Gravicode.OfficeNet.ExcelNet` | `.xlsx` |
+| `Gravicode.OfficeNet.PowerPointNet` | `.pptx` |
+| `Gravicode.OfficeNet.PdfNet` | PDF |
+| `Gravicode.OfficeNet.Rendering` | Rasterisasi (SkiaSharp) |
+
+- [x] Nama paket diperiksa dulu di nuget.org — ketujuhnya belum dipakai
+- [x] Diunggah menurut urutan dependensi, sehingga tidak pernah ada paket yang merujuk
+      dependensi yang belum terbit
+- [x] **Diverifikasi dengan mengonsumsinya dari proyek baru** lewat nuget.org: Word, Excel dengan
+      chart dan pivot, `SUM` yang benar-benar dihitung, konversi PDF, dan render PNG
+
 ## Yang masih tersisa
 
-- [ ] Publikasi ke NuGet (paket sudah pack bersih: 7 paket + symbol)
+- [ ] **CI belum pernah terlihat berjalan.** Workflow ada di akar repo dengan filter
+      `paths: OfficeNet/**` dan commit terakhir menyentuh path itu, jadi seharusnya terpicu —
+      tetapi belum ada yang memeriksa tab Actions. Sampai ada yang melihatnya hijau di ketiga
+      sistem operasi, ini masih klaim, bukan fakta.
+- [ ] `NUGET_API_KEY` perlu disimpan di Settings → Secrets and variables → Actions agar rilis
+      berikutnya bisa lewat tag `officenet-v*` alih-alih `dotnet nuget push` manual.
