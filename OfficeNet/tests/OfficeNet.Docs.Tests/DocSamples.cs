@@ -18,6 +18,7 @@ using PowerPointNet.Charts;
 using PowerPointNet.Html;
 using PowerPointNet.Shapes;
 using PowerPointNet;
+using WordNet.Notes;
 using WordNet.Sections;
 using WordNet.Styles;
 using WordNet;
@@ -156,6 +157,37 @@ public class DocSamples : IDisposable
         document.AddSection(SectionStart.NextPage);
 
         Assert.Equal(2, document.Sections.Count);
+    }
+
+    [Fact]
+    public void WordNet_NotesAndComments()
+    {
+        using var document = WordDocument.Create();
+
+        var paragraph = document.AddParagraph("Pendapatan tumbuh 32% pada 2026.");
+
+        var note = paragraph.AddFootnote("Sumber: laporan internal, Januari 2026.");
+        note.AddParagraph("Angka telah diaudit.");
+
+        paragraph.AddEndnote("Lihat lampiran B.");
+        paragraph.AddComment("Tolong konfirmasi angkanya.", "Kang Fadhil");
+
+        var run = paragraph.AddRun("angka ini");
+        run.AddComment("Dari mana asalnya?", "Kang Fadhil");
+
+        foreach (var footnote in document.Footnotes.All)
+        {
+            _ = $"{footnote.Id}: {footnote.Text}";
+        }
+
+        _ = document.Comments.ByAuthor("Kang Fadhil").Count();
+
+        Assert.Single(document.Footnotes.All);
+        Assert.Single(document.Endnotes.All);
+        Assert.Equal(2, document.Comments.Count);
+
+        Assert.True(document.Footnotes.Remove(note.Id));
+        Assert.Empty(document.Footnotes.All);
     }
 
     [Fact]

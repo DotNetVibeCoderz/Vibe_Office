@@ -185,6 +185,54 @@ every page. The PDF exporter substitutes markers and fills in the real numbers p
 `SaveAsPdf` produces correct pagination even though the `.docx` itself carries a stale cache until
 Word refreshes it.
 
+## Footnotes, endnotes and comments
+
+```csharp
+var paragraph = document.AddParagraph("Pendapatan tumbuh 32% pada 2026.");
+
+var note = paragraph.AddFootnote("Sumber: laporan internal, Januari 2026.");
+note.AddParagraph("Angka telah diaudit.");          // a note holds paragraphs, not a string
+
+paragraph.AddEndnote("Lihat lampiran B.");
+paragraph.AddComment("Tolong konfirmasi angkanya.", "Kang Fadhil");
+```
+
+Reading and removing them:
+
+```csharp
+foreach (var note in document.Footnotes.All)
+{
+    Console.WriteLine($"{note.Id}: {note.Text}");
+}
+
+document.Footnotes.Remove(id);                       // also removes the reference in the body
+document.Comments.Remove(id);                        // and its range markers
+
+foreach (var comment in document.Comments.ByAuthor("Kang Fadhil")) { /* … */ }
+```
+
+A comment can bracket one run rather than the whole paragraph:
+
+```csharp
+var run = paragraph.AddRun("angka ini");
+run.AddComment("Dari mana asalnya?", "Kang Fadhil");
+```
+
+Three things worth knowing:
+
+- **The parts are created on first use.** A document with no notes carries no `footnotes.xml`, which
+  is what Word does too.
+- **Ids 0 and 1 are reserved.** They hold the separator drawn above the notes and the continuation
+  separator; `Footnotes.All` filters them out, and removing one throws.
+- **Removing a note removes its reference.** A reference pointing at a deleted note is exactly what
+  Word reports as unreadable content, so the two go together.
+
+**In the PDF export**, footnotes are drawn at the foot of the page their reference falls on, under a
+short rule, with the reference itself set as a superscript number. **Endnotes are not exported** —
+they belong in a block after the last page, which is separate work, and drawing them as footnotes
+would put them somewhere they do not belong. **Comments are not exported either**: they are review
+metadata rather than content, and Word does not print them by default.
+
 ## Finding and replacing text
 
 ```csharp

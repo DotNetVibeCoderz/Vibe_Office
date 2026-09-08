@@ -1,5 +1,6 @@
 // OfficeNet - Dibuat oleh Gravicode Studios, dipimpin oleh Kang Fadhil.
 
+using System.Globalization;
 using System.Xml.Linq;
 using OfficeNet.Core;
 using OfficeNet.Core.Drawing;
@@ -104,6 +105,13 @@ public static class WordToPdf
         private readonly List<PdfPage> _pages = [];
         private readonly List<(PdfPage Page, int Number)> _pageNumbers = [];
 
+        // Footnotes referenced on the page being laid out, and the height reserved for them at the
+        // foot of it. The reservation has to happen as each reference is met, because a note found
+        // on the last line changes where that line is allowed to sit.
+        private readonly List<(int Number, string Text)> _pageNotes = [];
+        private double _noteAreaHeight;
+        private int _nextNoteNumber = 1;
+
         public LayoutEngine(WordDocument document, PdfDocument pdf, Section section,
             PdfExportOptions options)
         {
@@ -120,6 +128,13 @@ public static class WordToPdf
         }
 
         private double ContentWidth => _right - _left;
+
+        /// <summary>Where the body text has to stop, once the page's footnotes are accounted for.</summary>
+        private double TextBottom => _bottom - _noteAreaHeight;
+
+        private const double NoteFontSize = 8.5;
+        private const double NoteLineHeight = 11;
+        private const double NoteSeparatorGap = 8;
 
         public void Run()
         {
@@ -142,6 +157,8 @@ public static class WordToPdf
 
         public void Finish()
         {
+            DrawPageNotes();
+
             _canvas?.Dispose();
             _canvas = null;
 
@@ -161,6 +178,10 @@ public static class WordToPdf
 
         private void NewPage()
         {
+            // The page's footnotes are drawn last but belong at its foot, which is why the space
+            // was reserved as the references were met rather than found at the end.
+            DrawPageNotes();
+
             _canvas?.Dispose();
 
             _page = _pdf.Pages.Add(_pageBox);
@@ -174,7 +195,7 @@ public static class WordToPdf
 
         private void EnsureSpace(double height)
         {
-            if (_cursor + height > _bottom && _cursor > _top)
+            if (_cursor + height > TextBottom && _cursor > _top)
             {
                 NewPage();
             }
@@ -190,7 +211,11 @@ public static class WordToPdf
             bool Underline,
             bool Strike,
             OfficeColor Color,
-            OfficeColor? Highlight);
+            OfficeColor? Highlight)
+        {
+            /// <summary>Raises the text, which is how a footnote's reference number is drawn.</summary>
+            public bool Superscript { get; init; }
+        }
 
         /// <summary>
         /// Resolves a run's effective formatting through its own properties, its character style,
@@ -478,6 +503,17 @@ public static class WordToPdf
                     continue;
                 }
 
+                // A footnote reference run carries no text — the number is drawn by the consumer,
+                // not stored — so it has to be recognised before the empty-run check below.
+                if (TakeNoteReference(run) is { } number)
+                {
+                    result.Add(new Segment(
+                        number.ToString(CultureInfo.InvariantCulture),
+                        Resolve(run, paragraph) with { SizePoints = NoteFontSize, Superscript = true }));
+
+                    continue;
+                }
+
                 var text = run.Text;
 
                 if (text.Length == 0)
@@ -496,6 +532,144 @@ public static class WordToPdf
             }
 
             return result;
+        }
+
+        /// <summary>
+        /// Recognises a footnote reference, numbers it, and reserves room for it on this page.
+        /// </summary>
+        /// <returns>The note's display number, or <c>null</c> when the run is not a reference.</returns>
+        /// <remarks>
+        /// <para>
+        /// The reservation happens here rather than at the end of the page because it changes where
+        /// the body text is allowed to stop: a note found on what would have been the last line
+        /// pushes that line onto the next page.
+        /// </para>
+        /// <para>
+        /// Endnotes are deliberately not handled. They belong in a block after the last page, which
+        /// is a different piece of work; a reference to one is dropped rather than drawn in the
+        /// wrong place.
+        /// </para>
+        /// </remarks>
+        private int? TakeNoteReference(Run run)
+        {
+            var reference = run.Element.Element(Ns.W + "footnoteReference");
+
+            if (reference is null)
+            {
+                return null;
+            }
+
+            var id = reference.IntAttr(Ns.W + "id");
+            var note = _document.Footnotes[id];
+
+            if (note is null)
+            {
+                // A reference with no definition: draw nothing rather than a number pointing at
+                // a note the reader will never find.
+                return null;
+            }
+
+            var number = _nextNoteNumber++;
+            var text = note.Text.Trim();
+
+            _pageNotes.Add((number, text));
+
+            // Reserve the note's own height plus, for the first note on the page, the gap and the
+            // separator rule above them.
+            var lines = Math.Max(1, EstimateNoteLines(number, text));
+
+            _noteAreaHeight += lines * NoteLineHeight;
+
+            if (_pageNotes.Count == 1)
+            {
+                _noteAreaHeight += NoteSeparatorGap * 2;
+            }
+
+            return number;
+        }
+
+        /// <summary>How many lines a note will take at the width available to it.</summary>
+        private int EstimateNoteLines(int number, string text)
+        {
+            var font = StandardFonts.Match(_options.DefaultFontFamily, false, false);
+            var prefix = number.ToString(CultureInfo.InvariantCulture) + " ";
+
+            var width = StandardFonts.MeasurePoints(font, prefix + text, NoteFontSize);
+            var available = Math.Max(1, ContentWidth);
+
+            return (int)Math.Ceiling(width / available);
+        }
+
+        /// <summary>Draws the current page's footnotes at its foot, above the bottom margin.</summary>
+        private void DrawPageNotes()
+        {
+            if (_canvas is not { } canvas || _pageNotes.Count == 0)
+            {
+                _pageNotes.Clear();
+                _noteAreaHeight = 0;
+                return;
+            }
+
+            // Anchored to the bottom margin rather than to where the text happened to end: a
+            // half-empty page still carries its notes at the foot, which is what a footnote means.
+            var y = _bottom - _noteAreaHeight + NoteSeparatorGap;
+
+            canvas.SetStrokeColor(OfficeColor.FromRgb(0x80, 0x80, 0x80));
+            canvas.SetLineWidth(0.5);
+            canvas.MoveTo(_left, y).LineTo(_left + Math.Min(ContentWidth / 3, 144), y).Stroke();
+
+            y += NoteSeparatorGap;
+
+            var font = StandardFonts.Match(_options.DefaultFontFamily, false, false);
+
+            foreach (var (number, text) in _pageNotes)
+            {
+                var prefix = number.ToString(CultureInfo.InvariantCulture);
+
+                canvas.SetFont(font, NoteFontSize * 0.8);
+                canvas.SetFillColor(OfficeColor.Black);
+                canvas.DrawText(prefix, _left, y + NoteFontSize * 0.5);
+
+                var indent = StandardFonts.MeasurePoints(font, prefix + " ", NoteFontSize);
+
+                canvas.SetFont(font, NoteFontSize);
+
+                foreach (var line in WrapPlainText(text, ContentWidth - indent, font, NoteFontSize))
+                {
+                    canvas.DrawText(line, _left + indent, y + NoteFontSize * 0.85);
+                    y += NoteLineHeight;
+                }
+            }
+
+            _pageNotes.Clear();
+            _noteAreaHeight = 0;
+        }
+
+        /// <summary>Breaks plain text to a width, for the note area's simpler layout needs.</summary>
+        private static IEnumerable<string> WrapPlainText(
+            string text, double width, StandardFont font, double size)
+        {
+            var current = string.Empty;
+
+            foreach (var word in text.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+            {
+                var candidate = current.Length == 0 ? word : current + " " + word;
+
+                if (StandardFonts.MeasurePoints(font, candidate, size) > width && current.Length > 0)
+                {
+                    yield return current;
+                    current = word;
+                }
+                else
+                {
+                    current = candidate;
+                }
+            }
+
+            if (current.Length > 0)
+            {
+                yield return current;
+            }
         }
 
         private static bool IsInstructionRun(Run run) =>
@@ -523,6 +697,16 @@ public static class WordToPdf
                 foreach (var word in SplitWords(segment.Text))
                 {
                     var wordWidth = StandardFonts.MeasurePoints(font, word, segment.Format.SizePoints);
+
+                    // A footnote marker belongs to the word before it. Letting it wrap on its own
+                    // leaves a bare superscript digit at the start of a line, which reads as a
+                    // typesetting error rather than as a reference.
+                    if (segment.Format.Superscript && current.Count > 0)
+                    {
+                        current.Add(new LinePiece(word, segment.Format));
+                        used += wordWidth;
+                        continue;
+                    }
 
                     if (used + wordWidth > available && current.Count > 0)
                     {
@@ -629,13 +813,19 @@ public static class WordToPdf
 
                 canvas.SetFillColor(piece.Format.Color);
 
+                // A superscript sits above the baseline; without the shift a footnote's number
+                // reads as a stray digit in the middle of the sentence.
+                var pieceBaseline = piece.Format.Superscript
+                    ? baseline - piece.Format.SizePoints * 0.42
+                    : baseline;
+
                 if (extraPerSpace > 0)
                 {
-                    DrawWithExtraSpacing(canvas, piece, font, cursor, baseline, extraPerSpace);
+                    DrawWithExtraSpacing(canvas, piece, font, cursor, pieceBaseline, extraPerSpace);
                 }
                 else
                 {
-                    canvas.DrawText(piece.Text, cursor, baseline);
+                    canvas.DrawText(piece.Text, cursor, pieceBaseline);
                 }
 
                 if (piece.Format.Underline)
@@ -744,7 +934,7 @@ public static class WordToPdf
             {
                 var rowHeight = MeasureRow(row, widths);
 
-                if (_cursor + rowHeight > _bottom && _cursor > _top)
+                if (_cursor + rowHeight > TextBottom && _cursor > _top)
                 {
                     NewPage();
 

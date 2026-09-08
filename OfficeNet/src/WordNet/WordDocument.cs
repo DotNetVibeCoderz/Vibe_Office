@@ -7,6 +7,7 @@ using OfficeNet.Core.Documents;
 using OfficeNet.Core.Drawing;
 using OfficeNet.Core.Packaging;
 using OfficeNet.Core.Xml;
+using WordNet.Notes;
 using WordNet.Numbering;
 using WordNet.Sections;
 using WordNet.Styles;
@@ -33,10 +34,16 @@ public sealed class WordDocument : OfficeDocument
     private static readonly OpcPartName SettingsPartName = "/word/settings.xml";
     private static readonly OpcPartName FontTablePartName = "/word/fontTable.xml";
     private static readonly OpcPartName NumberingPartName = "/word/numbering.xml";
+    private static readonly OpcPartName FootnotesPartName = "/word/footnotes.xml";
+    private static readonly OpcPartName EndnotesPartName = "/word/endnotes.xml";
+    private static readonly OpcPartName CommentsPartName = "/word/comments.xml";
 
     private readonly OpcPart _documentPart;
     private StyleCollection? _styles;
     private NumberingDefinitions? _numbering;
+    private NoteCollection? _footnotes;
+    private NoteCollection? _endnotes;
+    private CommentCollection? _comments;
     private int _nextDrawingId = 1;
     private int _nextBookmarkId;
 
@@ -48,7 +55,7 @@ public sealed class WordDocument : OfficeDocument
     /// <summary>The <c>word/document.xml</c> part.</summary>
     public OpcPart DocumentPart => _documentPart;
 
-    private XElement Root => _documentPart.Xml.Root
+    internal XElement Root => _documentPart.Xml.Root
         ?? throw new OfficeNetException("word/document.xml is empty.");
 
     /// <summary>The <c>w:body</c> element.</summary>
@@ -187,6 +194,114 @@ public sealed class WordDocument : OfficeDocument
             .Max();
 
         _nextBookmarkId = bookmarkIds + 1;
+    }
+
+    // ---- Notes and comments --------------------------------------------------------------------
+
+    /// <summary>
+    /// The document's footnotes. The part is created the first time this is used.
+    /// </summary>
+    public NoteCollection Footnotes =>
+        _footnotes ??= OpenNotes(FootnotesPartName, ContentTypes.WordFootnotes,
+            RelationshipTypes.Footnotes, NoteKind.Footnote);
+
+    /// <summary>The document's endnotes.</summary>
+    public NoteCollection Endnotes =>
+        _endnotes ??= OpenNotes(EndnotesPartName, ContentTypes.WordEndnotes,
+            RelationshipTypes.Endnotes, NoteKind.Endnote);
+
+    /// <summary>The document's review comments.</summary>
+    public CommentCollection Comments
+    {
+        get
+        {
+            if (_comments is not null)
+            {
+                return _comments;
+            }
+
+            var part = Package.FindPart(CommentsPartName);
+
+            if (part is null)
+            {
+                part = Package.AddXmlPart(CommentsPartName, ContentTypes.WordComments,
+                    CommentCollection.CreatePart());
+
+                _documentPart.AddRelationship(part, RelationshipTypes.Comments);
+                EnsureNoteStyles();
+            }
+
+            var root = part.Xml.Root
+                ?? throw new OfficeNetException($"{CommentsPartName} is empty.");
+
+            return _comments = new CommentCollection(this, root);
+        }
+    }
+
+    private NoteCollection OpenNotes(
+        OpcPartName partName, string contentType, string relationshipType, NoteKind kind)
+    {
+        var part = Package.FindPart(partName);
+
+        if (part is null)
+        {
+            part = Package.AddXmlPart(partName, contentType, NoteCollection.CreatePart(kind));
+            _documentPart.AddRelationship(part, relationshipType);
+            EnsureNoteStyles();
+        }
+
+        var root = part.Xml.Root ?? throw new OfficeNetException($"{partName} is empty.");
+        return new NoteCollection(this, root, kind);
+    }
+
+    /// <summary>
+    /// Adds the character and paragraph styles notes and comments refer to.
+    /// </summary>
+    /// <remarks>
+    /// A note whose <c>rStyle</c> names a style the document does not define renders as body text —
+    /// no superscript, no smaller size — which looks like a layout bug rather than a missing style.
+    /// </remarks>
+    private void EnsureNoteStyles()
+    {
+        foreach (var (id, name, superscript) in new[]
+                 {
+                     ("FootnoteReference", "footnote reference", true),
+                     ("EndnoteReference", "endnote reference", true),
+                     ("CommentReference", "annotation reference", false),
+                 })
+        {
+            if (Styles.Contains(id))
+            {
+                continue;
+            }
+
+            var style = Styles.Add(id, name, StyleType.Character, basedOn: null);
+
+            if (superscript)
+            {
+                style.RunFormat.VerticalAlignment = WordNet.VerticalAlignment.Superscript;
+            }
+            else
+            {
+                style.RunFormat.FontSize = Units.Pt(8);
+            }
+        }
+
+        foreach (var (id, name) in new[]
+                 {
+                     ("FootnoteText", "footnote text"),
+                     ("EndnoteText", "endnote text"),
+                     ("CommentText", "annotation text"),
+                 })
+        {
+            if (Styles.Contains(id))
+            {
+                continue;
+            }
+
+            var style = Styles.Add(id, name, StyleType.Paragraph, basedOn: "Normal");
+            style.RunFormat.FontSize = Units.Pt(10);
+        }
     }
 
     // ---- Content -------------------------------------------------------------------------------

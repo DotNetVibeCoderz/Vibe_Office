@@ -61,9 +61,10 @@ seberapa sering ketiadaannya menghentikan pekerjaan nyata.
 
 ### WordNet
 
-- **Footnote dan endnote.** Dokumen akademik dan legal tidak bisa dibuat tanpanya. Butuh part
-  `footnotes.xml`/`endnotes.xml` plus referensi di dalam run.
-- **Komentar** (`comments.xml`). Alur kerja tinjauan dokumen bergantung padanya.
+- [x] **Footnote dan endnote.** Selesai. Part dibuat saat pertama dipakai, id 0 dan 1 dicadangkan
+  untuk pemisah, dan menghapus catatan sekaligus menghapus rujukannya. Footnote juga digambar di
+  ekspor PDF, di kaki halaman tempat rujukannya berada.
+- [x] **Komentar** (`comments.xml`). Selesai, termasuk mengomentari satu run saja.
 - **Text box dan shape.** Saat ini hanya gambar inline; brosur dan formulir butuh objek mengambang.
 - **Ekspor Word→PDF: objek mengambang.** Mesin layout sekarang mengalir; gambar dengan
   `wrap="square"` dirender inline dan posisinya salah.

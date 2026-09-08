@@ -186,6 +186,54 @@ menulis "1" di setiap halaman. Pengekspor PDF mengganti field dengan penanda lal
 sebenarnya per halaman, jadi `SaveAsPdf` menghasilkan penomoran yang benar meski berkas `.docx`-nya
 sendiri masih membawa cache basi sampai Word menyegarkannya.
 
+## Footnote, endnote, dan komentar
+
+```csharp
+var paragraph = document.AddParagraph("Pendapatan tumbuh 32% pada 2026.");
+
+var note = paragraph.AddFootnote("Sumber: laporan internal, Januari 2026.");
+note.AddParagraph("Angka telah diaudit.");          // catatan berisi paragraf, bukan string
+
+paragraph.AddEndnote("Lihat lampiran B.");
+paragraph.AddComment("Tolong konfirmasi angkanya.", "Kang Fadhil");
+```
+
+Membaca dan menghapusnya:
+
+```csharp
+foreach (var note in document.Footnotes.All)
+{
+    Console.WriteLine($"{note.Id}: {note.Text}");
+}
+
+document.Footnotes.Remove(id);                       // sekaligus menghapus rujukannya di body
+document.Comments.Remove(id);                        // beserta marker rentangnya
+
+foreach (var comment in document.Comments.ByAuthor("Kang Fadhil")) { /* … */ }
+```
+
+Komentar bisa membungkus satu run saja, bukan seluruh paragraf:
+
+```csharp
+var run = paragraph.AddRun("angka ini");
+run.AddComment("Dari mana asalnya?", "Kang Fadhil");
+```
+
+Tiga hal yang perlu diketahui:
+
+- **Part-nya dibuat saat pertama dipakai.** Dokumen tanpa catatan tidak membawa `footnotes.xml`,
+  sama seperti yang dilakukan Word.
+- **Id 0 dan 1 dicadangkan.** Keduanya memuat garis pemisah di atas catatan dan pemisah lanjutan;
+  `Footnotes.All` menyaringnya, dan menghapus salah satunya melempar exception.
+- **Menghapus catatan menghapus rujukannya.** Rujukan yang menunjuk catatan terhapus persis yang
+  dilaporkan Word sebagai konten tak terbaca, jadi keduanya berjalan bersama.
+
+**Pada ekspor PDF**, footnote digambar di kaki halaman tempat rujukannya berada, di bawah garis
+pendek, dengan rujukannya sendiri sebagai angka superskrip. **Endnote tidak diekspor** — tempatnya
+di blok setelah halaman terakhir, dan itu pekerjaan tersendiri; menggambarnya sebagai footnote akan
+menaruhnya di tempat yang salah. **Komentar juga tidak diekspor**: ia metadata tinjauan, bukan isi,
+dan Word pun tidak mencetaknya secara baku.
+
 ## Mencari dan mengganti teks
 
 ```csharp

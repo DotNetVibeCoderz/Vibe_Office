@@ -369,4 +369,36 @@ public sealed class Run
     }
 
     public override string ToString() => Text;
+    /// <summary>Attaches a comment to this run alone.</summary>
+    /// <param name="text">The comment's text.</param>
+    /// <param name="author">Who is commenting.</param>
+    /// <param name="initials">Shown in the margin; derived from the author when omitted.</param>
+    /// <remarks>
+    /// The narrower counterpart to <see cref="Paragraph.AddComment"/>: the range brackets this run
+    /// rather than the whole paragraph, which is what you want when commenting on one phrase.
+    /// </remarks>
+    public Notes.Comment AddComment(string text, string author = "Author", string? initials = null)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        ArgumentException.ThrowIfNullOrWhiteSpace(author);
+
+        var comment = _document.Comments.Add(text, author, initials);
+        var id = XmlUtil.Num(comment.Id);
+
+        Element.AddBeforeSelf(new XElement(Ns.W + "commentRangeStart",
+            new XAttribute(Ns.W + "id", id)));
+
+        Element.AddAfterSelf(new XElement(Ns.W + "r",
+            new XElement(Ns.W + "rPr", XmlUtil.ValElement(Ns.W + "rStyle", "CommentReference")),
+            new XElement(Ns.W + "commentReference", new XAttribute(Ns.W + "id", id))));
+
+        // Inserted after the run but before the reference above, so the order ends up
+        // start, run, end, reference — which is what Word expects.
+        Element.AddAfterSelf(new XElement(Ns.W + "commentRangeEnd",
+            new XAttribute(Ns.W + "id", id)));
+
+        _document.Touch();
+        return comment;
+    }
+
 }

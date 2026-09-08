@@ -5,6 +5,7 @@ using System.Xml.Linq;
 using OfficeNet.Core;
 using OfficeNet.Core.Drawing;
 using OfficeNet.Core.Xml;
+using WordNet.Notes;
 
 namespace WordNet;
 
@@ -296,6 +297,82 @@ public sealed class Paragraph
 
         _document.Touch();
         return this;
+    }
+
+    // ---- Notes and comments --------------------------------------------------------------------
+
+    /// <summary>Appends a footnote reference, and creates the footnote.</summary>
+    /// <param name="text">The note's text.</param>
+    /// <returns>The note, so further paragraphs can be added to it.</returns>
+    /// <remarks>
+    /// The reference is a run carrying <c>w:footnoteReference</c>, styled so Word draws it as a
+    /// superscript number. Word owns the numbering: inserting a note above this one renumbers both.
+    /// </remarks>
+    public Note AddFootnote(string text) => AddNote(text, NoteKind.Footnote);
+
+    /// <summary>Appends an endnote reference, and creates the endnote.</summary>
+    public Note AddEndnote(string text) => AddNote(text, NoteKind.Endnote);
+
+    private Note AddNote(string text, NoteKind kind)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+
+        var collection = kind == NoteKind.Footnote ? _document.Footnotes : _document.Endnotes;
+        var note = collection.Add(text);
+
+        var referenceName = kind == NoteKind.Footnote ? "footnoteReference" : "endnoteReference";
+        var styleId = kind == NoteKind.Footnote ? "FootnoteReference" : "EndnoteReference";
+
+        Element.Add(new XElement(Ns.W + "r",
+            new XElement(Ns.W + "rPr", XmlUtil.ValElement(Ns.W + "rStyle", styleId)),
+            new XElement(Ns.W + referenceName,
+                new XAttribute(Ns.W + "id", XmlUtil.Num(note.Id)))));
+
+        _document.Touch();
+        return note;
+    }
+
+    /// <summary>Attaches a comment to this whole paragraph.</summary>
+    /// <param name="text">The comment's text.</param>
+    /// <param name="author">Who is commenting.</param>
+    /// <param name="initials">Shown in the margin; derived from the author when omitted.</param>
+    /// <remarks>
+    /// A comment is anchored to a range, so this wraps the paragraph's existing content between a
+    /// <c>commentRangeStart</c> and a <c>commentRangeEnd</c>. Comment a specific run instead with
+    /// <see cref="Run.AddComment"/>.
+    /// </remarks>
+    public Comment AddComment(string text, string author = "Author", string? initials = null)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        ArgumentException.ThrowIfNullOrWhiteSpace(author);
+
+        var comment = _document.Comments.Add(text, author, initials);
+        var id = XmlUtil.Num(comment.Id);
+
+        // The start marker goes before the first run, not at the very front: a leading w:pPr must
+        // stay the paragraph's first child.
+        var first = Element.Elements().FirstOrDefault(e => e.Name != Ns.W + "pPr");
+
+        var start = new XElement(Ns.W + "commentRangeStart", new XAttribute(Ns.W + "id", id));
+
+        if (first is not null)
+        {
+            first.AddBeforeSelf(start);
+        }
+        else
+        {
+            Element.Add(start);
+        }
+
+        Element.Add(new XElement(Ns.W + "commentRangeEnd", new XAttribute(Ns.W + "id", id)));
+
+        // The reference run must follow the end marker, and carries the marker a reader clicks.
+        Element.Add(new XElement(Ns.W + "r",
+            new XElement(Ns.W + "rPr", XmlUtil.ValElement(Ns.W + "rStyle", "CommentReference")),
+            new XElement(Ns.W + "commentReference", new XAttribute(Ns.W + "id", id))));
+
+        _document.Touch();
+        return comment;
     }
 
     /// <summary>Appends a <c>PAGE</c> field.</summary>
