@@ -42,7 +42,7 @@ butir yang direncanakan untuk rilis pertama selesai.
 | Dokumentasi bilingual + screenshot | 16 halaman; screenshot dihasilkan, bukan ditangkap |
 | Notebook Polyglot | Lima notebook; setiap selnya dikompilasi oleh test suite |
 | Benchmark | Dijalankan dan dilaporkan; menemukan dua jalur kuadratik yang lalu diperbaiki |
-| CI + release workflow | Ada di akar repo — **belum pernah terlihat berjalan**, lihat Progress.md |
+| CI + release workflow | Ada di akar repo; **hijau di Windows, Linux, dan macOS** |
 | Registry plugin | `OfficeFormats`; dibuktikan dengan format OPC baru dari ujung ke ujung |
 
 Yang dipelajari dan layak dibawa ke rilis berikutnya:

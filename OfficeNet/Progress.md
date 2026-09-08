@@ -343,7 +343,42 @@ Restore lolos, lalu Build gagal — dan penyebabnya bukan lintas platform sama s
 dan `dotnet build -c Release -warnaserror` adalah dua perintah berbeda, dan hanya satu di antaranya
 yang dijalankan CI.
 
+### Kegagalan ketiga: substitusi variabel di PowerShell
+
+Linux dan macOS hijau, Windows gagal dengan `MSB4126: solution configuration "|Any CPU" is
+invalid` — konfigurasinya sampai dalam keadaan kosong.
+
+Restore sudah memakai ekspresi GitHub dan lolos; Build memakai env var tingkat langkah dan tidak.
+Env var memang terlihat oleh shell, tetapi mensubstitusinya butuh sintaks shell, dan
+`$CONFIGURATION` tidak berarti apa-apa bagi PowerShell — shell bawaan `windows-latest`. Ekspresi
+GitHub disubstitusi sebelum shell mana pun melihatnya, jadi ia berperilaku sama di ketiga runner.
+
+- [x] Restore, Build, dan Test semuanya memakai `${{ env.Configuration }}`
+
+## CI — **hijau di ketiga sistem operasi**
+
+Run `3456147`: `ubuntu-latest`, `macos-latest`, `windows-latest`, `generated files are current`,
+dan `documentation links` — kelimanya lulus.
+
+Tiga kali gagal sebelum hijau, dan ketiganya adalah hal yang tidak mungkin terlihat dari mesin
+pengembangan:
+
+| Gagal | Sebab | Kenapa lolos di lokal |
+|---|---|---|
+| Restore | `Avalonia.Diagnostics 12.1.1` tidak pernah ada | Referensinya hanya untuk Debug; lokal selalu `-c Release` |
+| Build | `TextBox.Watermark` usang di Avalonia 12 | Peringatan; lokal tidak memakai `-warnaserror` |
+| Build (Windows) | `$CONFIGURATION` kosong di PowerShell | Runner lain memakai bash |
+
+**Semuanya satu pola yang sama: verifikasi lokal tidak menjalankan perintah yang sama dengan CI.**
+Perintah yang setara dengan CI adalah:
+
+```powershell
+dotnet restore OfficeNet.sln -p:Configuration=Release
+dotnet build OfficeNet.sln -c Release --no-restore -warnaserror
+dotnet test OfficeNet.sln -c Release --no-build
+```
+
 ## Yang masih tersisa
 
-- [ ] Menunggu run CI hijau di Windows, Linux, dan macOS. Job `generated files are current` dan
-      `documentation links` hijau sejak awal; kegagalannya selalu di ketiga job build.
+Tidak ada butir rilis yang terbuka. Sisanya adalah pekerjaan v1.1 dan seterusnya di
+[Plan.md](Plan.md).
