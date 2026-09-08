@@ -93,10 +93,10 @@ Dibuat oleh Gravicode Studios, dipimpin oleh Kang Fadhil.
 - [x] Jembatan **GraviFrame** — `ToDataFrame` / `WriteDataFrame` dengan inferensi tipe mayoritas
 - [x] Ekspor PDF — paginasi dua arah, header berulang, format angka
 - [x] Smoke test + **validasi struktur .xlsx oleh pembaca independen (python)**
-- [ ] Chart (`c:chart` DrawingML)
-- [ ] Pivot table
-- [ ] Data validation (dropdown)
-- [ ] Sheet protection
+- [x] Chart (`c:chart` DrawingML) — lewat part drawing perantara
+- [x] Pivot table — 4 part, `refreshOnLoad`; grid hasil sengaja tidak ditulis
+- [x] Data validation (dropdown) — tulis dan baca; batas 255 karakter ditegakkan
+- [x] Proteksi sheet dan workbook — tulis dan baca; flag dibalik tepat sekali
 
 ## PowerPointNet — `Gravicode.OfficeNet.PowerPointNet` (rewrite python-pptx)
 

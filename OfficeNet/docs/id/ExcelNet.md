@@ -308,6 +308,86 @@ lengkap, sementara konsumen non-Excel — termasuk ekspor PDF library ini sendir
 kosong. Menghitung grid-nya di sini berarti menulis ulang agregasi dan tata letak subtotal Excel,
 dan setiap ketidakcocokan akan tampak sebagai tabel yang berubah begitu seseorang membukanya.
 
+## Validasi data
+
+Dropdown adalah yang membuat sheet bisa diisi manusia, bukan hanya oleh program — bedanya antara
+kolom yang bersih dan kolom berisi "Jakarta", "jakarta", dan "DKI Jakarta".
+
+```csharp
+using ExcelNet.Validation;
+
+sheet.AddDropdown("B2:B200", "Jakarta", "Bandung", "Surabaya", "Medan");
+```
+
+`AddValidation` menerima jenis aturan lainnya. Builder mengembalikan aturan polos dan pesannya
+berupa properti `init`, jadi tambahkan dengan `with`:
+
+```csharp
+sheet.AddValidation(DataValidation.WholeNumberBetween(
+    CellRangeReference.Parse("C2:C200"), 1, 1000) with
+{
+    ErrorTitle = "Di luar rentang",
+    ErrorMessage = "Isi angka antara 1 dan 1000.",
+    PromptTitle = "Jumlah",
+    PromptMessage = "1 sampai 1000.",
+});
+```
+
+| Builder | Yang diizinkan |
+| --- | --- |
+| `List(range, values)` | salah satu dari daftar tetap, tampil sebagai dropdown |
+| `ListFromRange(range, source)` | salah satu nilai di `source`, misalnya `Lists!$A$1:$A$50` |
+| `WholeNumberBetween(range, min, max)` | bilangan bulat, inklusif |
+| `DecimalBetween(range, min, max)` | angka apa pun, inklusif |
+| `DateBetween(range, from, to)` | tanggal, inklusif |
+| `TextLengthAtMost(range, max)` | teks tidak lebih panjang dari `max` |
+| `Custom(range, formula)` | apa pun yang diterima formula |
+
+Daftar inline disimpan sebagai string dalam tanda kutip yang dipisah koma, dan **Excel membatasinya
+di 255 karakter** — lewat dari itu seluruh aturan dibuang dan file terbuka tanpa dropdown, tanpa
+pesan apa pun. `List` justru melempar exception dan menyebutkan panjangnya. Nilai yang mengandung
+koma ditolak dengan alasan yang sama: koma adalah pemisahnya, sehingga `"Jakarta, DKI"` akan menjadi
+dua entri. Untuk kedua kasus itulah `ListFromRange` ada; beri referensi absolut, karena referensi
+relatif bergeser per sel sehingga dropdown di baris 2 membaca range yang berbeda dari baris 3.
+
+`ErrorStyle` menentukan perlakuan atas entri yang ditolak: `Stop` menolaknya (default, dan biasanya
+itu yang diinginkan sebuah template), `Warning` dan `Information` tetap meloloskannya.
+
+## Proteksi sheet
+
+Proteksi sheet **bukan keamanan**. Passwordnya adalah hash 16-bit yang bisa dilepas alat apa pun
+dalam hitungan milidetik, dan isinya tetap terbaca. Fungsinya mencegah orang menimpa kolom formula
+karena tidak sengaja — masalah yang nyata dan sering terjadi — dan hanya itu.
+
+```csharp
+sheet.Protect(editable: "B2:B200");
+```
+
+Interaksi yang sering menjebak: proteksi hanya berlaku pada sel yang style-nya `locked`, dan
+**setiap sel terkunci secara default**. Memproteksi sheet tanpa membuka kunci sel isian membekukan
+seluruh sheet — karena itu `Protect` menerima range yang boleh diisi dan membuka kuncinya untuk
+Anda.
+
+Flag-nya menyatakan apa yang masih *diizinkan*:
+
+```csharp
+sheet.Protection = new SheetProtection
+{
+    PasswordHash = SheetProtection.WithPassword("rahasia").PasswordHash,
+    Sort = true,
+    AutoFilter = true,
+    FormatCells = true,
+};
+```
+
+Di dalam file semuanya terbalik — `formatCells="0"` berarti memformat *diizinkan* — dan default
+skemanya tidak seragam: sebagian besar flag default-nya melarang, tetapi `selectLockedCells` dan
+`selectUnlockedCells` default-nya mengizinkan. ExcelNet menulis semuanya secara eksplisit dan
+membalik masing-masing tepat satu kali, baik saat menulis maupun saat membaca kembali.
+
+`Unprotect()` menghapus elemennya. `workbook.Protection` melakukan hal yang sama untuk struktur
+workbook — sheet mana yang boleh ditambah, dihapus, diganti nama, atau diurutkan ulang.
+
 ## CSV, JSON, dan SQL
 
 ```csharp

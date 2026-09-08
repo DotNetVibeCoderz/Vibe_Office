@@ -3,6 +3,7 @@
 using ExcelNet.DataFrames;
 using ExcelNet.Io;
 using ExcelNet.Styles;
+using ExcelNet.Validation;
 using ExcelNet;
 using OfficeNet.Core.Charts;
 using OfficeNet.Core.Drawing;
@@ -394,6 +395,51 @@ public class DocSamples : IDisposable
 
         Assert.Single(sheet.Charts);
         Assert.Equal(ChartType.Bar, sheet.Charts[0].GetData().Type);
+    }
+
+    [Fact]
+    public void ExcelNet_DataValidationAndProtection()
+    {
+        using var workbook = Workbook.Create("Pengajuan");
+        var sheet = workbook["Pengajuan"];
+
+        sheet.WriteHeader("A1", ["Nama", "Wilayah", "Jumlah"]);
+
+        sheet.AddDropdown("B2:B200", "Jakarta", "Bandung", "Surabaya", "Medan");
+
+        sheet.AddValidation(DataValidation.WholeNumberBetween(
+            CellRangeReference.Parse("C2:C200"), 1, 1000) with
+        {
+            ErrorTitle = "Di luar rentang",
+            ErrorMessage = "Isi angka antara 1 dan 1000.",
+            PromptTitle = "Jumlah",
+            PromptMessage = "1 sampai 1000.",
+        });
+
+        sheet.AddValidation(DataValidation.ListFromRange(
+            CellRangeReference.Parse("D2:D200"), "Daftar!$A$1:$A$50"));
+
+        sheet.AddValidation(DataValidation.TextLengthAtMost(
+            CellRangeReference.Parse("A2:A200"), 60));
+
+        sheet.Protect(editable: "A2:C200");
+
+        sheet.Protection = sheet.Protection! with
+        {
+            PasswordHash = SheetProtection.WithPassword("rahasia").PasswordHash,
+            Sort = true,
+            AutoFilter = true,
+            FormatCells = true,
+        };
+
+        Assert.Equal(4, sheet.Validations.Count);
+        Assert.False(sheet["B2"].Style.Locked);
+
+        sheet.ClearValidations();
+        sheet.Unprotect();
+
+        Assert.Empty(sheet.Validations);
+        Assert.Null(sheet.Protection);
     }
 
     [Fact]

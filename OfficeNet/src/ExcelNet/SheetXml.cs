@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Xml;
 using System.Xml.Linq;
 using ExcelNet.Styles;
+using ExcelNet.Validation;
 using OfficeNet.Core.Drawing;
 using OfficeNet.Core.Packaging;
 using OfficeNet.Core.Xml;
@@ -23,9 +24,10 @@ namespace ExcelNet;
 /// <para>
 /// Element order inside <c>w:worksheet</c> is fixed by the schema, and Excel enforces it strictly:
 /// <c>sheetPr</c>, <c>dimension</c>, <c>sheetViews</c>, <c>sheetFormatPr</c>, <c>cols</c>,
-/// <c>sheetData</c>, <c>autoFilter</c>, <c>mergeCells</c>, <c>conditionalFormatting</c>,
-/// <c>hyperlinks</c>, <c>pageMargins</c>, <c>drawing</c>. Writing <c>mergeCells</c> before
-/// <c>sheetData</c> produces a file Excel offers to repair.
+/// <c>sheetData</c>, <c>sheetProtection</c>, <c>autoFilter</c>, <c>mergeCells</c>,
+/// <c>conditionalFormatting</c>, <c>dataValidations</c>, <c>hyperlinks</c>, <c>pageMargins</c>,
+/// <c>drawing</c>. Writing <c>mergeCells</c> before <c>sheetData</c> produces a file Excel offers
+/// to repair.
 /// </para>
 /// </remarks>
 internal static class SheetXml
@@ -94,7 +96,148 @@ internal static class SheetXml
                 case "conditionalFormatting":
                     ReadConditionalFormatting(sheet, reader);
                     break;
+
+                case "sheetProtection":
+                    ReadSheetProtection(sheet, reader);
+                    break;
+
+                case "dataValidation":
+                    ReadDataValidation(sheet, reader);
+                    break;
             }
+        }
+    }
+
+    /// <summary>
+    /// Reads <c>sheetProtection</c>, undoing the inversion on the way in.
+    /// </summary>
+    /// <remarks>
+    /// Every flag has to be read against its own schema default rather than a shared one: most
+    /// default to forbidden, but <c>selectLockedCells</c> and <c>selectUnlockedCells</c> default to
+    /// allowed. Reading them all the same way silently flips those two on every round trip.
+    /// </remarks>
+    private static void ReadSheetProtection(Worksheet sheet, XmlReader reader)
+    {
+        sheet.Protection = new SheetProtection
+        {
+            PasswordHash = reader.GetAttribute("password"),
+            FormatCells = Allowed("formatCells", defaultAllowed: false),
+            FormatColumns = Allowed("formatColumns", defaultAllowed: false),
+            FormatRows = Allowed("formatRows", defaultAllowed: false),
+            InsertRows = Allowed("insertRows", defaultAllowed: false),
+            InsertColumns = Allowed("insertColumns", defaultAllowed: false),
+            DeleteRows = Allowed("deleteRows", defaultAllowed: false),
+            DeleteColumns = Allowed("deleteColumns", defaultAllowed: false),
+            Sort = Allowed("sort", defaultAllowed: false),
+            AutoFilter = Allowed("autoFilter", defaultAllowed: false),
+            SelectLockedCells = Allowed("selectLockedCells", defaultAllowed: true),
+            SelectUnlockedCells = Allowed("selectUnlockedCells", defaultAllowed: true),
+        };
+
+        bool Allowed(string name, bool defaultAllowed) =>
+            // The attribute says what is forbidden, so it is negated exactly once here too.
+            XmlUtil.OoxmlBool(reader.GetAttribute(name)) is { } forbidden ? !forbidden : defaultAllowed;
+    }
+
+    /// <summary>Reads one <c>dataValidation</c> rule.</summary>
+    private static void ReadDataValidation(Worksheet sheet, XmlReader reader)
+    {
+        var sqref = reader.GetAttribute("sqref");
+
+        // A rule can cover several disjoint areas, separated by spaces. The model holds one range
+        // per rule, so the areas become separate rules — which behaves identically in Excel.
+        if (sqref is not { Length: > 0 })
+        {
+            return;
+        }
+
+        var type = reader.GetAttribute("type") switch
+        {
+            "list" => Validation.ValidationType.List,
+            "whole" => Validation.ValidationType.WholeNumber,
+            "decimal" => Validation.ValidationType.Decimal,
+            "date" => Validation.ValidationType.Date,
+            "time" => Validation.ValidationType.Time,
+            "textLength" => Validation.ValidationType.TextLength,
+            _ => Validation.ValidationType.Custom,
+        };
+
+        var op = reader.GetAttribute("operator") switch
+        {
+            "notBetween" => ValidationOperator.NotBetween,
+            "equal" => ValidationOperator.Equal,
+            "notEqual" => ValidationOperator.NotEqual,
+            "greaterThan" => ValidationOperator.GreaterThan,
+            "lessThan" => ValidationOperator.LessThan,
+            "greaterThanOrEqual" => ValidationOperator.GreaterThanOrEqual,
+            "lessThanOrEqual" => ValidationOperator.LessThanOrEqual,
+            _ => ValidationOperator.Between,
+        };
+
+        var style = reader.GetAttribute("errorStyle") switch
+        {
+            "warning" => ValidationErrorStyle.Warning,
+            "information" => ValidationErrorStyle.Information,
+            _ => ValidationErrorStyle.Stop,
+        };
+
+        var allowBlank = XmlUtil.OoxmlBool(reader.GetAttribute("allowBlank")) ?? false;
+
+        // Inverted, like the protection flags: showDropDown="1" hides the arrow.
+        var showDropDown = XmlUtil.OoxmlBool(reader.GetAttribute("showDropDown")) is not true;
+
+        var errorTitle = reader.GetAttribute("errorTitle");
+        var errorMessage = reader.GetAttribute("error");
+        var promptTitle = reader.GetAttribute("promptTitle");
+        var promptMessage = reader.GetAttribute("prompt");
+
+        string? formula1 = null;
+        string? formula2 = null;
+
+        if (!reader.IsEmptyElement)
+        {
+            using var subtree = reader.ReadSubtree();
+
+            while (subtree.Read())
+            {
+                if (subtree.NodeType != XmlNodeType.Element)
+                {
+                    continue;
+                }
+
+                switch (subtree.LocalName)
+                {
+                    case "formula1":
+                        formula1 = ReadElementText(subtree);
+                        break;
+
+                    case "formula2":
+                        formula2 = ReadElementText(subtree);
+                        break;
+                }
+            }
+        }
+
+        foreach (var area in sqref.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (!CellRangeReference.TryParse(area, out var range))
+            {
+                continue;
+            }
+
+            sheet.AddValidation(new DataValidation(range, type)
+            {
+                Operator = op,
+                Formula1 = formula1,
+                Formula2 = formula2,
+                AllowBlank = allowBlank,
+                ShowDropDown = showDropDown,
+                ErrorStyle = style,
+                ErrorTitle = errorTitle,
+                ErrorMessage = errorMessage,
+                PromptTitle = promptTitle,
+                PromptMessage = promptMessage,
+            });
         }
     }
 
@@ -496,9 +639,11 @@ internal static class SheetXml
             WriteSheetFormat(writer, sheet);
             WriteColumns(writer, sheet);
             WriteSheetData(writer, sheet, sharedStrings);
+            WriteSheetProtection(writer, sheet);
             WriteAutoFilter(writer, sheet);
             WriteMerges(writer, sheet);
             WriteConditionalFormatting(writer, sheet);
+            WriteDataValidations(writer, sheet);
             WriteHyperlinks(writer, sheet);
             WritePageMargins(writer);
             WriteDrawing(writer, sheet);
@@ -920,6 +1065,136 @@ internal static class SheetXml
 
         writer.WriteStartElement("drawing", S.NamespaceName);
         writer.WriteAttributeString("id", Ns.R.NamespaceName, relationship.Id);
+        writer.WriteEndElement();
+    }
+
+    /// <summary>
+    /// Writes <c>sheetProtection</c>, which sits immediately after <c>sheetData</c>.
+    /// </summary>
+    /// <remarks>
+    /// The attributes are inverted from how the API reads: <c>formatCells="0"</c> means formatting
+    /// is <em>allowed</em>. Writing them the intuitive way round produces a sheet that permits
+    /// exactly what the caller asked to forbid.
+    /// </remarks>
+    private static void WriteSheetProtection(XmlWriter writer, Worksheet sheet)
+    {
+        if (sheet.Protection is not { Enabled: true } protection)
+        {
+            return;
+        }
+
+        writer.WriteStartElement("sheetProtection", S.NamespaceName);
+
+        if (protection.PasswordHash is { Length: > 0 } hash)
+        {
+            writer.WriteAttributeString("password", hash);
+        }
+
+        writer.WriteAttributeString("sheet", "1");
+        writer.WriteAttributeString("objects", "1");
+        writer.WriteAttributeString("scenarios", "1");
+
+        // "1" forbids. The API says what is allowed, so each flag is negated here exactly once.
+        Flag("formatCells", protection.FormatCells);
+        Flag("formatColumns", protection.FormatColumns);
+        Flag("formatRows", protection.FormatRows);
+        Flag("insertRows", protection.InsertRows);
+        Flag("insertColumns", protection.InsertColumns);
+        Flag("deleteRows", protection.DeleteRows);
+        Flag("deleteColumns", protection.DeleteColumns);
+        Flag("sort", protection.Sort);
+        Flag("autoFilter", protection.AutoFilter);
+        Flag("selectLockedCells", protection.SelectLockedCells);
+        Flag("selectUnlockedCells", protection.SelectUnlockedCells);
+
+        writer.WriteEndElement();
+
+        void Flag(string name, bool allowed)
+        {
+            // Every flag is written out rather than relying on the schema default, because the
+            // defaults are not uniform: most of them default to "forbidden", but selectLockedCells
+            // and selectUnlockedCells default to "allowed". Omitting an attribute therefore means
+            // the opposite thing depending on which attribute it is, and a sheet that was asked to
+            // stop people even clicking a locked cell would happily let them. A few dozen bytes buy
+            // the whole class of mistake away.
+            writer.WriteAttributeString(name, allowed ? "0" : "1");
+        }
+    }
+
+    /// <summary>Writes <c>dataValidations</c>, which follows <c>conditionalFormatting</c>.</summary>
+    private static void WriteDataValidations(XmlWriter writer, Worksheet sheet)
+    {
+        if (sheet.Validations.Count == 0)
+        {
+            return;
+        }
+
+        writer.WriteStartElement("dataValidations", S.NamespaceName);
+        writer.WriteAttributeString("count",
+            sheet.Validations.Count.ToString(CultureInfo.InvariantCulture));
+
+        foreach (var validation in sheet.Validations)
+        {
+            writer.WriteStartElement("dataValidation", S.NamespaceName);
+            writer.WriteAttributeString("type", validation.TypeAttribute);
+
+            // The operator is meaningless for a list and Excel rejects the pair.
+            if (validation.Type != Validation.ValidationType.List &&
+                validation.Type != Validation.ValidationType.Custom)
+            {
+                writer.WriteAttributeString("operator", validation.OperatorAttribute);
+            }
+
+            writer.WriteAttributeString("allowBlank", validation.AllowBlank ? "1" : "0");
+
+            // Inverted, like the protection flags: showDropDown="1" *hides* the arrow.
+            if (validation.Type == Validation.ValidationType.List && !validation.ShowDropDown)
+            {
+                writer.WriteAttributeString("showDropDown", "1");
+            }
+
+            if (validation.ErrorStyle != ValidationErrorStyle.Stop)
+            {
+                writer.WriteAttributeString("errorStyle", validation.ErrorStyleAttribute);
+            }
+
+            if (validation.ErrorTitle is { Length: > 0 } errorTitle)
+            {
+                writer.WriteAttributeString("errorTitle", errorTitle);
+            }
+
+            if (validation.ErrorMessage is { Length: > 0 } error)
+            {
+                writer.WriteAttributeString("showErrorMessage", "1");
+                writer.WriteAttributeString("error", error);
+            }
+
+            if (validation.PromptTitle is { Length: > 0 } promptTitle)
+            {
+                writer.WriteAttributeString("promptTitle", promptTitle);
+            }
+
+            if (validation.PromptMessage is { Length: > 0 } prompt)
+            {
+                writer.WriteAttributeString("showInputMessage", "1");
+                writer.WriteAttributeString("prompt", prompt);
+            }
+
+            writer.WriteAttributeString("sqref", validation.Range.A1);
+
+            if (validation.Formula1 is { Length: > 0 } first)
+            {
+                writer.WriteElementString("formula1", S.NamespaceName, first);
+            }
+
+            if (validation.Formula2 is { Length: > 0 } second)
+            {
+                writer.WriteElementString("formula2", S.NamespaceName, second);
+            }
+
+            writer.WriteEndElement();
+        }
+
         writer.WriteEndElement();
     }
 

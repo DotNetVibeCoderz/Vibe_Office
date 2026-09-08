@@ -71,8 +71,13 @@ seberapa sering ketiadaannya menghentikan pekerjaan nyata.
 
 ### ExcelNet
 
-- **Data validation** (dropdown). Template yang diisi manusia hampir selalu memerlukannya.
-- **Proteksi sheet dan workbook.** Bukan keamanan — pencegahan kesalahan.
+- [x] **Data validation** (dropdown). Selesai. Tujuh builder aturan; batas 255 karakter untuk
+  daftar inline ditolak di muka daripada menghasilkan file yang dropdown-nya hilang diam-diam.
+- [x] **Proteksi sheet dan workbook.** Selesai. Bukan keamanan — pencegahan kesalahan.
+  `Protect(editable)` membuka kunci range isian, karena setiap sel terkunci secara default. Semua
+  flag ditulis eksplisit: default skemanya tidak seragam, jadi menghilangkan atribut berarti hal
+  yang berbeda tergantung atributnya. Keduanya juga dibaca kembali, agar membuka lalu menyimpan
+  template tidak menghapusnya.
 - **Streaming writer.** Model sekarang menaruh seluruh workbook di memori. Ekspor sejuta baris
   butuh penulis yang tidak pernah memegang lebih dari satu baris. API-nya akan berbeda dan itu
   wajar: kasusnya juga berbeda.

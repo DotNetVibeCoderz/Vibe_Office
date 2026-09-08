@@ -6,6 +6,7 @@ using ExcelNet.Styles;
 using OfficeNet.Core;
 using ExcelNet.Charts;
 using ExcelNet.Pivot;
+using ExcelNet.Validation;
 using OfficeNet.Core.Charts;
 using OfficeNet.Core.Drawing;
 using OfficeNet.Core.Packaging;
@@ -816,6 +817,79 @@ public sealed class Worksheet
         _conditionalRules.Add(rule);
         Workbook.Package.MarkDirty();
         return rule;
+    }
+
+    // ---- Validation and protection ---------------------------------------------------------------
+
+    private readonly List<DataValidation> _validations = [];
+
+    /// <summary>The data-validation rules on this sheet.</summary>
+    public IReadOnlyList<DataValidation> Validations => _validations;
+
+    /// <summary>Restricts what can be typed into a range.</summary>
+    /// <remarks>
+    /// The rule that makes a sheet fillable by a person: a dropdown of valid regions is the
+    /// difference between clean data and a column of "Jakarta"/"jakarta"/"DKI Jakarta".
+    /// </remarks>
+    public DataValidation AddValidation(DataValidation validation)
+    {
+        ArgumentNullException.ThrowIfNull(validation);
+
+        _validations.Add(validation);
+        Workbook.Package.MarkDirty();
+
+        return validation;
+    }
+
+    /// <summary>Adds a dropdown of fixed values to a range.</summary>
+    public DataValidation AddDropdown(string range, params string[] values) =>
+        AddValidation(DataValidation.List(CellRangeReference.Parse(range), values));
+
+    /// <summary>Removes every validation rule from the sheet.</summary>
+    public void ClearValidations()
+    {
+        _validations.Clear();
+        Workbook.Package.MarkDirty();
+    }
+
+    /// <summary>The sheet's protection, or <c>null</c> when it is unprotected.</summary>
+    public SheetProtection? Protection { get; set; }
+
+    /// <summary>
+    /// Protects the sheet, optionally leaving a range editable.
+    /// </summary>
+    /// <param name="editable">
+    /// Cells that stay editable. Omitting it locks everything, which is rarely what a template
+    /// wants.
+    /// </param>
+    /// <param name="password">
+    /// Deters accidents only — the hash is 16 bits and any tool strips it in milliseconds. Never
+    /// use it to keep a secret.
+    /// </param>
+    /// <remarks>
+    /// Every cell is locked by default, and protection only bites on locked cells. So protecting a
+    /// sheet without unlocking the input cells freezes the whole thing — which is why this method
+    /// takes the editable range and unlocks it for you.
+    /// </remarks>
+    public void Protect(string? editable = null, string? password = null)
+    {
+        if (editable is { Length: > 0 })
+        {
+            Range(editable).ModifyStyle(style => style with { Locked = false });
+        }
+
+        Protection = password is { Length: > 0 }
+            ? SheetProtection.WithPassword(password)
+            : new SheetProtection();
+
+        Workbook.Package.MarkDirty();
+    }
+
+    /// <summary>Removes protection from the sheet.</summary>
+    public void Unprotect()
+    {
+        Protection = null;
+        Workbook.Package.MarkDirty();
     }
 
     // ---- Pivot tables --------------------------------------------------------------------------

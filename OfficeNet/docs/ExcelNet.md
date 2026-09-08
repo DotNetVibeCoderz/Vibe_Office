@@ -303,6 +303,85 @@ pivot table, and a non-Excel consumer — including this library's own PDF expor
 empty. Computing the grid here would mean reimplementing Excel's aggregation and subtotal layout,
 and any disagreement would show up as a table that changes the moment someone opens it.
 
+## Data validation
+
+A dropdown is what makes a sheet fillable by a person rather than only by a program — the difference
+between a clean column and one holding "Jakarta", "jakarta" and "DKI Jakarta".
+
+```csharp
+using ExcelNet.Validation;
+
+sheet.AddDropdown("B2:B200", "Jakarta", "Bandung", "Surabaya", "Medan");
+```
+
+`AddValidation` takes the other rule types. The builders return a plain rule and the messages are
+`init` properties, so add them with `with`:
+
+```csharp
+sheet.AddValidation(DataValidation.WholeNumberBetween(
+    CellRangeReference.Parse("C2:C200"), 1, 1000) with
+{
+    ErrorTitle = "Out of range",
+    ErrorMessage = "Enter a number between 1 and 1000.",
+    PromptTitle = "Quantity",
+    PromptMessage = "1 to 1000.",
+});
+```
+
+| Builder | Allows |
+| --- | --- |
+| `List(range, values)` | one of a fixed set, shown as a dropdown |
+| `ListFromRange(range, source)` | one of the values in `source`, e.g. `Lists!$A$1:$A$50` |
+| `WholeNumberBetween(range, min, max)` | an integer, inclusive |
+| `DecimalBetween(range, min, max)` | any number, inclusive |
+| `DateBetween(range, from, to)` | a date, inclusive |
+| `TextLengthAtMost(range, max)` | text no longer than `max` |
+| `Custom(range, formula)` | whatever the formula accepts |
+
+An inline list is stored as a quoted, comma-separated string, and **Excel caps that string at 255
+characters** — past it the whole rule is dropped and the file opens with the dropdown silently
+missing. `List` throws instead, and names the length. A value containing a comma is rejected for the
+same reason: the comma is the separator, so `"Jakarta, DKI"` would become two entries. Both cases
+are what `ListFromRange` is for; give it an absolute reference, since a relative one shifts per cell
+and the dropdown in row 2 then reads a different range from the one in row 3.
+
+`ErrorStyle` decides what a rejected entry does: `Stop` refuses it (the default, and what a template
+usually wants), `Warning` and `Information` let it through.
+
+## Protecting a sheet
+
+Sheet protection is **not security**. The password is a 16-bit hash that any tool strips in
+milliseconds, and the contents are readable regardless. It stops someone overwriting a formula
+column by accident, which is a real and common problem, and that is all it is for.
+
+```csharp
+sheet.Protect(editable: "B2:B200");
+```
+
+The interaction that catches people out: protection only bites on cells whose style says `locked`,
+and **every cell is locked by default**. Protecting a sheet without unlocking the inputs freezes the
+whole thing — which is why `Protect` takes the editable range and unlocks it for you.
+
+The flags say what is still *allowed*:
+
+```csharp
+sheet.Protection = new SheetProtection
+{
+    PasswordHash = SheetProtection.WithPassword("rahasia").PasswordHash,
+    Sort = true,
+    AutoFilter = true,
+    FormatCells = true,
+};
+```
+
+In the file itself every one of these is inverted — `formatCells="0"` means formatting is *allowed*
+— and the schema defaults are not uniform: most flags default to forbidden, but `selectLockedCells`
+and `selectUnlockedCells` default to allowed. ExcelNet writes all of them out explicitly and negates
+each exactly once, on the way out and on the way back in.
+
+`Unprotect()` removes the element. `workbook.Protection` does the same job for the workbook's
+structure — which sheets can be added, removed, renamed or reordered.
+
 ## CSV, JSON and SQL
 
 ```csharp
