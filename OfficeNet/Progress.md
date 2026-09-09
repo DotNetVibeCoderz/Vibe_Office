@@ -455,8 +455,17 @@ menggambar catatan kaki serta float tertunda yang melakukan layout sendiri. Penj
 dipertajam: versi pertama hanya memastikan teksnya ada, dan buffer basi lolos karena ia mengulang
 kata alih-alih menghilangkannya.
 
-Total sejak awal v1.2 untuk 10.000 paragraf: **449 ms → 235 ms**, **241 MB → 123 MB**, berkasnya
-**1.161.639 → 634.591 byte**.
+**Meresolusi gaya memindai ulang seluruh bagian styles.** Instrumentasi ulang memindahkan butir
+terbesar ke tempat yang semula hanya masuk "sisanya": `Resolve` menghabiskan 1,1 KB per panggilan,
+dan dipanggil sekali per paragraf plus sekali per run. Menyusuri rantai `basedOn` mengalokasikan set,
+iterator, dan buffer pembalikan, lalu setiap mata rantai memanggil indexer gaya yang memindai linear
+seluruh gaya. Rantai yang sama dibangun puluhan ribu kali; sekarang disusuri sekali lalu disimpan.
+**123 MB → 111 MB.**
+
+Total sejak awal v1.2 untuk 10.000 paragraf: **449 ms → 228 ms**, **241 MB → 111 MB**, berkasnya
+**1.161.639 → 634.591 byte**. Yang tersisa terbesar adalah kanvas PdfNet — isi satu halaman dibangun
+di `StringBuilder`, disalin ke string, lalu dikodekan ke byte — yaitu persis butir `Span<T>` yang
+sudah ada di rencana.
 
 **Dua hipotesis ditolak oleh pengukuran**, dan itu juga hasil: alokasi ekstraksi teks PdfNet ternyata
 datar di 331 KB per halaman (angka 167 MB pada benchmark adalah artefak harness-nya sendiri), dan

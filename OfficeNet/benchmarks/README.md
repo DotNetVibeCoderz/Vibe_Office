@@ -21,7 +21,7 @@ the file system.
 
 ## What running them found
 
-Benchmarks earn their keep by finding things, and these found two quadratic paths and three wasteful
+Benchmarks earn their keep by finding things, and these found two quadratic paths and four wasteful
 ones that no test could see — a test asserts a result, and every one of these produced perfectly
 correct output.
 
@@ -133,6 +133,26 @@ fails it.
 **Together with the drawing fix**, against where this started: 10 000 paragraphs went from 449 ms
 and 241 MB to 235 ms and 123 MB, and the file from 1,161,639 bytes to 634,591.
 
+### Resolving a paragraph's style rescanned the whole style part
+
+With the lists fixed, re-instrumenting moved the largest remaining item to a place the first pass
+had lumped into "everything else": `Resolve`, which works out a run's effective formatting, cost
+1.1 KB per call and is called once per paragraph and again for every run.
+
+Two things inside it. Walking a style's `basedOn` chain allocated a set to catch cycles, an
+iterator, and a buffer for the reversal — and each link called the style indexer, which is a linear
+scan of every style in the part that wraps the element it finds. A document has a handful of styles
+and a great many paragraphs, so the same three or four chains were rebuilt tens of thousands of
+times.
+
+They are now walked once each and cached, root first so no caller has to reverse anything.
+**10 000 paragraphs: 123 → 111 MB, 235 → 228 ms.**
+
+Caching a chain is only sound if it is the chain the walk would have produced, so
+`WordNet.Tests.StyleChainTests` pins the two properties that are easy to lose: inheritance applies
+root first, and a chain that points back at itself terminates rather than hanging. Dropping the
+reversal fails the first; keying the cache on a constant fails the second.
+
 ### Appending a paragraph was O(number of blocks)
 
 `InsertBlock` kept the body's final `w:sectPr` last by finding it and calling `AddBeforeSelf`. LINQ
@@ -181,12 +201,12 @@ speed, and this is a laptop CPU that throttles.
 | Create + save | 1.2 ms | 9.0 ms | 99 ms |
 | Open | 0.3 ms | 2.3 ms | 23 ms |
 | Extract text | 0.4 ms | 2.7 ms | 26 ms |
-| Export to PDF | 2.4 ms | 17 ms | 235 ms |
+| Export to PDF | 2.4 ms | 17 ms | 228 ms |
 
 PDF export is still the expensive one, and reasonably so: it resolves style inheritance, measures
-every run against the font metrics, breaks lines and paginates. It allocates 123 MB for the
-10 000-paragraph case, of which starting a page is 16 MB — 35 KB per page, and the largest single
-thing left.
+every run against the font metrics, breaks lines and paginates. It allocates 111 MB for the
+10 000-paragraph case. The largest pieces left are the canvas — a page's content is built in a
+`StringBuilder`, then copied to a string, then encoded to bytes — and building the line filler.
 
 | Table, 4 columns | 50 rows | 500 rows |
 |---|---:|---:|

@@ -227,9 +227,29 @@ mengukur adalah cara membuang waktu pada jalur yang tidak panas.
   Penjaganya sendiri harus dipertajam dulu: versi pertamanya hanya memastikan teks setiap paragraf
   ada di keluaran, dan buffer basi lolos begitu saja karena ia mengulang kata, bukan menghilangkannya.
   Sekarang ia menghitung kemunculan, dan `Clear()` yang sengaja dihapus membuatnya gagal.
+- [x] **Meresolusi gaya paragraf memindai ulang seluruh bagian styles — selesai.** Setelah daftarnya
+  diperbaiki, instrumentasi ulang memindahkan butir terbesar ke tempat yang semula hanya masuk
+  kategori "sisanya": `Resolve`, yang menghitung format efektif sebuah run, menghabiskan 1,1 KB per
+  panggilan — dan ia dipanggil sekali per paragraf plus sekali per run.
+
+  Dua hal di dalamnya. Menyusuri rantai `basedOn` mengalokasikan set penangkap siklus, iterator, dan
+  buffer untuk pembalikannya; lalu setiap mata rantai memanggil indexer gaya, yang memindai linear
+  seluruh gaya di part itu dan membungkus elemen yang ditemukannya. Dokumen punya segelintir gaya dan
+  sangat banyak paragraf, jadi tiga-empat rantai yang sama dibangun puluhan ribu kali.
+
+  Sekarang setiap rantai disusuri sekali lalu disimpan, sudah berurutan dari akar sehingga tak ada
+  pemanggil yang perlu membalikkannya. **10.000 paragraf: 123 MB → 111 MB, 235 ms → 228 ms.**
+
+  Menyimpan rantai hanya sahih kalau yang disimpan sama dengan yang akan dihasilkan penyusuran, jadi
+  `WordNet.Tests.StyleChainTests` memaku dua sifat yang mudah hilang: pewarisan berlaku dari akar,
+  dan rantai yang menunjuk balik ke dirinya berhenti alih-alih menggantung. Menghapus pembalikannya
+  menggagalkan yang pertama; mengunci kunci cache ke satu konstanta menggagalkan yang kedua.
+
+  **Total v1.2 untuk ekspor Word→PDF 10.000 paragraf: 449 ms → 228 ms, 241 MB → 111 MB, berkas
+  1.161.639 → 634.591 byte.**
 - **Rust untuk kernel level rendah.** Spesifikasi mengizinkannya. Kandidat paling masuk akal:
   inflate/deflate dan predictor PNG. Benchmark saat ini **tidak** menunjukkan keduanya sebagai
-  hambatan — ekspor PDF Word (235 ms untuk 10.000 paragraf) didominasi layout, bukan kompresi —
+  hambatan — ekspor PDF Word (228 ms untuk 10.000 paragraf) didominasi layout, bukan kompresi —
   jadi butir ini turun peringkat sampai ada pengukuran yang membenarkan dua toolchain build.
 
 ---

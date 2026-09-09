@@ -250,14 +250,14 @@ public static class WordToPdf
             OfficeColor? highlight = null;
 
             // Walk the style chain from the root down so that nearer definitions overwrite.
-            foreach (var style in StyleChain(paragraph.StyleId).Reverse())
+            foreach (var style in StyleChain(paragraph.StyleId))
             {
                 Apply(style.RunFormat);
             }
 
             if (run is not null)
             {
-                foreach (var style in StyleChain(run.Format.StyleId).Reverse())
+                foreach (var style in StyleChain(run.Format.StyleId))
                 {
                     Apply(style.RunFormat);
                 }
@@ -311,8 +311,36 @@ public static class WordToPdf
             }
         }
 
-        private IEnumerable<Styles.Style> StyleChain(string? styleId)
+        /// <summary>Style chains already walked, keyed by the style they start from.</summary>
+        /// <remarks>
+        /// A document has a handful of styles and a great many paragraphs, so the same chains are
+        /// walked over and over. Each walk allocated a set to catch cycles, an iterator, and a
+        /// buffer for the reversal — and every link cost a scan of the whole style part, because
+        /// looking a style up by id is a linear search that wraps the element it finds.
+        /// </remarks>
+        private readonly Dictionary<string, Styles.Style[]> _chains =
+            new(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// The styles a style inherits from, root first, so that nearer definitions overwrite.
+        /// </summary>
+        /// <remarks>
+        /// Root first is the order callers want, and building it that way once is cheaper than
+        /// reversing it at every call site.
+        /// </remarks>
+        private Styles.Style[] StyleChain(string? styleId)
         {
+            if (styleId is null)
+            {
+                return [];
+            }
+
+            if (_chains.TryGetValue(styleId, out var cached))
+            {
+                return cached;
+            }
+
+            var chain = new List<Styles.Style>();
             var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var current = styleId;
 
@@ -324,12 +352,19 @@ public static class WordToPdf
 
                 if (style is null)
                 {
-                    yield break;
+                    break;
                 }
 
-                yield return style;
+                chain.Add(style);
                 current = style.BasedOn;
             }
+
+            chain.Reverse();
+
+            var result = chain.ToArray();
+            _chains[styleId] = result;
+
+            return result;
         }
 
         private (double Before, double After, double LineHeight, ParagraphAlignment Alignment,
@@ -340,7 +375,7 @@ public static class WordToPdf
             var alignment = ParagraphAlignment.Left;
             double leftIndent = 0, rightIndent = 0, firstLineIndent = 0;
 
-            foreach (var style in StyleChain(paragraph.StyleId).Reverse())
+            foreach (var style in StyleChain(paragraph.StyleId))
             {
                 ApplyParagraph(style.ParagraphFormat);
             }
