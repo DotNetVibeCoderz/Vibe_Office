@@ -480,6 +480,16 @@ lalu menjalankan seluruh tes. Dan dua penjaga baru yang sudah ditulis ternyata *
 pun**: teks berspasi ganda tak pernah menaruh spasi di awal baris karena satu spasi masih muat di
 ujung baris sebelumnya. Enam puluh spasi berurutan barulah memaksanya.
 
+**Mengekstrak teks membangun ulang modelnya sekali per paragraf.** Membuka .docx 34 KB berisi 10.000
+paragraf lalu mengekstrak teksnya: **39,7 MB, 1.205x ukuran berkasnya**. Penyebabnya bukan parsernya
+melainkan propertinya — `Paragraphs` memakan 2,4 MB **setiap kali dibaca**, dan `Paragraph.Text`
+menyusuri `Runs` yang juga membentuk ulang daftarnya. Ekstraksi kini menyusuri elemen langsung ke
+satu builder: **biaya ekstraksinya 29,5 MB → 10,5 MB**, keluarannya identik karakter demi karakter.
+
+**Dua hipotesis ditolak oleh pengukuran.** Lexer PdfNet: membuka PDF hanya 13,6x ukuran berkas dan
+datar — bukan jalur panas. Penulisan paket: 152x dan 146x keluaran pada dua ukuran — linear, tak ada
+masalah penskalaan. Keduanya tetap jadi gagasan di rencana, bukan pekerjaan.
+
 Total sejak awal v1.2 untuk 10.000 paragraf: **241 MB → 82 MB**, berkasnya **1.161.639 → 634.591
 byte**, dan kolom Gen2 pada benchmark — semula 1.000–2.000 koleksi per seribu operasi — kini kosong.
 Waktunya turun dari 449 ms ke kisaran 180–210 ms; pada tahap ini ragam mesinnya sudah lebih besar

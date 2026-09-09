@@ -158,8 +158,37 @@ mengukur adalah cara membuang waktu pada jalur yang tidak panas.
 
 - **Parser XML pull untuk WordNet.** ExcelNet sudah streaming; WordNet memakai `XDocument` karena
   edit-in-place membutuhkannya. Dokumen besar hanya-baca bisa memakai jalur kedua.
+
+  **Sudah diukur, dan kasus utamanya sudah ditangani tanpa parser kedua.** Membuka .docx 34 KB berisi
+  10.000 paragraf lalu mengekstrak teksnya mengalokasikan **39,7 MB — 1.205x ukuran berkasnya**.
+
+  | | Alokasi | Rasio ke berkas |
+  |---|---|---|
+  | Buka, tidak disentuh | 10,2 MB | 311x |
+  | Buka + `Paragraphs.Count` | 12,6 MB | 383x |
+  | Buka + `Paragraphs.Count` lima kali | 22,2 MB | 673x |
+  | Buka + `ExtractText` | 39,7 MB | 1.205x |
+  | (unzip + `XDocument.Load` saja) | 4,5 MB | 135x |
+
+  Baris tengahnya yang penting: `Paragraphs` memakan **2,4 MB setiap kali dibaca** — ia membentuk
+  ulang daftar dan pembungkus baru per paragraf pada setiap akses, bentuk yang sama persis dengan bug
+  indexer tabel, di properti yang paling sering dipakai. `ExtractText` menyusurinya, lalu memanggil
+  `Paragraph.Text` yang menyusuri `Runs` — daftar dan pembungkus baru lagi per run — dan
+  mengembalikan string yang langsung ditempel ke builder lain lalu dibuang.
+
+  Ekstraksi kini menyusuri elemen body langsung ke satu builder. **Biaya `ExtractText` sendiri:
+  29,5 MB → 10,5 MB**, dan sisanya mendekati yang memang tak terhindarkan: teks dokumennya sekitar
+  3 MB sebagai UTF-16 dan hasilnya satu string. Dijaga `WordNet.Tests.TextExtractionTests`, yang
+  memaku keluarannya karakter demi karakter.
+
+  Sisa 10,2 MB untuk membuka saja adalah harga model `XDocument` yang memang sengaja dipilih. Parser
+  kedua masih bisa menghapusnya, tapi kasus hanya-baca yang paling nyata sudah tertangani.
 - **`Span<T>` di jalur panas PdfNet.** Lexer dan filter masih mengalokasikan array per objek.
-  Sebagian sudah dikerjakan: **isi satu halaman disalin empat kali dalam perjalanan keluar.** Kanvas
+  **Diukur dan ditolak untuk lexernya:** membuka PDF mengalokasikan 13,6x ukuran berkas pada 50
+  halaman dan 13,7x pada 200 — kecil dan datar. Lexernya bukan jalur panas. Yang mahal saat membaca
+  PDF adalah ekstraksi teks, datar di 242 KB per halaman, dan itu jalur kode yang lain.
+
+  Bagian penulisannya sudah dikerjakan: **isi satu halaman disalin empat kali dalam perjalanan keluar.** Kanvas
   menyusun operatornya di `StringBuilder`, lalu menyerahkannya sebagai
   `Encoding.Latin1.GetBytes("q
 " + _content + "Q
@@ -180,6 +209,10 @@ mengukur adalah cara membuang waktu pada jalur yang tidak panas.
   perataan dan seluruh format diekspor dua kali lalu setiap content stream halaman di-hash, dan
   keenamnya sama. Dijaga `PdfNet.Tests.CanvasContentTests`.
 - **Buffer pooling di penulisan paket.** Setiap part saat ini disalin ke `MemoryStream` sendiri.
+  **Diukur, dan tidak ada yang salah di sini:** menulis workbook mengalokasikan 152x ukuran keluaran
+  pada 10.000 baris dan 146x pada 50.000 — linear, tanpa masalah penskalaan. Apakah pooling membantu
+  adalah pertanyaan terpisah dari apakah biayanya sekarang keliru, dan tidak ada angka yang bilang
+  begitu. Tetap sebagai gagasan, bukan pekerjaan.
 - [x] **`PdfDocument.Split` superlinear — selesai.** Penyebabnya lebih besar daripada dugaan awal:
   bukan graf sumber daya yang diimpor ulang, melainkan **seluruh dokumen**. Kamus halaman membawa
   `/Parent`, dan `/Kids` milik parent itu menyebut setiap halaman di sumbernya — jadi mengimpor satu

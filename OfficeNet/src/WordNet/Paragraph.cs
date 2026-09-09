@@ -57,6 +57,34 @@ public sealed class Paragraph
     ];
 
     /// <summary>
+    /// Appends the paragraph's text to a builder.
+    /// </summary>
+    /// <remarks>
+    /// Walks the elements directly rather than through <see cref="Runs"/>, which materialises a
+    /// fresh list and a fresh wrapper per run on every access — 2.4 MB for a ten-thousand-paragraph
+    /// document, and it was being paid once per paragraph on top of a string per paragraph.
+    /// The set of elements it visits is the same one <see cref="Runs"/> reports: runs of the
+    /// paragraph itself, and runs inside a hyperlink.
+    /// </remarks>
+    internal void AppendTextTo(StringBuilder builder)
+    {
+        foreach (var child in Element.Elements())
+        {
+            if (child.Name == Ns.W + "r")
+            {
+                Run.AppendText(child, builder);
+            }
+            else if (child.Name == Ns.W + "hyperlink")
+            {
+                foreach (var run in child.Elements(Ns.W + "r"))
+                {
+                    Run.AppendText(run, builder);
+                }
+            }
+        }
+    }
+
+    /// <summary>
     /// The paragraph's text.
     /// </summary>
     /// <remarks>
@@ -69,12 +97,7 @@ public sealed class Paragraph
         get
         {
             var builder = new StringBuilder();
-
-            foreach (var run in Runs)
-            {
-                builder.Append(run.Text);
-            }
-
+            AppendTextTo(builder);
             return builder.ToString();
         }
         set

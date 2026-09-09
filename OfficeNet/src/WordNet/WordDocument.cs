@@ -869,19 +869,22 @@ public sealed class WordDocument : OfficeDocument
     {
         var builder = new StringBuilder();
 
-        foreach (var block in Blocks)
+        // Walks the body itself rather than the Blocks sequence, so a paragraph costs neither a
+        // wrapper nor a string of its own. Both were being paid ten thousand times over on a
+        // ten-thousand-paragraph document, for a result that is one string at the end.
+        foreach (var element in Body.Elements())
         {
-            switch (block)
+            if (element.Name == Ns.W + "p")
             {
-                case Paragraph paragraph:
-                    // An explicit LF rather than AppendLine, which would emit Environment.NewLine
-                    // and make the same document extract differently on Windows and on Linux.
-                    builder.Append(paragraph.Text).Append('\n');
-                    break;
+                new Paragraph(this, element).AppendTextTo(builder);
 
-                case Table table:
-                    builder.Append(table.ExtractText());
-                    break;
+                // An explicit LF rather than AppendLine, which would emit Environment.NewLine and
+                // make the same document extract differently on Windows and on Linux.
+                builder.Append('\n');
+            }
+            else if (element.Name == Ns.W + "tbl")
+            {
+                builder.Append(new Table(this, element).ExtractText());
             }
         }
 

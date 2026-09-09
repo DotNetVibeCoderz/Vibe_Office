@@ -224,6 +224,52 @@ the end of the line before it, so nothing ever landed at a line start and deleti
 prevents it still passed. Sixty consecutive spaces cannot fit on one line, and with those the test
 fails as it should. Mutation testing is what surfaced this; the tests read fine.
 
+### Extracting text rebuilt the model once per paragraph
+
+Measuring the three items still marked hypothesis put a number on each. Opening a 34 KB, ten
+thousand paragraph .docx and extracting its text allocated **39.7 MB — 1 205 times the file**.
+
+Taking that apart:
+
+| | Allocated | Ratio to file |
+|---|---:|---:|
+| Open, touch nothing | 10.2 MB | 311x |
+| Open + `Paragraphs.Count` | 12.6 MB | 383x |
+| Open + `Paragraphs.Count` five times | 22.2 MB | 673x |
+| Open + `ExtractText` | 39.7 MB | 1 205x |
+| (unzip + `XDocument.Load` alone) | 4.5 MB | 135x |
+
+The middle rows are the finding. `Paragraphs` costs **2.4 MB every time it is read** — it
+materialises a fresh list and a fresh wrapper per paragraph on each access, the same shape as the
+table-indexer bug fixed earlier, in the library's most-used property. `ExtractText` walked it, then
+called `Paragraph.Text`, which walks `Runs` — another fresh list and wrapper per run — and returned
+a string that was immediately appended to another builder and thrown away.
+
+Extraction now walks the body's elements directly into one builder. `Paragraph.Text` and `Run.Text`
+share the same walk, so a caller assembling a document pays no string per run.
+
+**`ExtractText`'s own cost: 29.5 MB → 10.5 MB.** What is left is close to inherent — the document's
+text is about 3 MB as UTF-16, and the result is one string.
+
+Walking elements means restating which of them count, which is where such a rewrite goes quietly
+wrong: a run inside a hyperlink is text, a tab is a tab, a break is a newline, and both hyphens are
+characters rather than markup. Prose exercises none of those, so `WordNet.Tests.TextExtractionTests`
+pins the output character for character on a document that contains all of them. Dropping hyperlink
+runs fails three of its four cases; ignoring tabs fails two.
+
+### Two hypotheses the measurements rejected
+
+**`Span<T>` in the PdfNet lexer.** Opening a PDF allocates 13.6x its file size at 50 pages and 13.7x
+at 200 — small and flat. The lexer is not a hot path, and the expensive part of reading a PDF is
+text extraction at a flat 242 KB per page, which is a different code path. Not worth doing on these
+numbers.
+
+**Buffer pooling when writing a package.** Writing a workbook allocates 152x the output at 10 000
+rows and 146x at 50 000 — linear, with no scaling problem to fix. Whether pooling would help is a
+separate question from whether the current cost is wrong, and nothing here says it is.
+
+Both stay in the plan as ideas rather than as work, which is what measuring them was for.
+
 ### Appending a paragraph was O(number of blocks)
 
 `InsertBlock` kept the body's final `w:sectPr` last by finding it and calling `AddBeforeSelf`. LINQ
