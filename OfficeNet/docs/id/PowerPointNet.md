@@ -378,6 +378,76 @@ slide.BackgroundColor = OfficeColor.FromRgb(0xF2, 0xF2, 0xF2);
 Animasi hanya berurutan mengikuti klik. Motion path dan pemicu membutuhkan pohon timing SMIL penuh
 dan ada di [peta jalan](../../Plan.md).
 
+### Animasi
+
+```csharp
+using PowerPointNet.Animations;
+
+slide.Animate(
+    Animation.Entrance(title, AnimationEffectKind.Fade),
+    Animation.Entrance(bullet1, AnimationEffectKind.Fly).From(AnimationDirection.Left),
+    Animation.Entrance(bullet2, AnimationEffectKind.Fly).WithPrevious(),
+    Animation.Emphasis(logo, AnimationEffectKind.Spin).AfterPrevious(),
+    Animation.Exit(cover).Lasting(TimeSpan.FromSeconds(1)),
+    Animation.Motion(arrow, MotionPath.Line(0.3, 0)).OnClickOf(button));
+```
+
+Empat kelas, dan tidak bisa saling ditukar: **entrance** meninggalkan bentuknya terlihat, **exit**
+meninggalkannya tersembunyi, **emphasis** mengandaikan bentuknya sudah terlihat, dan **motion path**
+memindahkannya. Memasangkan efek dengan kelas yang salah akan melempar exception, bukan menulis
+berkas yang dibuka PowerPoint tanpa memainkan apa pun.
+
+| Kelas | Efek |
+| --- | --- |
+| `Entrance`, `Exit` | `Appear`, `Fade`, `Fly`, `Wipe`, `Zoom` |
+| `Emphasis` | `Pulse`, `Spin`, `Grow` |
+| `MotionPath` | `Move`, lewat sebuah `MotionPath` |
+
+**Urutannya adalah urutan klik**, dan itu juga yang menjadi acuan `WithPrevious()` dan
+`AfterPrevious()` — keduanya berarti "animasi sebelum ini di daftar ini". Hanya `OnClick` yang
+memulai klik baru; dua lainnya bergabung ke klik yang sudah terbuka, dan itulah bedanya antara satu
+build tiga bagian dan tiga klik terpisah.
+
+`OnClickOf(shape)` adalah pengecualian. Ia tidak mengambil giliran dalam urutan klik: ia masuk ke
+sequence-nya sendiri yang terkunci pada bentuk itu, dan berjalan setiap kali bentuk itu diklik,
+berapa kali pun. Itulah yang membuat sebuah slide jadi interaktif — tombol yang membuka jawaban.
+
+`Lasting()` dan `After()` mengatur durasi dan jeda. `HasAnimations` memberi tahu apakah sebuah slide
+punya animasi, dan `ClearAnimations()` menghapusnya.
+
+#### Motion path
+
+```csharp
+MotionPath.Line(0.3, -0.1);                         // sepertiga slide ke kanan, sepersepuluh ke atas
+MotionPath.Through((0.1, 0), (0.1, 0.2), (0, 0.2)); // tiga ruas
+MotionPath.Rectangle(0.25, 0.1);                    // lintasan tertutup
+MotionPath.Custom("M 0 0 C 0.2 -0.3 0.4 0.3 0.6 0 E");
+```
+
+Koordinatnya berkisar 0 sampai 1 melintang dan menurun slide, **relatif terhadap posisi bentuknya
+sekarang**. Jadi `0.25` berarti seperempat lebar slide dari posisi bentuk itu sendiri, bukan
+seperempat jalan dari tepi kiri slide — membacanya sebagai absolut itulah sebabnya motion path yang
+ditulis tangan begitu sering melempar bentuknya keluar halaman.
+
+#### Apa yang ditulis, dan apa yang dilakukan PowerPoint dengannya
+
+Model animasinya adalah SMIL: satu time root, sequence di bawahnya, grup klik di bawah itu, dan di
+bawah tiap grup ada behaviour yang benar-benar mengubah sesuatu. Bahkan satu "fade in saat diklik"
+saja sudah empat lapis `p:par` sebelum ada yang terjadi.
+
+Behaviour itulah yang dimainkan. Atribut `presetID` di sebelahnya hanya memberi tahu panel animasi
+PowerPoint entri galeri mana ini, jadi ia ditulis untuk nomor entrance dan exit yang terdokumentasi
+dan dibiarkan kosong di tempat lain alih-alih ditebak: PowerPoint kemudian melabelinya "Custom" dan
+memainkannya persis seperti yang ditulis — lebih baik daripada label salah pada efek yang lalu tidak
+bisa diedit dengan benar oleh siapa pun.
+
+Animasi tidak dibaca kembali ke dalam model. Mengenali setiap efek yang bisa ditulis PowerPoint jauh
+lebih besar daripada menulis yang ada di sini, dan melaporkan sebuah slide tidak punya animasi hanya
+karena satu di antaranya tidak dikenali akan lebih buruk daripada tidak menawarkan pembacaan sama
+sekali — jadi `Animate` mengganti apa pun yang dipunya slide itu, dan `HasAnimations` adalah
+satu-satunya pembaca yang ada.
+
+
 ## Tema
 
 ```csharp

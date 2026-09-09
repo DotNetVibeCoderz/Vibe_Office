@@ -5,6 +5,7 @@ using OfficeNet.Core.Drawing;
 using OfficeNet.Core.Packaging;
 using OfficeNet.Core.Xml;
 using OfficeNet.Core;
+using PowerPointNet.Animations;
 using PowerPointNet.Charts;
 using PowerPointNet.Diagrams;
 using PowerPointNet.Shapes;
@@ -919,151 +920,88 @@ public sealed class Slide
     }
 
     /// <summary>
-    /// Animates the slide's shapes so each appears on a click, in the order given.
+    /// Sets the slide's animations, replacing any it already had.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// PresentationML's animation model is a full SMIL timing tree — <c>p:timing</c> holding nested
-    /// parallel and sequential time nodes, each with condition lists and behaviour elements. Even a
-    /// single "fade in on click" is around forty elements deep.
+    /// The order matters twice over. It is the click order, and it decides what
+    /// <see cref="AnimationTrigger.WithPrevious"/> and <see cref="AnimationTrigger.AfterPrevious"/>
+    /// attach themselves to — both mean "the animation before this one in this list".
     /// </para>
     /// <para>
-    /// What this writes is the click-sequence shape of that tree, which covers the overwhelmingly
-    /// common case: build a bullet list or a set of shapes one click at a time. Anything richer —
-    /// motion paths, emphasis effects, triggers — needs the timing tree written by hand through
-    /// <see cref="Root"/>.
+    /// An animation triggered by <see cref="Animation.OnClickOf"/> does not take a turn in the click
+    /// order. It goes into its own sequence keyed to the shape that starts it, and fires whenever
+    /// that shape is clicked, however many times.
     /// </para>
+    /// <example>
+    /// <code>
+    /// slide.Animate(
+    ///     Animation.Entrance(title, AnimationEffectKind.Fade),
+    ///     Animation.Entrance(bullet1, AnimationEffectKind.Fly).From(AnimationDirection.Left),
+    ///     Animation.Entrance(bullet2, AnimationEffectKind.Fly).WithPrevious(),
+    ///     Animation.Emphasis(logo, AnimationEffectKind.Spin).AfterPrevious(),
+    ///     Animation.Motion(arrow, MotionPath.Line(0.3, 0)).OnClickOf(button));
+    /// </code>
+    /// </example>
+    /// </remarks>
+    public Slide Animate(params Animation[] animations)
+    {
+        ArgumentNullException.ThrowIfNull(animations);
+
+        Root.Elements(Ns.P + "timing").Remove();
+
+        if (TimingTree.Build(animations) is { } timing)
+        {
+            // p:timing is the last child of p:sld, after p:clrMapOvr and p:transition.
+            Root.Add(timing);
+        }
+
+        _presentation.Touch();
+        return this;
+    }
+
+    /// <summary>The slide's animations are not read back; this reports whether it has any.</summary>
+    /// <remarks>
+    /// Reading a timing tree back into the model would mean recognising every effect PowerPoint can
+    /// write, and reporting a slide as having no animations because one of them was unfamiliar is
+    /// worse than not offering to read them at all.
+    /// </remarks>
+    public bool HasAnimations => Root.Element(Ns.P + "timing") is not null;
+
+    /// <summary>Removes every animation from the slide.</summary>
+    public Slide ClearAnimations()
+    {
+        Root.Elements(Ns.P + "timing").Remove();
+        _presentation.Touch();
+        return this;
+    }
+
+    /// <summary>
+    /// Animates the slide's shapes so each appears on a click, in the order given.
+    /// </summary>
+    /// <remarks>
+    /// The common case, kept as one call. <see cref="Animate"/> is the same machinery with the
+    /// trigger, the timing, the direction and the effect class all open.
     /// </remarks>
     public Slide AnimateOnClick(AnimationEffect effect, params Shape[] shapes)
     {
         ArgumentNullException.ThrowIfNull(shapes);
 
-        Root.Elements(Ns.P + "timing").Remove();
-
         if (effect == AnimationEffect.None || shapes.Length == 0)
         {
-            _presentation.Touch();
-            return this;
+            return ClearAnimations();
         }
 
-        var nodeId = 2;
-        var sequenceChildren = new XElement(Ns.P + "childTnLst");
-
-        foreach (var shape in shapes)
+        var kind = effect switch
         {
-            sequenceChildren.Add(BuildClickStep(effect, shape.Id, ref nodeId));
-        }
-
-        var timing = new XElement(Ns.P + "timing",
-            new XElement(Ns.P + "tnLst",
-                new XElement(Ns.P + "par",
-                    new XElement(Ns.P + "cTn",
-                        new XAttribute("id", "1"),
-                        new XAttribute("dur", "indefinite"),
-                        new XAttribute("restart", "never"),
-                        new XAttribute("nodeType", "tmRoot"),
-                        new XElement(Ns.P + "childTnLst",
-                            new XElement(Ns.P + "seq",
-                                new XAttribute("concurrent", "1"),
-                                new XAttribute("nextAc", "seek"),
-                                new XElement(Ns.P + "cTn",
-                                    new XAttribute("id", nodeId++),
-                                    new XAttribute("dur", "indefinite"),
-                                    new XAttribute("nodeType", "mainSeq"),
-                                    sequenceChildren),
-                                // The previous/next condition lists are what wire the sequence to
-                                // the space bar and the arrow keys.
-                                new XElement(Ns.P + "prevCondLst",
-                                    new XElement(Ns.P + "cond",
-                                        new XAttribute("evt", "onPrev"),
-                                        new XAttribute("delay", "0"),
-                                        new XElement(Ns.P + "tgtEl",
-                                            new XElement(Ns.P + "sldTgt")))),
-                                new XElement(Ns.P + "nextCondLst",
-                                    new XElement(Ns.P + "cond",
-                                        new XAttribute("evt", "onNext"),
-                                        new XAttribute("delay", "0"),
-                                        new XElement(Ns.P + "tgtEl",
-                                            new XElement(Ns.P + "sldTgt"))))))))));
-
-        Root.Add(timing);
-        _presentation.Touch();
-        return this;
-    }
-
-    private static XElement BuildClickStep(AnimationEffect effect, uint shapeId, ref int nodeId)
-    {
-        var presetId = effect switch
-        {
-            AnimationEffect.Appear => 1,
-            AnimationEffect.Fade => 10,
-            AnimationEffect.FlyIn => 2,
-            AnimationEffect.Wipe => 22,
-            AnimationEffect.Zoom => 23,
-            _ => 10,
+            AnimationEffect.Appear => AnimationEffectKind.Appear,
+            AnimationEffect.FlyIn => AnimationEffectKind.Fly,
+            AnimationEffect.Wipe => AnimationEffectKind.Wipe,
+            AnimationEffect.Zoom => AnimationEffectKind.Zoom,
+            _ => AnimationEffectKind.Fade,
         };
 
-        var target = new XElement(Ns.P + "tgtEl",
-            new XElement(Ns.P + "spTgt", new XAttribute("spid", shapeId)));
-
-        var behaviour = new XElement(Ns.P + "animEffect",
-            new XAttribute("transition", "in"),
-            new XAttribute("filter", effect switch
-            {
-                AnimationEffect.Fade => "fade",
-                AnimationEffect.Wipe => "wipe(right)",
-                AnimationEffect.Zoom => "fade",
-                _ => "fade",
-            }),
-            new XElement(Ns.P + "cBhvr",
-                new XElement(Ns.P + "cTn",
-                    new XAttribute("id", nodeId++),
-                    new XAttribute("dur", "500")),
-                target));
-
-        // "set" flips the shape's visibility at the start of the effect. Without it the shape is
-        // already visible before its animation runs, which defeats an entrance effect entirely.
-        var reveal = new XElement(Ns.P + "set",
-            new XElement(Ns.P + "cBhvr",
-                new XElement(Ns.P + "cTn",
-                    new XAttribute("id", nodeId++),
-                    new XAttribute("dur", "1"),
-                    new XAttribute("fill", "hold")),
-                new XElement(Ns.P + "tgtEl",
-                    new XElement(Ns.P + "spTgt", new XAttribute("spid", shapeId))),
-                new XElement(Ns.P + "attrNameLst",
-                    new XElement(Ns.P + "attrName", "style.visibility"))),
-            new XElement(Ns.P + "to",
-                new XElement(Ns.P + "strVal", new XAttribute("val", "visible"))));
-
-        return new XElement(Ns.P + "par",
-            new XElement(Ns.P + "cTn",
-                new XAttribute("id", nodeId++),
-                new XAttribute("fill", "hold"),
-                new XElement(Ns.P + "stCondLst",
-                    new XElement(Ns.P + "cond",
-                        new XAttribute("delay", "indefinite"))),
-                new XElement(Ns.P + "childTnLst",
-                    new XElement(Ns.P + "par",
-                        new XElement(Ns.P + "cTn",
-                            new XAttribute("id", nodeId++),
-                            new XAttribute("fill", "hold"),
-                            new XElement(Ns.P + "stCondLst",
-                                new XElement(Ns.P + "cond", new XAttribute("delay", "0"))),
-                            new XElement(Ns.P + "childTnLst",
-                                new XElement(Ns.P + "par",
-                                    new XElement(Ns.P + "cTn",
-                                        new XAttribute("id", nodeId++),
-                                        new XAttribute("presetID", presetId),
-                                        new XAttribute("presetClass", "entr"),
-                                        new XAttribute("fill", "hold"),
-                                        new XAttribute("nodeType", "clickEffect"),
-                                        new XElement(Ns.P + "stCondLst",
-                                            new XElement(Ns.P + "cond",
-                                                new XAttribute("delay", "0"))),
-                                        new XElement(Ns.P + "childTnLst",
-                                            reveal,
-                                            behaviour)))))))));
+        return Animate([.. shapes.Select(shape => Animation.Entrance(shape, kind))]);
     }
 
     /// <summary>The slide's background colour; <c>null</c> inherits from the layout.</summary>

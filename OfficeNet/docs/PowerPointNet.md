@@ -378,6 +378,74 @@ slide.BackgroundColor = OfficeColor.FromRgb(0xF2, 0xF2, 0xF2);
 Animation is click-ordered only. Motion paths and triggers need a full SMIL timing tree and are on
 the [roadmap](../Plan.md).
 
+### Animation
+
+```csharp
+using PowerPointNet.Animations;
+
+slide.Animate(
+    Animation.Entrance(title, AnimationEffectKind.Fade),
+    Animation.Entrance(bullet1, AnimationEffectKind.Fly).From(AnimationDirection.Left),
+    Animation.Entrance(bullet2, AnimationEffectKind.Fly).WithPrevious(),
+    Animation.Emphasis(logo, AnimationEffectKind.Spin).AfterPrevious(),
+    Animation.Exit(cover).Lasting(TimeSpan.FromSeconds(1)),
+    Animation.Motion(arrow, MotionPath.Line(0.3, 0)).OnClickOf(button));
+```
+
+Four classes, and they are not interchangeable: an **entrance** leaves the shape visible, an **exit**
+leaves it hidden, an **emphasis** assumes it was visible already, and a **motion path** moves it.
+Pairing an effect with the wrong class throws rather than writing a file PowerPoint opens and plays
+nothing from.
+
+| Class | Effects |
+| --- | --- |
+| `Entrance`, `Exit` | `Appear`, `Fade`, `Fly`, `Wipe`, `Zoom` |
+| `Emphasis` | `Pulse`, `Spin`, `Grow` |
+| `MotionPath` | `Move`, via a `MotionPath` |
+
+**The order is the click order**, and it is also what `WithPrevious()` and `AfterPrevious()` attach
+to — both mean "the animation before this one in this list". Only `OnClick` starts a new click;
+the other two join the click already open, which is the difference between a three-part build and
+three separate clicks.
+
+`OnClickOf(shape)` is the exception. It does not take a turn in the click order: it goes into its own
+sequence keyed to that shape and fires whenever the shape is clicked, however many times. That is
+what makes a slide interactive — a button that reveals an answer.
+
+`Lasting()` and `After()` set the duration and the delay. `HasAnimations` says whether a slide has
+any, and `ClearAnimations()` removes them.
+
+#### Motion paths
+
+```csharp
+MotionPath.Line(0.3, -0.1);                         // a third of the slide right, a tenth up
+MotionPath.Through((0.1, 0), (0.1, 0.2), (0, 0.2)); // three legs
+MotionPath.Rectangle(0.25, 0.1);                    // a closed loop
+MotionPath.Custom("M 0 0 C 0.2 -0.3 0.4 0.3 0.6 0 E");
+```
+
+Coordinates run 0 to 1 across the slide and down it, **relative to where the shape already is**. So
+`0.25` means a quarter of the slide's width from the shape's own position, not a quarter of the way
+across the slide — reading it as absolute is why a hand-written motion path so often sends the shape
+off the edge.
+
+#### What is written, and what PowerPoint makes of it
+
+The animation model is SMIL: a time root, sequences under it, click groups under those, and under
+each group the behaviours that change something. Even a single "fade in on click" is four levels of
+`p:par` before anything happens.
+
+The behaviours are what plays. The `presetID` attribute alongside them only tells PowerPoint's
+animation pane which gallery entry this is, so it is written for the documented entrance and exit
+numbers and left off elsewhere rather than guessed: PowerPoint then labels the effect "Custom" and
+plays it exactly as written, which beats a wrong label on an effect nobody can then edit sensibly.
+
+Animations are not read back into the model. Recognising every effect PowerPoint can write is a much
+larger job than writing the ones here, and reporting a slide as having no animations because one of
+them was unfamiliar would be worse than not offering to read them at all — so `Animate` replaces
+whatever a slide had, and `HasAnimations` is all the reader there is.
+
+
 ## Themes
 
 ```csharp

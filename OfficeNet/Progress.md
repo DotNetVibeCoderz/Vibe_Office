@@ -112,7 +112,8 @@ Dibuat oleh Gravicode Studios, dipimpin oleh Kang Fadhil.
 - [x] `SlideTable` — grid, span, fill, header row; dikenali kembali saat file dibuka
 - [x] `Picture` — sisip, ukuran natural dari DPI, crop
 - [x] Notes slide
-- [x] Transisi (9 preset) + animasi klik-berurutan (pohon timing SMIL)
+- [x] Transisi (9 preset) + animasi penuh — entrance/emphasis/exit/motion path, pemicu berurutan
+      dan pemicu klik-bentuk (`interactiveSeq`)
 - [x] Ekspor PDF — satu halaman per slide, tabel, gambar, nomor slide, notes, watermark
 - [x] SmartArt — 5 part (data, layout, colors, quickStyle, drawing); 5 jenis diagram; ikut
       digambar di ekspor PDF

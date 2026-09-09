@@ -16,6 +16,7 @@ using PdfNet.Annotations;
 using PdfNet.Content;
 using PdfNet.Document;
 using PdfNet.Forms;
+using PowerPointNet.Animations;
 using PowerPointNet.Charts;
 using PowerPointNet.Diagrams;
 using PowerPointNet.Html;
@@ -704,6 +705,41 @@ public class DocSamples : IDisposable
         chart.SetData(data with { Type = ChartType.Line });
 
         Assert.Equal(ChartType.Line, chart.GetData().Type);
+    }
+
+    [Fact]
+    public void PowerPointNet_Animation()
+    {
+        using var deck = Presentation.Create();
+        var slide = deck.AddSlide(3);
+
+        var title = slide.AddTextBox("Judul", Units.Cm(2), Units.Cm(2), Units.Cm(10), Units.Cm(2));
+        var first = slide.AddTextBox("Satu", Units.Cm(2), Units.Cm(5), Units.Cm(10), Units.Cm(1.5));
+        var second = slide.AddTextBox("Dua", Units.Cm(2), Units.Cm(7), Units.Cm(10), Units.Cm(1.5));
+        var logo = slide.AddTextBox("Logo", Units.Cm(20), Units.Cm(2), Units.Cm(3), Units.Cm(3));
+        var button = slide.AddTextBox("Buka", Units.Cm(20), Units.Cm(12), Units.Cm(3), Units.Cm(1.5));
+        var answer = slide.AddTextBox("Jawaban", Units.Cm(2), Units.Cm(12), Units.Cm(10), Units.Cm(2));
+
+        slide.Animate(
+            Animation.Entrance(title, AnimationEffectKind.Fade),
+            Animation.Entrance(first, AnimationEffectKind.Fly).From(AnimationDirection.Left),
+            Animation.Entrance(second, AnimationEffectKind.Fly).WithPrevious(),
+            Animation.Emphasis(logo, AnimationEffectKind.Spin).AfterPrevious(),
+            Animation.Motion(logo, MotionPath.Line(0.1, 0)).After(TimeSpan.FromMilliseconds(200)),
+            Animation.Entrance(answer).OnClickOf(button));
+
+        Assert.True(slide.HasAnimations);
+
+        // A motion path is relative to where the shape already is, and always ends with E.
+        Assert.Equal("M 0 0 L 0.1 0 E", MotionPath.Line(0.1, 0).Data);
+        Assert.EndsWith("E", MotionPath.Custom("M 0 0 L 0.5 0").Data, StringComparison.Ordinal);
+
+        // The class and the effect have to agree.
+        Assert.Throws<OfficeNetException>(() =>
+            Animation.Entrance(logo, AnimationEffectKind.Spin));
+
+        slide.ClearAnimations();
+        Assert.False(slide.HasAnimations);
     }
 
     [Fact]

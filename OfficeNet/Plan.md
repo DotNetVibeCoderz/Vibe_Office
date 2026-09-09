@@ -109,8 +109,11 @@ seberapa sering ketiadaannya menghentikan pekerjaan nyata.
 - **Ekspor video.** Sengaja tidak ada. Encoding berarti FFmpeg, yang berupa biner native, sementara
   satu-satunya dependensi native `OfficeNet.Rendering` adalah SkiaSharp — dan itulah yang membuatnya
   bisa diandalkan. Dokumentasinya menunjukkan cara merangkai gambarnya sendiri dengan FFmpeg.
-- **Animasi lanjutan.** Sekarang hanya urutan klik. Motion path dan trigger butuh pohon timing
-  SMIL penuh.
+- [x] **Animasi lanjutan.** Selesai. Empat kelas (entrance, emphasis, exit, motion path), tiga
+  pemicu berurutan plus pemicu "saat bentuk lain diklik" — yang masuk ke `interactiveSeq` sendiri,
+  bukan ke sequence utama. Motion path relatif terhadap posisi bentuknya. `presetID` hanya label
+  untuk panel PowerPoint; yang dimainkan adalah elemen behaviour-nya, jadi preset yang tidak
+  terdokumentasi dibiarkan kosong alih-alih ditebak.
 
 ### PdfNet
 
