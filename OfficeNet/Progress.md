@@ -289,7 +289,11 @@ Tes tidak bisa melihat keduanya: keluarannya benar, hanya lambat.
   adalah menelusuri `table.Rows` sekali (36 ms) — sekarang didokumentasikan di indexer-nya dan di
   panduan WordNet, bukan disembunyikan.
 
-## Rilis — **v1.0.0 terbit di NuGet**
+## Rilis
+
+**v1.1.0 siap, belum diterbitkan.** Versi paketnya sudah dinaikkan; penerbitannya menunggu perintah.
+
+### v1.0.0 — terbit di NuGet
 
 Tujuh paket beserta symbol package, dipublikasikan 8 September 2026:
 
