@@ -170,6 +170,21 @@ mengukur adalah cara membuang waktu pada jalur yang tidak panas.
 
 ---
 
+## v1.3 — Renderer
+
+`OfficeNet.Rendering` menggambar jalur, gambar, dan teks, tetapi mencari font di sistem berdasarkan
+namanya alih-alih memakai font yang tersemat di dalam berkasnya. Itu batasan yang sudah ada sejak
+awal dan sudah didokumentasikan — tapi sejak PdfNet bisa menyematkan font, akibatnya jadi lebih
+terasa: PDF yang dibuat pustaka ini sendiri dengan aksara non-Latin dirender sebagai kotak kosong,
+karena font penggantinya tidak punya glyph-nya.
+
+- **Pakai font yang tersemat.** `TextFragment` perlu membawa id glyph-nya, bukan hanya teks hasil
+  dekode, karena subset yang ditulis PdfNet sengaja tidak membawa `cmap` — pemetaan karakternya ada
+  di PDF-nya, bukan di fontnya. Setelah itu SkiaSharp bisa memuat `FontFile2`-nya langsung.
+- **Gradien, pattern, dan clipping.** Ketiganya diabaikan sekarang.
+
+Sampai itu ada, renderer ini tetap untuk thumbnail dan pratinjau, bukan penampil dokumen.
+
 ## v2.0 — Perluasan
 
 - **VisioNet** (`.vsdx`) dan **OneNoteNet** (`.one`). Keduanya OPC, jadi Core sudah menanganinya;

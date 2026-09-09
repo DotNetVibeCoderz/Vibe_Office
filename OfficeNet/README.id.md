@@ -294,16 +294,29 @@ dotnet test
 
 Kekurangan yang jujur, dilacak di [Progress.md](Progress.md) dan [Plan.md](Plan.md):
 
-- **WordNet** — footnote, endnote, komentar, text box
-- **ExcelNet** — data validation, proteksi sheet, `INDEX`/`MATCH`/`XLOOKUP`, penulis streaming
-- **PowerPointNet** — SmartArt, ekspor video, animasi motion path
-- **PdfNet** — konversi PDF → Word/Excel, penyematan font TrueType, tanda tangan digital
-- Ekspor Word→PDF menangani layout mengalir, bukan objek mengambang, footnote, atau hifenasi
+- **Ekspor video** sengaja tidak ada: encoding berarti FFmpeg, yang berupa biner native, sementara
+  satu-satunya dependensi native `OfficeNet.Rendering` adalah SkiaSharp. Dokumentasinya memberikan
+  baris `ffmpeg` untuk dijalankan atas slide yang sudah dirender.
+- **PDF → Word/Excel** adalah rekonstruksi, bukan konversi. PDF tidak punya paragraf dan tidak punya
+  tabel, jadi strukturnya disimpulkan dari tempat glyph-nya mendarat; yang luput dari heuristiknya
+  kembali sebagai paragraf, dan tidak ada teks yang hilang.
+  [Yang tertangkap dan tidak](docs/id/WordNet.md#pdf--word).
+- **Objek mengambang di ekspor Word→PDF** mengelilingi kotak pembatas, bukan garis luarnya, dan satu
+  baris dipecah mengelilingi satu objek, bukan beberapa. Hifenasi belum ada.
+- **Penyematan font** menerima outline TrueType. Font OpenType dengan outline PostScript (`.otf`
+  bertabel `CFF `) dan koleksi TrueType (`.ttc`) ditolak dengan menyebutkan alasannya, bukan dimuat
+  menjadi PDF tanpa glyph sama sekali.
+- **Tanda tangan digital** berformat `adbe.pkcs7.detached`. Tanpa timestamp tepercaya, respons
+  pencabutan, atau arsip long-term validation — semuanya butuh layanan jaringan, dan ketiadaannya
+  adalah sebab tanda tangan yang diperiksa bertahun-tahun lagi bisa gagal meski tak ada yang
+  diutak-atik.
+- **Formula** belum menangani array formula, iterative calculation, dan referensi antar-workbook.
 - **Pivot table** menulis cache dan tata letaknya; Excel menghitung grid hasilnya saat membuka
   berkas, jadi konsumen non-Excel melihat area itu kosong. [Alasannya](docs/id/ExcelNet.md#pivot-table).
-- **Renderer** menggambar path, gambar, dan teks, tetapi mengganti font tersemat dengan font sistem
-  dan tidak menangani gradien, pattern, atau clipping. Ia untuk thumbnail dan pratinjau, bukan
-  penampil.
+- **Renderer** menggambar path, gambar, dan teks, tetapi mencari font di sistem berdasarkan namanya
+  alih-alih memakai font yang tersemat di berkasnya — sehingga PDF beraksara non-Latin yang ditulis
+  pustaka ini sendiri tampil sebagai kotak kosong — dan tidak menangani gradien, pattern, atau
+  clipping. Ia untuk thumbnail dan pratinjau, bukan penampil. Dilacak di [Plan.md](Plan.md).
 
 ## Lisensi
 

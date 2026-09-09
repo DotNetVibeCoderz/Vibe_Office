@@ -391,5 +391,7 @@ dotnet test OfficeNet.sln -c Release --no-build
 
 ## Yang masih tersisa
 
-Tidak ada butir rilis yang terbuka. Sisanya adalah pekerjaan v1.1 dan seterusnya di
-[Plan.md](Plan.md).
+**v1.1 selesai seluruhnya.** Setiap butir di bagian v1.1 [Plan.md](Plan.md) sudah dikerjakan, kecuali
+ekspor video yang sengaja tidak dikerjakan dan alasannya dicatat di sana.
+
+Sisanya adalah v1.2 (performa), v1.3 (renderer memakai font tersemat), dan v2.0.

@@ -298,16 +298,28 @@ dotnet test
 
 Honest gaps, tracked in [Progress.md](Progress.md) and [Plan.md](Plan.md):
 
-- **WordNet** — footnotes, endnotes, comments, text boxes
-- **ExcelNet** — data validation, sheet protection, `INDEX`/`MATCH`/`XLOOKUP`, a streaming writer
-- **PowerPointNet** — SmartArt, video export, motion-path animation
-- **PdfNet** — PDF → Word/Excel conversion, TrueType font embedding, digital signatures
-- Word→PDF export handles flow layout, not floating objects, footnotes or hyphenation
+- **Video export** is deliberately absent: encoding means FFmpeg, which is a native binary, and
+  `OfficeNet.Rendering`'s only native dependency is SkiaSharp. The docs give the `ffmpeg` line to run
+  over rendered slides instead.
+- **PDF → Word/Excel** is a reconstruction, not a conversion. A PDF has no paragraphs and no tables,
+  so structure is inferred from where the glyphs landed; what the heuristics miss comes back as
+  paragraphs, and no text is ever dropped. [What it does and does not
+  catch](docs/WordNet.md#pdf--word).
+- **Word→PDF floating objects** wrap around a bounding box rather than an outline, and a line breaks
+  around one object rather than several. Hyphenation is not implemented.
+- **Font embedding** takes TrueType outlines. OpenType fonts with PostScript outlines (`.otf` with a
+  `CFF ` table) and TrueType collections (`.ttc`) are refused by name rather than loaded into a PDF
+  with no glyphs in it.
+- **Digital signatures** are `adbe.pkcs7.detached`. No trusted timestamp, revocation response or
+  long-term-validation archive — those need a network service, and their absence is why a signature
+  checked years from now may fail even though nothing was tampered with.
+- **Formulas** do not do array formulas, iterative calculation or cross-workbook references.
 - A **pivot table** writes its cache and layout; Excel computes the result grid when it opens the
   file, so a non-Excel consumer sees that area empty. [Why](docs/ExcelNet.md#pivot-tables).
-- The **renderer** draws paths, images and text, but substitutes a system font for the file's
-  embedded one and does not do gradients, patterns or clipping. It is for thumbnails and previews,
-  not a viewer.
+- The **renderer** draws paths, images and text, but finds fonts by name in the system rather than
+  using the one embedded in the file — so a PDF this library writes in a non-Latin script renders as
+  empty boxes — and does not do gradients, patterns or clipping. It is for thumbnails and previews,
+  not a viewer. Tracked in [Plan.md](Plan.md).
 
 ## Licence
 
