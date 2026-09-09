@@ -128,7 +128,14 @@ seberapa sering ketiadaannya menghentikan pekerjaan nyata.
   CMap `/ToUnicode` selalu ditulis, karena tanpanya teksnya tidak bisa dibaca kembali sama sekali.
   Glyph komposit membawa komponennya. Diverifikasi dengan memuat subset-nya ke SkiaSharp — parser
   yang bukan milik pustaka ini — dan menggambar seluruh 118 glyph-nya.
-- **Tanda tangan digital.** Verifikasi lebih dulu, penandatanganan kemudian.
+- [x] **Tanda tangan digital.** Selesai, keduanya. Verifikasi menjawab dua pertanyaan terpisah —
+  apakah byte-nya masih menghasilkan hash yang sama, dan apakah tanda tangannya mencakup seluruh
+  berkas — karena tanda tangan yang sempurna secara kriptografis atas separuh berkas adalah serangan
+  yang nyata. Penandatanganan menghasilkan `adbe.pkcs7.detached` dengan SHA-256; placeholder dicari
+  lewat nilai sentinel-nya sehingga dokumen yang sudah bertanda tangan bisa ditandatangani lagi
+  tanpa merusak yang lama. Diverifikasi dengan openssl, bukan hanya dengan pembacanya sendiri.
+  Yang tidak dihasilkan dan didokumentasikan: timestamp tepercaya dan arsip LTV, yang butuh layanan
+  jaringan.
 
 ---
 

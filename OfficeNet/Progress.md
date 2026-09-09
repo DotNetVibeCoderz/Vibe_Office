@@ -49,6 +49,7 @@ Dibuat oleh Gravicode Studios, dipimpin oleh Kang Fadhil.
 - [x] Ekstraksi teks: content stream, CMap, ToUnicode, simple/composite font, spasi inferensial
 - [x] Struktur halaman — baris, paragraf, heading, dan tabel disimpulkan dari posisi glyph
 - [x] Penyematan font TrueType — subset, dinomori ulang, `/CIDToGIDMap`, `/ToUnicode` selalu ditulis
+- [x] Tanda tangan digital — verifikasi dan penandatanganan (`adbe.pkcs7.detached`, SHA-256)
 - [x] Ekstraksi gambar: DCT passthrough, PNG encoder tangan, indexed/CMYK → RGB
 - [x] `PdfCanvas` — path, teks, wrapping, justifikasi, gambar, opacity
 - [x] `StandardFonts` — metrik AFM 14 font baku

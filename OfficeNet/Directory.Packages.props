@@ -14,6 +14,13 @@
     <PackageVersion Include="Gravicode.Science.GraviFrame" Version="1.0.0" />
     <PackageVersion Include="Gravicode.Science.GraviNum" Version="1.0.0" />
 
+    <!--
+      CMS/PKCS#7 for PDF digital signatures. A Microsoft package that ships with the SDK rather than
+      a third-party dependency, and the alternative is hand-rolling signature cryptography, which is
+      exactly the thing not to hand-roll.
+    -->
+    <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="10.0.0" />
+
     <!-- Rasterisation for PDF/document -> image export. -->
     <PackageVersion Include="SkiaSharp" Version="4.151.2" />
     <PackageVersion Include="SkiaSharp.NativeAssets.Linux" Version="4.151.2" />

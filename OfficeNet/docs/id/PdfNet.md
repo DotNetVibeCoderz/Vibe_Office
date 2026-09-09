@@ -237,6 +237,86 @@ memeriksa berkas dengan tangan: objek di dalam object stream *tidak* dienkripsi 
 kontainernya sudah, sehingga mendekripsi dua kali menghasilkan sampah yang tetap bisa diurai — dan
 XRef stream sama sekali tidak pernah dienkripsi.
 
+## Tanda tangan digital
+
+### Memeriksa satu
+
+```csharp
+using PdfNet.Security;
+
+foreach (var result in PdfSignatures.VerifyAll("laporan-signed.pdf"))
+{
+    Console.WriteLine($"{result.Signature.Name}: {result}");
+}
+```
+
+Tiga jawaban terpisah, dipisahkan karena memang tiga pertanyaan yang berbeda:
+
+| | Artinya |
+| --- | --- |
+| `DigestMatches` | byte-nya masih menghasilkan hash yang sama dengan yang ditandatangani |
+| `CoversWholeDocument` | tanda tangannya mencakup seluruh berkas, bukan sebagiannya |
+| `IsIntact` | keduanya benar |
+
+**Sebuah tanda tangan bisa sempurna secara kriptografis dan tetap tidak melindungi dokumennya.**
+`/ByteRange` menyebutkan bagian berkas mana yang di-hash, dan tidak ada yang memaksanya mencakup
+semuanya — sebuah berkas bisa membawa tanda tangan asli atas separuh awalnya dan konten tak
+bertanda tangan setelahnya. Itu serangan yang nyata, dan karena itulah `DigestMatches` sendirian
+tidak pernah menjadi jawabannya.
+
+Yang tidak dijawab satu pun di antaranya: apakah **penandatangannya** layak dipercaya. Validasi
+rantai sertifikat, masa berlaku, dan pencabutan butuh trust store dan biasanya jaringan, dan setiap
+organisasi menjawabnya berbeda — jadi sertifikatnya dikembalikan agar bisa dijawab dengan benar:
+
+```csharp
+if (result.IsIntact && result.Certificate is { } certificate)
+{
+    using var chain = new X509Chain();
+    chain.ChainPolicy.RevocationMode = X509RevocationMode.Online;
+
+    var trusted = chain.Build(certificate);
+}
+```
+
+### Menandatangani
+
+```csharp
+using var certificate = X509CertificateLoader.LoadPkcs12FromFile("signer.pfx", "password");
+using var pdf = PdfDocument.Open("laporan.pdf");
+
+PdfSigner.Sign(pdf, certificate, "laporan-signed.pdf", new PdfSignOptions
+{
+    Reason = "Disetujui",
+    Location = "Jakarta",
+});
+```
+
+Sertifikatnya harus punya private key — `.pfx` atau `.p12`, bukan `.cer` — dan itulah yang
+diberitahukan alih-alih menghasilkan berkas yang tampak bertanda tangan padahal tidak. Default-nya
+SHA-256; SHA-384 dan SHA-512 tersedia, SHA-1 tidak, karena sudah tidak aman untuk tanda tangan sejak
+2017 dan menyediakannya berarti akan ada yang memakainya.
+
+`ReservedBytes` menentukan besar lubang tempat tanda tangannya, 8 KB secara default. Tanda tangan
+yang tidak muat ditolak, bukan dipotong.
+
+### Kenapa urutannya terlihat aneh
+
+Tanda tangan mencakup rentang byte dari berkas yang sudah jadi, dan ia tidak bisa mencakup dirinya
+sendiri. Jadi berkasnya ditulis lebih dulu dengan lubang di tempat tanda tangannya nanti dan
+placeholder di tempat rentang byte-nya nanti; barulah hash-nya bisa diambil dan tanda tangannya
+disisipkan. **Tidak ada yang boleh berubah panjangnya** selama penyisipan itu, dan karena itu rentang
+byte-nya ditulis sebagai angka berlebar tetap yang dipadatkan dengan spasi.
+
+Menandatangani dokumen yang sudah bertanda tangan tetap bisa: placeholder-nya dicari lewat nilai
+sentinel-nya, bukan lewat posisinya, sehingga rentang yang baru yang diisi dan tanda tangan yang lama
+dibiarkan utuh. Tanda tangan pertama lalu melaporkan `CoversWholeDocument = false`, dan itu jawaban
+yang jujur — memang begitulah bentuk dokumen yang ditandatangani secara bertahap.
+
+**Yang tidak dihasilkan:** timestamp tepercaya, respons pencabutan, atau arsip long-term validation.
+Itulah yang membuat sebuah tanda tangan menjadi PAdES-LTV, semuanya butuh layanan jaringan, dan
+ketiadaannya adalah sebab tanda tangan yang diperiksa bertahun-tahun lagi bisa gagal meski tidak ada
+yang diutak-atik.
+
 ## Formulir
 
 ```csharp

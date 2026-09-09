@@ -18,6 +18,7 @@ using PdfNet.Content;
 using PdfNet.Document;
 using PdfNet.Fonts;
 using PdfNet.Forms;
+using PdfNet.Security;
 using PowerPointNet.Animations;
 using PowerPointNet.Charts;
 using PowerPointNet.Diagrams;
@@ -887,6 +888,62 @@ public class DocSamples : IDisposable
     }
 
     // ---- docs/PdfNet.md ------------------------------------------------------------------------
+
+    [Fact]
+    public void PdfNet_SigningAndVerifying()
+    {
+        // The doc example loads a .pfx; here the certificate is generated so the sample runs
+        // anywhere and never expires.
+        using var key = System.Security.Cryptography.RSA.Create(2048);
+
+        var request = new System.Security.Cryptography.X509Certificates.CertificateRequest(
+            "CN=Kang Fadhil, O=Gravicode Studios", key,
+            System.Security.Cryptography.HashAlgorithmName.SHA256,
+            System.Security.Cryptography.RSASignaturePadding.Pkcs1);
+
+        using var selfSigned = request.CreateSelfSigned(
+            DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddYears(1));
+
+        using var certificate = System.Security.Cryptography.X509Certificates.X509CertificateLoader
+            .LoadPkcs12(selfSigned.Export(
+                System.Security.Cryptography.X509Certificates.X509ContentType.Pkcs12), null);
+
+        using var pdf = PdfDocument.Create();
+
+        using (var canvas = pdf.Pages.Add(PageSize.A4).OpenCanvas())
+        {
+            canvas.SetFont(StandardFont.Helvetica, 12);
+            canvas.DrawText("Laporan Kuartal Pertama", 72, 700);
+        }
+
+        var signed = PdfSigner.Sign(pdf, certificate, new PdfSignOptions
+        {
+            Reason = "Disetujui",
+            Location = "Jakarta",
+        });
+
+        var result = Assert.Single(PdfSignatures.VerifyAll(signed));
+
+        Assert.True(result.DigestMatches);
+        Assert.True(result.CoversWholeDocument);
+        Assert.True(result.IsIntact);
+        Assert.Equal(certificate.Thumbprint, result.Certificate?.Thumbprint);
+
+        // Changing a byte breaks it, which is the only property that matters.
+        var tampered = (byte[])signed.Clone();
+        tampered[200] ^= 0xFF;
+
+        Assert.False(Assert.Single(PdfSignatures.VerifyAll(tampered)).DigestMatches);
+
+        // And appending content leaves the signature genuine but no longer covering the file.
+        var appended = new byte[signed.Length + 32];
+        signed.CopyTo(appended, 0);
+
+        var afterAppend = Assert.Single(PdfSignatures.VerifyAll(appended));
+
+        Assert.True(afterAppend.DigestMatches);
+        Assert.False(afterAppend.CoversWholeDocument);
+    }
 
     [Fact]
     public void PdfNet_EmbeddingAFont()

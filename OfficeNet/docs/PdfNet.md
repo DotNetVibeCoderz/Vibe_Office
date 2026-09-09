@@ -231,6 +231,83 @@ file by hand: objects inside an object stream are *not* individually encrypted �
 already was, so decrypting twice yields garbage that still parses — and an XRef stream is never
 encrypted at all.
 
+## Digital signatures
+
+### Checking one
+
+```csharp
+using PdfNet.Security;
+
+foreach (var result in PdfSignatures.VerifyAll("laporan-signed.pdf"))
+{
+    Console.WriteLine($"{result.Signature.Name}: {result}");
+}
+```
+
+Three separate answers, kept apart because they are genuinely different questions:
+
+| | Means |
+| --- | --- |
+| `DigestMatches` | the bytes still hash to what the signature says |
+| `CoversWholeDocument` | the signature covers the whole file, not part of it |
+| `IsIntact` | both of the above |
+
+**A signature can be cryptographically perfect and still not protect the document.** `/ByteRange`
+says which parts of the file were hashed, and nothing forces it to cover all of them — a file can
+carry a genuine signature over its first half and arbitrary unsigned content after it. That is a
+real attack, and it is why `DigestMatches` alone is never the answer.
+
+What none of these say is whether the **signer** should be trusted. Chain validation, expiry and
+revocation need a trust store and usually a network, and every organisation answers them
+differently, so the certificate is handed back to answer them properly:
+
+```csharp
+if (result.IsIntact && result.Certificate is { } certificate)
+{
+    using var chain = new X509Chain();
+    chain.ChainPolicy.RevocationMode = X509RevocationMode.Online;
+
+    var trusted = chain.Build(certificate);
+}
+```
+
+### Signing
+
+```csharp
+using var certificate = X509CertificateLoader.LoadPkcs12FromFile("signer.pfx", "password");
+using var pdf = PdfDocument.Open("laporan.pdf");
+
+PdfSigner.Sign(pdf, certificate, "laporan-signed.pdf", new PdfSignOptions
+{
+    Reason = "Disetujui",
+    Location = "Jakarta",
+});
+```
+
+The certificate needs its private key — a `.pfx` or `.p12`, not a `.cer` — and saying so is what
+you get instead of a file that looks signed and is not. SHA-256 by default; SHA-384 and SHA-512 are
+available and SHA-1 is not, because it has been unsafe for signatures since 2017 and offering it
+would mean seeing it used.
+
+`ReservedBytes` sizes the hole the signature goes into, 8 KB by default. A signature that does not
+fit is refused rather than truncated.
+
+### Why the order looks strange
+
+A signature covers a byte range of the finished file, and it cannot cover itself. So the file is
+written first with a hole where the signature will go and placeholders where the byte range will go;
+only then can the hash be taken and the signature spliced in. **Nothing may change length** during
+that splice, which is why the byte range is written as fixed-width numbers padded with spaces.
+
+Signing a document that already has a signature works: the placeholders are found by their sentinel
+value rather than by position, so the new range is filled in and the existing signature is left
+alone. The first signature then reports `CoversWholeDocument = false`, which is the honest answer —
+that is what an incrementally signed document looks like.
+
+**What this does not produce:** a trusted timestamp, a revocation response, or a long-term-validation
+archive. Those are what make a signature PAdES-LTV, they need a network service, and their absence is
+why a signature checked years from now may fail even though nothing was tampered with.
+
 ## Forms
 
 ```csharp

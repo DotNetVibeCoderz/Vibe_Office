@@ -22,4 +22,10 @@
     <ProjectReference Include="..\OfficeNet.Core\OfficeNet.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Digital signatures. See src/PdfNet/Security/PdfSignature.cs for why this is a dependency
+         rather than an implementation. -->
+    <PackageReference Include="System.Security.Cryptography.Pkcs" />
+  </ItemGroup>
+
 </Project>
