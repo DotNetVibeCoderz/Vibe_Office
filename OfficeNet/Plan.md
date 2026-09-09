@@ -160,9 +160,21 @@ mengukur adalah cara membuang waktu pada jalur yang tidak panas.
   edit-in-place membutuhkannya. Dokumen besar hanya-baca bisa memakai jalur kedua.
 - **`Span<T>` di jalur panas PdfNet.** Lexer dan filter masih mengalokasikan array per objek.
 - **Buffer pooling di penulisan paket.** Setiap part saat ini disalin ke `MemoryStream` sendiri.
-- **`PdfDocument.Split` superlinear — terukur.** 10 halaman 0,7 ms, 100 halaman 69 ms; seharusnya
-  ~7 ms. Setiap bagian mengimpor ulang graf sumber daya bersama alih-alih mengimpornya sekali.
-  Ini satu-satunya butir di bagian ini yang sudah punya angka, jadi ia yang pertama.
+- [x] **`PdfDocument.Split` superlinear — selesai.** Penyebabnya lebih besar daripada dugaan awal:
+  bukan graf sumber daya yang diimpor ulang, melainkan **seluruh dokumen**. Kamus halaman membawa
+  `/Parent`, dan `/Kids` milik parent itu menyebut setiap halaman di sumbernya — jadi mengimpor satu
+  halaman menyeret semuanya. Keluarannya benar, tapi setiap bagian membawa semua halaman lain sebagai
+  objek yatim.
+
+  | Halaman | Sebelum | Sesudah | Alokasi sebelum | Alokasi sesudah |
+  |---|---|---|---|---|
+  | 10 | 337 us | 127 us | 417 KB | 141 KB |
+  | 100 | 39.759 us | 1.129 us | 29,9 MB | 1,3 MB |
+
+  Satu bagian satu halaman dari dokumen 100 halaman: **305 objek dan 67,5 KB → 6 objek dan 1,1 KB**.
+  Perbaikannya satu baris — jangan ikuti `/Parent` saat mengimpor halaman; parent lamanya tidak ada
+  artinya di dokumen baru karena `PdfPageCollection.Flush` menuliskannya ulang. Dijaga
+  `PdfNet.Tests.SplitScalingTests`, yang menegaskan jumlah objek dan ukuran, bukan waktu.
 - **Rust untuk kernel level rendah.** Spesifikasi mengizinkannya. Kandidat paling masuk akal:
   inflate/deflate dan predictor PNG. Benchmark saat ini **tidak** menunjukkan keduanya sebagai
   hambatan — ekspor PDF Word (477 ms untuk 10.000 paragraf) didominasi layout, bukan kompresi —

@@ -306,7 +306,7 @@ public sealed class PdfDocument : IPdfObjectResolver, IDisposable
         for (var i = startIndex; i < end; i++)
         {
             var sourcePage = other.Pages[i];
-            var imported = (PdfDictionary)ImportCore(sourcePage.Dictionary, other, map, 0);
+            var imported = ImportPage(sourcePage.Dictionary, other, map);
 
             // Inherited attributes live on the source's page tree, which is not being imported.
             // Resolving them onto the page itself is what stops a merged page losing its size.
@@ -314,6 +314,38 @@ public sealed class PdfDocument : IPdfObjectResolver, IDisposable
 
             Pages.AppendImported(imported);
         }
+    }
+
+    /// <summary>
+    /// Imports a page's dictionary, without following the page tree it came from.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A page carries <c>/Parent</c>, and that parent's <c>/Kids</c> names <b>every page in the
+    /// source document</b>. Importing the page dictionary wholesale therefore drags the entire
+    /// document in behind it: splitting a 100-page file gave 100 parts each holding all 100 pages as
+    /// orphans, so each part was the size of the original and the split was quadratic.
+    /// </para>
+    /// <para>
+    /// The old parent is meaningless here anyway — <c>PdfPageCollection.Flush</c> sets
+    /// <c>/Parent</c> to the new document's page tree. Skipping it is the whole fix.
+    /// </para>
+    /// </remarks>
+    private PdfDictionary ImportPage(PdfDictionary page, PdfDocument source, Dictionary<int, int> map)
+    {
+        var imported = new PdfDictionary();
+
+        foreach (var (key, child) in page)
+        {
+            if (key == PdfName.Parent)
+            {
+                continue;
+            }
+
+            imported[key] = ImportCore(child, source, map, 0);
+        }
+
+        return imported;
     }
 
     private void MaterialiseInheritedAttributes(PdfPage sourcePage, PdfDictionary imported,

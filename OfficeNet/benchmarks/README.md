@@ -24,6 +24,33 @@ the file system.
 Benchmarks earn their keep by finding things, and these found two quadratic paths that no test could
 see — a test asserts a result, and both of these produced perfectly correct output.
 
+### Splitting copied the whole document into every part
+
+`Split` makes one document per page by importing that page's dictionary. A page dictionary carries
+`/Parent`, and that parent's `/Kids` names **every page in the source** — so importing one page
+dragged the entire document in behind it.
+
+The output was correct: each part held the right page and rendered identically. It also held every
+*other* page as an orphan, so a 100-page file split into 100 parts gave 100 files the size of the
+original, and the split itself was quadratic.
+
+| Pages | Time before | Time after | Allocated before | Allocated after |
+|---|---|---|---|---|
+| 10 | 337 us | 127 us | 417 KB | 141 KB |
+| 100 | 39,759 us | 1,129 us | 29.9 MB | 1.3 MB |
+
+Ten times the work now costs about nine times the time instead of a hundred and eighteen. A
+single-page part of a 100-page document went from 305 objects and 67.5 KB to **6 objects and
+1.1 KB**.
+
+The fix is one line: do not follow `/Parent` when importing a page. The old parent is meaningless in
+the new document anyway — `PdfPageCollection.Flush` sets `/Parent` to the new page tree.
+
+**The trap in testing it.** A page only gains its `/Parent` when the page tree is written, so a
+document built in memory and never saved has no parent link to follow, and the bug is invisible.
+The first version of the regression test built its document in memory and passed against the broken
+code. It now round-trips through bytes first, which is what a caller does before splitting anything.
+
 ### Appending a paragraph was O(number of blocks)
 
 `InsertBlock` kept the body's final `w:sectPr` last by finding it and calling `AddBeforeSelf`. LINQ
