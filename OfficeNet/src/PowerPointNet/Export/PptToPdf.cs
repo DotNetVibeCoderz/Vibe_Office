@@ -191,6 +191,12 @@ public static class PptToPdf
             return;
         }
 
+        if (shape is Diagrams.SmartArt diagram)
+        {
+            RenderDiagram(canvas, diagram, left, top, width, height);
+            return;
+        }
+
         if (shape.FillColor is { } fill)
         {
             canvas.SetFillColor(fill);
@@ -213,6 +219,317 @@ public static class PptToPdf
 
         RenderTextFrame(presentation, canvas, frame, shape, layout, left, top, width, height);
     }
+
+    /// <summary>
+    /// Draws a SmartArt diagram from its cached shapes.
+    /// </summary>
+    /// <remarks>
+    /// The four standard diagram parts describe an algorithm, not a picture. Running that algorithm
+    /// is PowerPoint's job; what is drawn here is the <c>dsp:drawing</c> part, which holds the
+    /// shapes the algorithm produced and which PowerPoint keeps in step. Reading the data model and
+    /// laying it out again would produce a second opinion about where the boxes go, and the two
+    /// would disagree the moment anyone edited the diagram.
+    /// </remarks>
+    private static void RenderDiagram(PdfCanvas canvas, Diagrams.SmartArt diagram,
+        double left, double top, double width, double height)
+    {
+        var tree = diagram.DrawingPart.Xml.Root?.Element(Ns.Dsp + "spTree");
+
+        if (tree is null)
+        {
+            return;
+        }
+
+        foreach (var shape in tree.Elements(Ns.Dsp + "sp"))
+        {
+            var properties = shape.Element(Ns.Dsp + "spPr");
+            var transform = properties?.Element(Ns.A + "xfrm");
+            var offset = transform?.Element(Ns.A + "off");
+            var extent = transform?.Element(Ns.A + "ext");
+
+            if (offset is null || extent is null)
+            {
+                continue;
+            }
+
+            // Diagram coordinates are relative to the frame, so the frame's own position is added
+            // here rather than baked into the part — which is what lets a diagram be moved without
+            // rewriting every shape in it.
+            var x = left + Length.FromEmu(offset.LongAttr("x")).Points;
+            var y = top + Length.FromEmu(offset.LongAttr("y")).Points;
+            var w = Length.FromEmu(extent.LongAttr("cx")).Points;
+            var h = Length.FromEmu(extent.LongAttr("cy")).Points;
+
+            if (w <= 0 || h <= 0)
+            {
+                continue;
+            }
+
+            var preset = properties?.Element(Ns.A + "prstGeom");
+            var geometry = preset?.Attr("prst") ?? "rect";
+            var adjust = Adjustment(preset);
+            var fill = SolidFill(properties?.Element(Ns.A + "solidFill"));
+            var line = properties?.Element(Ns.A + "ln");
+            var stroke = SolidFill(line?.Element(Ns.A + "solidFill"));
+
+            var rotation = transform.Attr("rot") is { } rot &&
+                           long.TryParse(rot, System.Globalization.CultureInfo.InvariantCulture,
+                               out var units)
+                ? units / 60000.0
+                : 0;
+
+            canvas.Save();
+
+            if (rotation != 0)
+            {
+                // About the shape's own centre, named in PDF space: the canvas flips y per drawing
+                // call rather than through the matrix, so a centre given top-down turns the shape
+                // about a point reflected across the middle of the page.
+                var centreX = x + (w / 2);
+                var centreY = canvas.PageHeight - (y + (h / 2));
+
+                canvas.Transform(1, 0, 0, 1, centreX, centreY);
+                canvas.Rotate(-rotation);
+                canvas.Transform(1, 0, 0, 1, -centreX, -centreY);
+            }
+
+            if (fill is not null || stroke is not null)
+            {
+                if (fill is { } fillColor)
+                {
+                    canvas.SetFillColor(fillColor);
+                }
+
+                if (stroke is { } strokeColor)
+                {
+                    canvas.SetStrokeColor(strokeColor);
+                    canvas.SetLineWidth(Math.Max(0.5,
+                        Length.FromEmu(line.LongAttr("w")).Points));
+                }
+
+                TraceDiagramShape(canvas, geometry, x, y, w, h, adjust);
+
+                if (fill is not null && stroke is not null)
+                {
+                    canvas.FillAndStroke();
+                }
+                else if (fill is not null)
+                {
+                    canvas.Fill();
+                }
+                else
+                {
+                    canvas.Stroke();
+                }
+            }
+
+            RenderDiagramText(canvas, shape, x, y, w, h, geometry, adjust);
+
+            canvas.Restore();
+        }
+    }
+
+    /// <summary>The preset's <c>adj</c> guide as a fraction, or <c>null</c> for its default.</summary>
+    private static double? Adjustment(XElement? preset) =>
+        preset?.Element(Ns.A + "avLst")?.Elements(Ns.A + "gd")
+            .FirstOrDefault(g => g.Attr("name") == "adj")?.Attr("fmla") is { } formula &&
+        formula.StartsWith("val ", StringComparison.Ordinal) &&
+        double.TryParse(formula[4..], System.Globalization.CultureInfo.InvariantCulture, out var value)
+            ? value / 100000
+            : null;
+
+    /// <summary>
+    /// Traces the preset geometries a diagram uses.
+    /// </summary>
+    /// <remarks>
+    /// <c>adjust</c> is the preset's own adjustment as a fraction, or <c>null</c> for the preset's
+    /// default. What it means differs per shape, which is why each case decides for itself.
+    /// </remarks>
+    private static void TraceDiagramShape(PdfCanvas canvas, string geometry,
+        double x, double y, double width, double height, double? adjust = null)
+    {
+        switch (geometry)
+        {
+            case "ellipse":
+                canvas.Ellipse(x, y, width, height);
+                break;
+
+            case "roundRect":
+                canvas.RoundedRectangle(x, y, width, height, Math.Min(width, height) * 0.16667);
+                break;
+
+            case "triangle":
+                canvas.MoveTo(x + (width / 2), y);
+                canvas.LineTo(x + width, y + height);
+                canvas.LineTo(x, y + height);
+                canvas.ClosePath();
+                break;
+
+            case "trapezoid":
+            {
+                // How far in each top corner sits, as a fraction of the width. A fixed value lines
+                // the bands of a pyramid up at exactly one band count and at no other, so the shape
+                // carries its own.
+                var inset = width * Math.Clamp(adjust ?? 0.25, 0, 0.5);
+
+                canvas.MoveTo(x + inset, y);
+                canvas.LineTo(x + width - inset, y);
+                canvas.LineTo(x + width, y + height);
+                canvas.LineTo(x, y + height);
+                canvas.ClosePath();
+                break;
+            }
+
+            case "chevron":
+            case "homePlate":
+            {
+                // A chevron is a home plate with a notch cut out of its left edge. The point is a
+                // fraction of the width and capped at half the height, so a tall box does not grow
+                // a spike and a wide one keeps a readable body.
+                var point = Math.Min(width * Math.Clamp(adjust ?? 0.25, 0, 0.5), height / 2);
+
+                canvas.MoveTo(x, y);
+                canvas.LineTo(x + width - point, y);
+                canvas.LineTo(x + width, y + (height / 2));
+                canvas.LineTo(x + width - point, y + height);
+                canvas.LineTo(x, y + height);
+
+                if (geometry == "chevron")
+                {
+                    canvas.LineTo(x + point, y + (height / 2));
+                }
+
+                canvas.ClosePath();
+                break;
+            }
+
+            case "rightArrow":
+            {
+                var head = width * 0.45;
+                var shaft = height * 0.3;
+
+                canvas.MoveTo(x, y + ((height - shaft) / 2));
+                canvas.LineTo(x + width - head, y + ((height - shaft) / 2));
+                canvas.LineTo(x + width - head, y);
+                canvas.LineTo(x + width, y + (height / 2));
+                canvas.LineTo(x + width - head, y + height);
+                canvas.LineTo(x + width - head, y + ((height + shaft) / 2));
+                canvas.LineTo(x, y + ((height + shaft) / 2));
+                canvas.ClosePath();
+                break;
+            }
+
+            default:
+                canvas.Rectangle(x, y, width, height);
+                break;
+        }
+    }
+
+    /// <summary>Draws a diagram shape's text, centred in the part of the box that can hold it.</summary>
+    /// <remarks>
+    /// Centring on the box is right for a rectangle and wrong for a chevron, whose left edge is a
+    /// notch: the label then sits half over the shape behind it. The offset shifts the text into the
+    /// body, which is the whole reason the geometry is passed in.
+    /// </remarks>
+    private static void RenderDiagramText(PdfCanvas canvas, XElement shape,
+        double x, double y, double width, double height, string geometry = "rect",
+        double? adjust = null)
+    {
+        var body = shape.Element(Ns.Dsp + "txBody");
+
+        if (body is null)
+        {
+            return;
+        }
+
+        var runs = body.Descendants(Ns.A + "r").ToList();
+
+        if (runs.Count == 0)
+        {
+            return;
+        }
+
+        var text = string.Concat(runs.Select(r => r.Element(Ns.A + "t")?.Value ?? string.Empty));
+
+        if (text.Trim().Length == 0)
+        {
+            return;
+        }
+
+        var properties = runs[0].Element(Ns.A + "rPr");
+        var size = properties?.Attr("sz") is { } sz &&
+                   double.TryParse(sz, System.Globalization.CultureInfo.InvariantCulture, out var centipoints)
+            ? centipoints / 100
+            : 12;
+
+        var color = SolidFill(properties?.Element(Ns.A + "solidFill")) ?? OfficeColor.White;
+        var font = StandardFonts.Match("Calibri", bold: false, italic: false);
+
+        canvas.SetFont(font, size);
+        canvas.SetFillColor(color);
+
+        var point = geometry is "chevron" or "homePlate"
+            ? Math.Min(width * Math.Clamp(adjust ?? 0.25, 0, 0.5), height / 2)
+            : 0;
+
+        // A chevron loses its left edge to the notch and its right to the point; a home plate only
+        // loses the right. Either way the usable body is narrower than the box, and centred inside it.
+        var bodyLeft = x + (geometry == "chevron" ? point : 0);
+        var bodyWidth = width - point - (geometry == "chevron" ? point : 0);
+
+        // Wrapped, because a diagram's labels are short but not always short enough.
+        var inset = bodyWidth * 0.06;
+        var available = Math.Max(10, bodyWidth - (inset * 2));
+        var lines = WrapDiagramText(text, font, size, available);
+
+        var lineHeight = size * 1.2;
+        var block = lineHeight * lines.Count;
+        var cursor = y + ((height - block) / 2) + (size * 0.85);
+
+        foreach (var line in lines)
+        {
+            var lineWidth = StandardFonts.MeasurePoints(font, line, size);
+            canvas.DrawText(line, bodyLeft + ((bodyWidth - lineWidth) / 2), cursor);
+            cursor += lineHeight;
+        }
+    }
+
+    private static List<string> WrapDiagramText(string text, StandardFont font, double size,
+        double available)
+    {
+        var lines = new List<string>();
+        var current = new System.Text.StringBuilder();
+
+        foreach (var word in text.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var candidate = current.Length == 0 ? word : current + " " + word;
+
+            if (StandardFonts.MeasurePoints(font, candidate, size) > available && current.Length > 0)
+            {
+                lines.Add(current.ToString());
+                current.Clear();
+                current.Append(word);
+            }
+            else
+            {
+                current.Clear();
+                current.Append(candidate);
+            }
+        }
+
+        if (current.Length > 0)
+        {
+            lines.Add(current.ToString());
+        }
+
+        return lines.Count == 0 ? [text] : lines;
+    }
+
+    private static OfficeColor? SolidFill(XElement? fill) =>
+        fill?.Element(Ns.A + "srgbClr")?.Attr("val") is { } hex &&
+        OfficeColor.TryParse(hex, out var color)
+            ? color
+            : null;
 
     /// <summary>
     /// Finds a shape's position, falling back to its placeholder on the layout.

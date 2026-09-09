@@ -17,6 +17,7 @@ using PdfNet.Content;
 using PdfNet.Document;
 using PdfNet.Forms;
 using PowerPointNet.Charts;
+using PowerPointNet.Diagrams;
 using PowerPointNet.Html;
 using PowerPointNet.Shapes;
 using PowerPointNet;
@@ -703,6 +704,35 @@ public class DocSamples : IDisposable
         chart.SetData(data with { Type = ChartType.Line });
 
         Assert.Equal(ChartType.Line, chart.GetData().Type);
+    }
+
+    [Fact]
+    public void PowerPointNet_SmartArt()
+    {
+        using var deck = Presentation.Create();
+        var slide = deck.AddSlide(3);
+
+        slide.AddSmartArt(DiagramKind.Process, "Kumpulkan", "Olah", "Laporkan");
+
+        var cycle = deck.AddSlide(3).AddSmartArt(DiagramKind.Cycle,
+            [new DiagramNode("Rencana"), new DiagramNode("Kerjakan"), new DiagramNode("Periksa")],
+            Units.Cm(3), Units.Cm(4), Units.Cm(18), Units.Cm(10),
+            fill: OfficeColor.FromRgb(0x1F, 0x3A, 0x5F),
+            text: OfficeColor.White);
+
+        var chart = deck.AddSlide(3).AddSmartArt(DiagramKind.Hierarchy,
+        [
+            DiagramNode.With("Direktur",
+                DiagramNode.With("Operasi", new DiagramNode("Gudang"), new DiagramNode("Armada")),
+                DiagramNode.With("Keuangan", new DiagramNode("Penagihan"))),
+        ]);
+
+        Assert.Equal(["Rencana", "Kerjakan", "Periksa"], cycle.Nodes);
+        Assert.Equal(6, chart.Nodes.Count);
+        Assert.Single(deck.Slides[0].Diagrams);
+
+        using var pdf = PowerPointNet.Export.PptToPdf.Convert(deck);
+        Assert.Equal(3, pdf.Pages.Count);
     }
 
     [Fact]

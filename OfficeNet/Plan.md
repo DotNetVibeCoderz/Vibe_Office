@@ -97,8 +97,12 @@ seberapa sering ketiadaannya menghentikan pekerjaan nyata.
 
 ### PowerPointNet
 
-- **SmartArt.** Sering diminta, dan formatnya besar: satu diagram adalah empat part yang saling
-  merujuk.
+- [x] **SmartArt.** Selesai. Lima part, bukan empat: `data`, `layout`, `colors`, `quickStyle`,
+  ditambah part ekstensi `dsp:drawing` yang menyimpan bentuk hasil render — dan part terakhir itu
+  yang menggantung di part `data`, bukan di slide. Lima jenis diagram (List, Process, Cycle,
+  Hierarchy, Pyramid). `layout` adalah algoritma, bukan gambar, jadi geometrinya dihitung di sini
+  dan ditulis ke part drawing; itulah yang digambar setiap konsumen sampai seseorang mengedit
+  diagramnya di PowerPoint.
 - **Ekspor gambar/video.** Gambar tinggal memakai `OfficeNet.Rendering`; video butuh FFMPEG dan
   karena itu paket terpisah lagi.
 - **Animasi lanjutan.** Sekarang hanya urutan klik. Motion path dan trigger butuh pohon timing

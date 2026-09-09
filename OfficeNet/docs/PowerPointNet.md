@@ -194,6 +194,116 @@ chart.SetData(data with { Type = ChartType.Line });
 writes. A chart authored in PowerPoint against an embedded workbook returns its cache too, but not
 the formulas behind it.
 
+## SmartArt
+
+```csharp
+using PowerPointNet.Diagrams;
+
+slide.AddSmartArt(DiagramKind.Process, "Kumpulkan", "Olah", "Laporkan");
+```
+
+Five kinds: `List` (boxes stacked down the slide), `Process` (chevrons across it), `Cycle` (a ring
+with arrows), `Hierarchy` (a tree) and `Pyramid` (stacked bands). Colours are the caller's, and
+position and size have an overload each:
+
+```csharp
+var diagram = slide.AddSmartArt(DiagramKind.Cycle,
+    [new DiagramNode("Rencana"), new DiagramNode("Kerjakan"), new DiagramNode("Periksa")],
+    Units.Cm(3), Units.Cm(4), Units.Cm(18), Units.Cm(10),
+    fill: OfficeColor.FromRgb(0x1F, 0x3A, 0x5F),
+    text: OfficeColor.White);
+```
+
+`Hierarchy` is the only kind that draws children, and `DiagramNode.With` builds them:
+
+```csharp
+slide.AddSmartArt(DiagramKind.Hierarchy,
+[
+    DiagramNode.With("Direktur",
+        DiagramNode.With("Operasi", new DiagramNode("Gudang"), new DiagramNode("Armada")),
+        DiagramNode.With("Keuangan", new DiagramNode("Penagihan"))),
+]);
+```
+
+The other kinds flatten the tree into a list rather than dropping the deeper levels, so nothing
+disappears silently.
+
+`slide.Diagrams` finds them again, and `diagram.Nodes` reads the text back out of the data model.
+
+### What is in the file, and where the boundary is
+
+A diagram is **five parts**, not one: `data` (the nodes and how they connect), `layout`, `colors`,
+`quickStyle`, plus a Microsoft extension part holding the rendered shapes. The slide points at the
+first four through a single `dgm:relIds` element naming all four relationship ids; the *data* part
+points at the fifth.
+
+`layout` is the interesting one. It is not a picture — it is an **algorithm**, a constraint system
+PowerPoint solves at draw time to decide where each node goes. Reimplementing that is not a thing a
+library does in an afternoon, and shipping a hollow one gives a diagram that opens as a blank
+rectangle.
+
+So OfficeNet computes the geometry itself and writes it into the drawing part, which is exactly what
+PowerPoint caches there. That part is what every consumer draws: PowerPoint, LibreOffice, Google
+Slides, and this library's own PDF export. **The moment someone edits the diagram in PowerPoint, it
+re-runs its own engine and the shapes move to wherever it decides.** The content stays; the exact
+placement becomes PowerPoint's. That is a real boundary, and it is the same one PowerPoint puts on
+its own cached drawing.
+
+## SmartArt
+
+```csharp
+using PowerPointNet.Diagrams;
+
+slide.AddSmartArt(DiagramKind.Process, "Kumpulkan", "Olah", "Laporkan");
+```
+
+Five kinds: `List` (boxes stacked down the slide), `Process` (chevrons across it), `Cycle` (a ring
+with arrows), `Hierarchy` (a tree) and `Pyramid` (stacked bands). Colours are the caller's, and
+position and size have an overload each:
+
+```csharp
+var diagram = slide.AddSmartArt(DiagramKind.Cycle,
+    [new DiagramNode("Rencana"), new DiagramNode("Kerjakan"), new DiagramNode("Periksa")],
+    Units.Cm(3), Units.Cm(4), Units.Cm(18), Units.Cm(10),
+    fill: OfficeColor.FromRgb(0x1F, 0x3A, 0x5F),
+    text: OfficeColor.White);
+```
+
+`Hierarchy` is the only kind that draws children, and `DiagramNode.With` builds them:
+
+```csharp
+slide.AddSmartArt(DiagramKind.Hierarchy,
+[
+    DiagramNode.With("Direktur",
+        DiagramNode.With("Operasi", new DiagramNode("Gudang"), new DiagramNode("Armada")),
+        DiagramNode.With("Keuangan", new DiagramNode("Penagihan"))),
+]);
+```
+
+The other kinds flatten the tree into a list rather than dropping the deeper levels, so nothing
+disappears silently.
+
+`slide.Diagrams` finds them again, and `diagram.Nodes` reads the text back out of the data model.
+
+### What is in the file, and where the boundary is
+
+A diagram is **five parts**, not one: `data` (the nodes and how they connect), `layout`, `colors`,
+`quickStyle`, plus a Microsoft extension part holding the rendered shapes. The slide points at the
+first four through a single `dgm:relIds` element naming all four relationship ids; the *data* part
+points at the fifth.
+
+`layout` is the interesting one. It is not a picture — it is an **algorithm**, a constraint system
+PowerPoint solves at draw time to decide where each node goes. Reimplementing that is not a thing a
+library does in an afternoon, and shipping a hollow one gives a diagram that opens as a blank
+rectangle.
+
+So OfficeNet computes the geometry itself and writes it into the drawing part, which is exactly what
+PowerPoint caches there. That part is what every consumer draws: PowerPoint, LibreOffice, Google
+Slides, and this library's own PDF export. **The moment someone edits the diagram in PowerPoint, it
+re-runs its own engine and the shapes move to wherever it decides.** The content stays; the exact
+placement becomes PowerPoint's. That is a real boundary, and it is the same one PowerPoint puts on
+its own cached drawing.
+
 ## Pictures and media
 
 ```csharp

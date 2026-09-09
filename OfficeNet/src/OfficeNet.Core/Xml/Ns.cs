@@ -59,6 +59,21 @@ public static class Ns
     public static readonly XNamespace Wps =
         "http://schemas.microsoft.com/office/word/2010/wordprocessingShape";
 
+    /// <summary>Diagram (SmartArt) namespace (prefix <c>dgm</c>).</summary>
+    public static readonly XNamespace Dgm =
+        "http://schemas.openxmlformats.org/drawingml/2006/diagram";
+
+    /// <summary>
+    /// Diagram drawing namespace (prefix <c>dsp</c>) — the rendered shapes of a SmartArt diagram.
+    /// </summary>
+    /// <remarks>
+    /// A Microsoft extension. The four standard diagram parts describe the data and the layout
+    /// <em>algorithm</em>; this one holds the shapes the algorithm produced, which is what a reader
+    /// that does not implement that algorithm actually draws.
+    /// </remarks>
+    public static readonly XNamespace Dsp =
+        "http://schemas.microsoft.com/office/drawing/2008/diagram";
+
     /// <summary>DrawingML spreadsheet drawing namespace (prefix <c>xdr</c>).</summary>
     public static readonly XNamespace Xdr =
         "http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing";

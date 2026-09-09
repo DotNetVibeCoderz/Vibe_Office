@@ -194,6 +194,116 @@ chart.SetData(data with { Type = ChartType.Line });
 ini. Chart yang dibuat di PowerPoint dengan workbook tersemat juga mengembalikan cache-nya, tetapi
 bukan formula di baliknya.
 
+## SmartArt
+
+```csharp
+using PowerPointNet.Diagrams;
+
+slide.AddSmartArt(DiagramKind.Process, "Kumpulkan", "Olah", "Laporkan");
+```
+
+Lima jenis: `List` (kotak bertumpuk ke bawah), `Process` (chevron melintang), `Cycle` (cincin dengan
+panah), `Hierarchy` (pohon), dan `Pyramid` (pita bertumpuk). Warnanya ditentukan pemanggil, dan
+posisi serta ukurannya punya overload sendiri:
+
+```csharp
+var diagram = slide.AddSmartArt(DiagramKind.Cycle,
+    [new DiagramNode("Rencana"), new DiagramNode("Kerjakan"), new DiagramNode("Periksa")],
+    Units.Cm(3), Units.Cm(4), Units.Cm(18), Units.Cm(10),
+    fill: OfficeColor.FromRgb(0x1F, 0x3A, 0x5F),
+    text: OfficeColor.White);
+```
+
+`Hierarchy` satu-satunya jenis yang menggambar anak node, dan `DiagramNode.With` membuatnya:
+
+```csharp
+slide.AddSmartArt(DiagramKind.Hierarchy,
+[
+    DiagramNode.With("Direktur",
+        DiagramNode.With("Operasi", new DiagramNode("Gudang"), new DiagramNode("Armada")),
+        DiagramNode.With("Keuangan", new DiagramNode("Penagihan"))),
+]);
+```
+
+Jenis lain meratakan pohonnya menjadi daftar alih-alih membuang level yang lebih dalam, sehingga
+tidak ada isi yang hilang diam-diam.
+
+`slide.Diagrams` menemukannya kembali, dan `diagram.Nodes` membaca teksnya dari data model.
+
+### Apa yang ada di dalam berkas, dan di mana batasnya
+
+Sebuah diagram adalah **lima part**, bukan satu: `data` (node dan hubungannya), `layout`, `colors`,
+`quickStyle`, ditambah satu part ekstensi Microsoft yang menyimpan bentuk-bentuk hasil render. Slide
+menunjuk empat yang pertama lewat satu elemen `dgm:relIds` yang menyebut keempat id relasi sekaligus;
+part *data*-lah yang menunjuk part kelima.
+
+`layout` yang menarik. Isinya bukan gambar — melainkan sebuah **algoritma**, sistem constraint yang
+diselesaikan PowerPoint saat menggambar untuk menentukan posisi setiap node. Mengimplementasikannya
+ulang bukan pekerjaan satu sore, dan mengirim versi kosongnya menghasilkan diagram yang terbuka
+sebagai kotak kosong.
+
+Karena itu OfficeNet menghitung geometrinya sendiri dan menuliskannya ke part drawing — persis yang
+di-cache PowerPoint di sana. Part itulah yang digambar setiap konsumen: PowerPoint, LibreOffice,
+Google Slides, dan ekspor PDF pustaka ini sendiri. **Begitu seseorang mengedit diagramnya di
+PowerPoint, PowerPoint menjalankan mesin layout-nya sendiri dan bentuknya berpindah ke tempat yang
+ia tentukan.** Isinya tetap; penempatan persisnya menjadi milik PowerPoint. Itu batas yang nyata, dan
+sama dengan batas yang PowerPoint terapkan pada cache-nya sendiri.
+
+## SmartArt
+
+```csharp
+using PowerPointNet.Diagrams;
+
+slide.AddSmartArt(DiagramKind.Process, "Kumpulkan", "Olah", "Laporkan");
+```
+
+Lima jenis: `List` (kotak bertumpuk ke bawah), `Process` (chevron melintang), `Cycle` (cincin dengan
+panah), `Hierarchy` (pohon), dan `Pyramid` (pita bertumpuk). Warnanya ditentukan pemanggil, dan
+posisi serta ukurannya punya overload sendiri:
+
+```csharp
+var diagram = slide.AddSmartArt(DiagramKind.Cycle,
+    [new DiagramNode("Rencana"), new DiagramNode("Kerjakan"), new DiagramNode("Periksa")],
+    Units.Cm(3), Units.Cm(4), Units.Cm(18), Units.Cm(10),
+    fill: OfficeColor.FromRgb(0x1F, 0x3A, 0x5F),
+    text: OfficeColor.White);
+```
+
+`Hierarchy` satu-satunya jenis yang menggambar anak node, dan `DiagramNode.With` membuatnya:
+
+```csharp
+slide.AddSmartArt(DiagramKind.Hierarchy,
+[
+    DiagramNode.With("Direktur",
+        DiagramNode.With("Operasi", new DiagramNode("Gudang"), new DiagramNode("Armada")),
+        DiagramNode.With("Keuangan", new DiagramNode("Penagihan"))),
+]);
+```
+
+Jenis lain meratakan pohonnya menjadi daftar alih-alih membuang level yang lebih dalam, sehingga
+tidak ada isi yang hilang diam-diam.
+
+`slide.Diagrams` menemukannya kembali, dan `diagram.Nodes` membaca teksnya dari data model.
+
+### Apa yang ada di dalam berkas, dan di mana batasnya
+
+Sebuah diagram adalah **lima part**, bukan satu: `data` (node dan hubungannya), `layout`, `colors`,
+`quickStyle`, ditambah satu part ekstensi Microsoft yang menyimpan bentuk-bentuk hasil render. Slide
+menunjuk empat yang pertama lewat satu elemen `dgm:relIds` yang menyebut keempat id relasi sekaligus;
+part *data*-lah yang menunjuk part kelima.
+
+`layout` yang menarik. Isinya bukan gambar — melainkan sebuah **algoritma**, sistem constraint yang
+diselesaikan PowerPoint saat menggambar untuk menentukan posisi setiap node. Mengimplementasikannya
+ulang bukan pekerjaan satu sore, dan mengirim versi kosongnya menghasilkan diagram yang terbuka
+sebagai kotak kosong.
+
+Karena itu OfficeNet menghitung geometrinya sendiri dan menuliskannya ke part drawing — persis yang
+di-cache PowerPoint di sana. Part itulah yang digambar setiap konsumen: PowerPoint, LibreOffice,
+Google Slides, dan ekspor PDF pustaka ini sendiri. **Begitu seseorang mengedit diagramnya di
+PowerPoint, PowerPoint menjalankan mesin layout-nya sendiri dan bentuknya berpindah ke tempat yang
+ia tentukan.** Isinya tetap; penempatan persisnya menjadi milik PowerPoint. Itu batas yang nyata, dan
+sama dengan batas yang PowerPoint terapkan pada cache-nya sendiri.
+
 ## Gambar dan media
 
 ```csharp

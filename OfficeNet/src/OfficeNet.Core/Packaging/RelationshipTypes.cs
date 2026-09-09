@@ -156,6 +156,31 @@ public static class RelationshipTypes
     /// <summary>Table styles for PresentationML tables.</summary>
     public const string TableStyles = Office + "/tableStyles";
 
+    // ---- Diagrams (SmartArt) ---------------------------------------------------------------
+
+    /// <summary>A diagram's data model.</summary>
+    public const string DiagramData = Office + "/diagramData";
+
+    /// <summary>A diagram's layout algorithm.</summary>
+    public const string DiagramLayout = Office + "/diagramLayout";
+
+    /// <summary>A diagram's colour scheme.</summary>
+    public const string DiagramColors = Office + "/diagramColors";
+
+    /// <summary>A diagram's visual style.</summary>
+    public const string DiagramQuickStyle = Office + "/diagramQuickStyle";
+
+    /// <summary>
+    /// A diagram's rendered shapes, in the Microsoft extension namespace.
+    /// </summary>
+    /// <remarks>
+    /// Held by the data part rather than by the slide, and named under
+    /// <c>schemas.microsoft.com/office/2007</c> rather than the ECMA prefix, because it is an
+    /// extension to the standard rather than part of it.
+    /// </remarks>
+    public const string DiagramDrawing =
+        "http://schemas.microsoft.com/office/2007/relationships/diagramDrawing";
+
     /// <summary>
     /// Embedded media referenced by a slide, in the Microsoft extension namespace.
     /// </summary>

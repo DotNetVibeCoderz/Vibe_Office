@@ -104,6 +104,12 @@ public readonly struct Length : IEquatable<Length>, IComparable<Length>
     /// <summary>The length in hundredths of a point, the unit DrawingML line widths use.</summary>
     public long Centipoints => (long)Math.Round((double)Emu / EmuPerPoint * 100);
 
+    /// <summary>The smaller of two lengths.</summary>
+    public static Length Min(Length a, Length b) => a.Emu <= b.Emu ? a : b;
+
+    /// <summary>The larger of two lengths.</summary>
+    public static Length Max(Length a, Length b) => a.Emu >= b.Emu ? a : b;
+
     public static Length operator +(Length a, Length b) => new(a.Emu + b.Emu);
     public static Length operator -(Length a, Length b) => new(a.Emu - b.Emu);
     public static Length operator -(Length a) => new(-a.Emu);

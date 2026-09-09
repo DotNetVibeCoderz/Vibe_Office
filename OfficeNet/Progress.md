@@ -114,6 +114,8 @@ Dibuat oleh Gravicode Studios, dipimpin oleh Kang Fadhil.
 - [x] Notes slide
 - [x] Transisi (9 preset) + animasi klik-berurutan (pohon timing SMIL)
 - [x] Ekspor PDF — satu halaman per slide, tabel, gambar, nomor slide, notes, watermark
+- [x] SmartArt — 5 part (data, layout, colors, quickStyle, drawing); 5 jenis diagram; ikut
+      digambar di ekspor PDF
 - [x] Smoke test + **validasi struktur .pptx oleh pembaca independen (python)**
 
 ### Fitur dari PptxGenJS (ditambahkan atas permintaan)

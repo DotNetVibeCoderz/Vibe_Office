@@ -6,6 +6,7 @@ using OfficeNet.Core.Packaging;
 using OfficeNet.Core.Xml;
 using OfficeNet.Core;
 using PowerPointNet.Charts;
+using PowerPointNet.Diagrams;
 using PowerPointNet.Shapes;
 using System.Text;
 using System.Xml.Linq;
@@ -156,6 +157,8 @@ public sealed class Slide
                     "graphicFrame" when IsTable(element) => new SlideTable(_presentation, element),
                     "graphicFrame" when SlideChart.IsChart(element) =>
                         ResolveChart(element),
+                    "graphicFrame" when SmartArt.IsDiagram(element) =>
+                        ResolveDiagram(element),
                     _ => new Shape(_presentation, element),
                 });
             }
@@ -502,6 +505,79 @@ public sealed class Slide
             _presentation.SlideWidth - Units.Inches(1.6),
             _presentation.SlideHeight - top - Units.Inches(0.7));
     }
+
+    // ---- Diagrams ------------------------------------------------------------------------------
+
+    /// <summary>
+    /// Rebuilds a diagram handle from a frame, following its relationships to the parts.
+    /// </summary>
+    /// <remarks>
+    /// A frame whose relationships are broken degrades to a plain shape rather than throwing: a
+    /// deck someone edited by hand should still open.
+    /// </remarks>
+    private Shape ResolveDiagram(XElement frame)
+    {
+        var relIds = frame.Element(Ns.A + "graphic")?.Element(Ns.A + "graphicData")
+            ?.Element(Ns.Dgm + "relIds");
+
+        if (relIds?.Attr(Ns.R + "dm") is not { } dataId ||
+            Part.RelatedPart(dataId) is not { } data)
+        {
+            return new Shape(_presentation, frame);
+        }
+
+        // The drawing hangs off the data part, not off the slide, which is why this second hop is
+        // needed and why looking for it on the slide finds nothing.
+        var drawing = data.RelatedPartByType(RelationshipTypes.DiagramDrawing);
+
+        return drawing is null
+            ? new Shape(_presentation, frame)
+            : new SmartArt(_presentation, frame, data, drawing);
+    }
+
+    /// <summary>The SmartArt diagrams on the slide.</summary>
+    public IEnumerable<SmartArt> Diagrams => Shapes.OfType<SmartArt>();
+
+    /// <summary>
+    /// Adds a SmartArt diagram.
+    /// </summary>
+    /// <param name="kind">The diagram's shape.</param>
+    /// <param name="nodes">The nodes. Only <see cref="DiagramKind.Hierarchy"/> draws children.</param>
+    /// <param name="left">Distance from the slide's left edge.</param>
+    /// <param name="top">Distance from the slide's top edge.</param>
+    /// <param name="width">The diagram's width.</param>
+    /// <param name="height">The diagram's height.</param>
+    /// <param name="fill">The node colour. The theme's first accent by default.</param>
+    /// <param name="text">The text colour. White by default, for contrast against the fill.</param>
+    /// <remarks>
+    /// A diagram is five parts, and the geometry is computed here rather than left to PowerPoint's
+    /// layout engine — see <see cref="SmartArt"/> for what that means and where the boundary sits.
+    /// </remarks>
+    public SmartArt AddSmartArt(DiagramKind kind, IReadOnlyList<DiagramNode> nodes,
+        Length left, Length top, Length width, Length height,
+        OfficeColor? fill = null, OfficeColor? text = null) =>
+        SmartArt.Create(_presentation, this, ShapeTree, NextShapeId(), kind, nodes,
+            left, top, width, height,
+            fill ?? OfficeColor.FromRgb(0x1F, 0x3A, 0x5F),
+            text ?? OfficeColor.White);
+
+    /// <summary>Adds a diagram filling the slide's content area below the title.</summary>
+    public SmartArt AddSmartArt(DiagramKind kind, IReadOnlyList<DiagramNode> nodes,
+        OfficeColor? fill = null, OfficeColor? text = null)
+    {
+        var top = Title is null ? Units.Inches(0.8) : Units.Inches(1.7);
+
+        return AddSmartArt(kind, nodes,
+            Units.Inches(0.8),
+            top,
+            _presentation.SlideWidth - Units.Inches(1.6),
+            _presentation.SlideHeight - top - Units.Inches(0.7),
+            fill, text);
+    }
+
+    /// <summary>Adds a diagram from plain strings, one node each.</summary>
+    public SmartArt AddSmartArt(DiagramKind kind, params string[] nodes) =>
+        AddSmartArt(kind, [.. nodes.Select(n => new DiagramNode(n))]);
 
     // ---- Media ---------------------------------------------------------------------------------
 

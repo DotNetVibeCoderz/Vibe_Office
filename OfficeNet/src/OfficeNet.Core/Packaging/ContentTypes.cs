@@ -162,6 +162,29 @@ public static class ContentTypes
     /// <summary>Table style definitions.</summary>
     public const string PowerPointTableStyles = Ppt + ".tableStyles+xml";
 
+    // ---- Diagrams (SmartArt) ---------------------------------------------------------------
+
+    /// <summary>A diagram's data model: its nodes, their text, and how they connect.</summary>
+    public const string DiagramData = Drawing + ".diagramData+xml";
+
+    /// <summary>A diagram's layout algorithm.</summary>
+    public const string DiagramLayout = Drawing + ".diagramLayout+xml";
+
+    /// <summary>A diagram's colour scheme.</summary>
+    public const string DiagramColors = Drawing + ".diagramColors+xml";
+
+    /// <summary>A diagram's visual style.</summary>
+    public const string DiagramStyle = Drawing + ".diagramStyle+xml";
+
+    /// <summary>
+    /// A diagram's rendered shapes, in the Microsoft extension namespace.
+    /// </summary>
+    /// <remarks>
+    /// Not one of the four standard parts. It caches what the layout algorithm produced, and it is
+    /// what a reader that does not run that algorithm draws instead.
+    /// </remarks>
+    public const string DiagramDrawing = "application/vnd.ms-office.drawingml.diagramDrawing+xml";
+
     // ---- Media --------------------------------------------------------------------------------
 
     /// <summary>A PDF part or file.</summary>
