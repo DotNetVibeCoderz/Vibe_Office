@@ -21,7 +21,7 @@ the file system.
 
 ## What running them found
 
-Benchmarks earn their keep by finding things, and these found two quadratic paths and four wasteful
+Benchmarks earn their keep by finding things, and these found two quadratic paths and five wasteful
 ones that no test could see — a test asserts a result, and every one of these produced perfectly
 correct output.
 
@@ -153,6 +153,40 @@ Caching a chain is only sound if it is the chain the walk would have produced, s
 root first, and a chain that points back at itself terminates rather than hanging. Dropping the
 reversal fails the first; keying the cache on a constant fails the second.
 
+### A page's content was copied four times on the way out
+
+The canvas builds a page's operators in a `StringBuilder`, then handed them over as
+`Encoding.Latin1.GetBytes("q
+" + _content + "Q
+")`. That concatenation asks the builder for a
+string, builds a second string around it, and encodes that — three copies of the page's content
+before the byte array that is actually kept.
+
+It now narrows the builder's own chunks straight into the destination array. Content-stream
+operators are Latin-1 by definition, so narrowing each chunk *is* the encoding.
+
+| One A4 page | Allocated before | After |
+|---|---:|---:|
+| Blank canvas, opened and closed | 9.7 KB | 9.7 KB |
+| One line of text | 13.0 KB | 12.7 KB |
+| Forty-five lines of text | 52.8 KB | 37.7 KB |
+
+The saving is proportional to what is on the page, which is worth saying plainly: dense pages gain,
+sparse ones barely move. Exporting 10 000 Word paragraphs went from 111 to 104 MB; exporting 200
+slides went from 20.6 to 20.1 MB, because a slide carries little text and the fixed cost of the
+builder dominates. The PowerPoint timings moved around by more than the change could account for —
+the error bars on that run were wider than the difference — so only the allocation figure is
+reported.
+
+**Verified by hashing, not by reasoning.** The point of the change is that the bytes are the same
+and only their assembly differs, so a document covering all four alignments and every character
+format was exported both ways and each page's decoded content stream hashed. All six matched.
+
+`PdfNet.Tests.CanvasContentTests` guards the two ways hand-assembly goes wrong: content spanning
+many builder chunks must survive every seam, and Latin-1 characters must be narrowed rather than
+encoded as UTF-8. Writing every chunk at the same offset fails the first; swapping the encoder
+fails the second.
+
 ### Appending a paragraph was O(number of blocks)
 
 `InsertBlock` kept the body's final `w:sectPr` last by finding it and calling `AddBeforeSelf`. LINQ
@@ -201,12 +235,14 @@ speed, and this is a laptop CPU that throttles.
 | Create + save | 1.2 ms | 9.0 ms | 99 ms |
 | Open | 0.3 ms | 2.3 ms | 23 ms |
 | Extract text | 0.4 ms | 2.7 ms | 26 ms |
-| Export to PDF | 2.4 ms | 17 ms | 228 ms |
+| Export to PDF | 2.3 ms | 14 ms | 181 ms |
 
 PDF export is still the expensive one, and reasonably so: it resolves style inheritance, measures
-every run against the font metrics, breaks lines and paginates. It allocates 111 MB for the
-10 000-paragraph case. The largest pieces left are the canvas — a page's content is built in a
-`StringBuilder`, then copied to a string, then encoded to bytes — and building the line filler.
+every run against the font metrics, breaks lines and paginates. It allocates 104 MB for the
+10 000-paragraph case, and no longer reaches generation 2 at all — that column was 1 000 to 2 000
+collections per thousand operations when this started. The largest piece left is building the line
+filler, at 2.8 KB per paragraph: it stores a copy of the resolved formatting and a fresh substring
+for every word, where an index into the segment would do.
 
 | Table, 4 columns | 50 rows | 500 rows |
 |---|---:|---:|

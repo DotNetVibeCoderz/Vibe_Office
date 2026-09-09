@@ -462,10 +462,18 @@ iterator, dan buffer pembalikan, lalu setiap mata rantai memanggil indexer gaya 
 seluruh gaya. Rantai yang sama dibangun puluhan ribu kali; sekarang disusuri sekali lalu disimpan.
 **123 MB → 111 MB.**
 
-Total sejak awal v1.2 untuk 10.000 paragraf: **449 ms → 228 ms**, **241 MB → 111 MB**, berkasnya
-**1.161.639 → 634.591 byte**. Yang tersisa terbesar adalah kanvas PdfNet — isi satu halaman dibangun
-di `StringBuilder`, disalin ke string, lalu dikodekan ke byte — yaitu persis butir `Span<T>` yang
-sudah ada di rencana.
+**Isi satu halaman disalin empat kali dalam perjalanan keluar.** Kanvas menyusun operatornya di
+`StringBuilder` lalu merangkainya jadi string, membungkusnya jadi string kedua, baru mengodekannya —
+tiga salinan sebelum array byte yang benar-benar disimpan. Sekarang chunk buildernya disempitkan
+langsung ke tujuan. Halaman berisi empat puluh lima baris: **52,8 KB → 37,7 KB**. Penghematannya
+sebanding dengan isi halaman: Word 111 MB → 104 MB, tapi 200 slide hanya 20,6 MB → 20,1 MB.
+
+Total sejak awal v1.2 untuk 10.000 paragraf: **449 ms → 181 ms**, **241 MB → 104 MB**, berkasnya
+**1.161.639 → 634.591 byte** — dan kolom Gen2 pada benchmark, yang semula 1.000–2.000 koleksi per
+seribu operasi, kini kosong sama sekali.
+
+Yang tersisa terbesar adalah membangun line filler, 2,8 KB per paragraf: ia menyimpan salinan format
+yang sudah diresolusi dan substring baru untuk setiap kata, padahal indeks ke segmennya sudah cukup.
 
 **Dua hipotesis ditolak oleh pengukuran**, dan itu juga hasil: alokasi ekstraksi teks PdfNet ternyata
 datar di 331 KB per halaman (angka 167 MB pada benchmark adalah artefak harness-nya sendiri), dan

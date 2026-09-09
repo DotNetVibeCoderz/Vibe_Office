@@ -159,6 +159,26 @@ mengukur adalah cara membuang waktu pada jalur yang tidak panas.
 - **Parser XML pull untuk WordNet.** ExcelNet sudah streaming; WordNet memakai `XDocument` karena
   edit-in-place membutuhkannya. Dokumen besar hanya-baca bisa memakai jalur kedua.
 - **`Span<T>` di jalur panas PdfNet.** Lexer dan filter masih mengalokasikan array per objek.
+  Sebagian sudah dikerjakan: **isi satu halaman disalin empat kali dalam perjalanan keluar.** Kanvas
+  menyusun operatornya di `StringBuilder`, lalu menyerahkannya sebagai
+  `Encoding.Latin1.GetBytes("q
+" + _content + "Q
+")` — rangkaian itu meminta string dari builder,
+  membangun string kedua di sekelilingnya, lalu mengodekannya. Sekarang chunk milik buildernya
+  disempitkan langsung ke array tujuan; operator content stream memang Latin-1, jadi penyempitan itu
+  sendiri sudah merupakan pengodeannya.
+
+  | Satu halaman A4 | Alokasi sebelum | Sesudah |
+  |---|---|---|
+  | Kanvas kosong | 9,7 KB | 9,7 KB |
+  | Satu baris teks | 13,0 KB | 12,7 KB |
+  | Empat puluh lima baris | 52,8 KB | 37,7 KB |
+
+  Penghematannya sebanding dengan isi halaman, dan itu perlu dikatakan terus terang: halaman padat
+  untung, halaman kosong hampir tidak. Ekspor 10.000 paragraf Word 111 MB → 104 MB; ekspor 200 slide
+  20,6 MB → 20,1 MB. Dibuktikan dengan **hash**, bukan penalaran — dokumen yang mencakup keempat
+  perataan dan seluruh format diekspor dua kali lalu setiap content stream halaman di-hash, dan
+  keenamnya sama. Dijaga `PdfNet.Tests.CanvasContentTests`.
 - **Buffer pooling di penulisan paket.** Setiap part saat ini disalin ke `MemoryStream` sendiri.
 - [x] **`PdfDocument.Split` superlinear — selesai.** Penyebabnya lebih besar daripada dugaan awal:
   bukan graf sumber daya yang diimpor ulang, melainkan **seluruh dokumen**. Kamus halaman membawa
@@ -245,11 +265,12 @@ mengukur adalah cara membuang waktu pada jalur yang tidak panas.
   dan rantai yang menunjuk balik ke dirinya berhenti alih-alih menggantung. Menghapus pembalikannya
   menggagalkan yang pertama; mengunci kunci cache ke satu konstanta menggagalkan yang kedua.
 
-  **Total v1.2 untuk ekspor Word→PDF 10.000 paragraf: 449 ms → 228 ms, 241 MB → 111 MB, berkas
-  1.161.639 → 634.591 byte.**
+  **Total v1.2 untuk ekspor Word→PDF 10.000 paragraf: 449 ms → 181 ms, 241 MB → 104 MB, berkas
+  1.161.639 → 634.591 byte** — dan kolom Gen2 benchmark yang semula 1.000–2.000 koleksi per seribu
+  operasi kini kosong sama sekali.
 - **Rust untuk kernel level rendah.** Spesifikasi mengizinkannya. Kandidat paling masuk akal:
   inflate/deflate dan predictor PNG. Benchmark saat ini **tidak** menunjukkan keduanya sebagai
-  hambatan — ekspor PDF Word (228 ms untuk 10.000 paragraf) didominasi layout, bukan kompresi —
+  hambatan — ekspor PDF Word (181 ms untuk 10.000 paragraf) didominasi layout, bukan kompresi —
   jadi butir ini turun peringkat sampai ada pengukuran yang membenarkan dua toolchain build.
 
 ---

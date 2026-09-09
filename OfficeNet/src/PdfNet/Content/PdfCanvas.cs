@@ -725,7 +725,26 @@ public sealed class PdfCanvas : IDisposable
 
         // The whole drawing is wrapped in q/Q so it cannot leak graphics state into whatever the
         // page already had, or inherit an unbalanced state from it.
-        _page.AppendContent(Encoding.Latin1.GetBytes("q\n" + _content + "Q\n"));
+        // Written straight out of the builder's own chunks. Concatenating into a string first
+        // and encoding that made two full copies of the page's content before the one that is
+        // kept — and content-stream operators are Latin-1 by definition, so narrowing each
+        // chunk is the whole of the encoding.
+        var bytes = new byte[_content.Length + 4];
+
+        bytes[0] = (byte)'q';
+        bytes[1] = (byte)'\n';
+
+        var at = 2;
+
+        foreach (var chunk in _content.GetChunks())
+        {
+            at += Encoding.Latin1.GetBytes(chunk.Span, bytes.AsSpan(at));
+        }
+
+        bytes[at] = (byte)'Q';
+        bytes[at + 1] = (byte)'\n';
+
+        _page.AppendContent(bytes);
     }
 
     private void MergeResource(PdfName category, Dictionary<string, PdfObject> entries)

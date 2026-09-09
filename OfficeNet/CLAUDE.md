@@ -4,17 +4,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current state
 
-All six libraries are implemented and build clean with zero warnings:
-`OfficeNet.Core`, `PdfNet`, `WordNet`, `ExcelNet`, `PowerPointNet`, `OfficeNet` (meta) and
-`OfficeNet.Rendering`. **354 tests pass** across seven test projects.
+**v1.1.0 is published to NuGet** (tag `officenet-v1.1.0`); work is now on v1.2, which is
+performance. All six libraries build clean with zero warnings: `OfficeNet.Core`, `PdfNet`,
+`WordNet`, `ExcelNet`, `PowerPointNet`, `OfficeNet` (meta) and `OfficeNet.Rendering`.
+**673 tests pass** across seven test projects.
 
-Written: the libraries, tests + independent structural validators, `docs/` (English, with generated
-screenshots), `Plan.md`, `Progress.md`, `tools/ScreenshotGen`.
-
-Not written yet: `docs/id/` (the Bahasa Indonesia mirror), `notebooks/`, `benchmarks/`, `samples/`
-(five apps including OfficeNet Gallery), `.github/workflows/`, ExcelNet charts and pivot tables, the
-plugin registry for VisioNet/OneNoteNet, and the NuGet publish.
+Everything the plan listed through v1.1 exists: the libraries, tests with independent structural
+validators, `docs/` and its `docs/id/` mirror, `notebooks/`, `benchmarks/`, the five `samples/`
+apps, `../.github/workflows/`, ExcelNet charts and pivot tables, the format registry in
+`src/OfficeNet/OfficeFormats.cs`, and `tools/ScreenshotGen`. Video export is deliberately not done,
+and the reason is recorded in `Plan.md`.
 [Progress.md](Progress.md) is the authoritative checklist; [Plan.md](Plan.md) is the roadmap.
+
+An earlier version of this section listed most of the above as unwritten. If something here reads as
+stale, trust `Progress.md`.
 
 `Requirements.md` is the specification of record and is tracked — it holds no credentials. Local
 SDK is **10.0.400**; target is **.NET 10**.
