@@ -535,6 +535,19 @@ sudah ada di nuget.org. Paket yang menarik saudaranya versi lama lebih buruk dar
 terbit sama sekali. Tidak ada dependensi baru dibanding 1.1.0; `Gravicode.OfficeNet.Rendering`
 tetap satu-satunya yang membawa SkiaSharp, dan meta package tetap **tidak** menariknya.
 
+**Dibuktikan setelah terbit, bukan sebelum.** Sebuah proyek yang tidak mereferensikan apa pun secara
+lokal — `NuGet.config`-nya hanya menyebut nuget.org — memasang `[1.3.0]` dari nuget.org dan
+menjalankan sembilan pemeriksaan: versinya benar-benar 1.3.0, ekspor Word→PDF bolak-balik, satu baris
+seragam kembali sebagai **satu** fragment (perubahan v1.2), `Split` tidak lagi menyalin seluruh
+dokumen, `TextFragment` membawa glyph dan offsetnya untuk font tersemat, `PdfFunction` dan
+`PdfShading` publik dan berfungsi, renderer menggambar gradien **di dalam** clip-nya, `ExtractText`
+membaca kembali, dan meta package tidak menyeret SkiaSharp. Kesembilannya lulus.
+
+Indeks nuget.org tertinggal beberapa menit dari unggahannya, seperti pada 1.1.0: log workflow sudah
+menyebut "Your package was pushed" untuk keempat belas berkas sementara `v3-flatcontainer` masih
+hanya menampilkan 1.1.0. Yang layak dipercaya adalah paketnya benar-benar bisa dipasang, bukan
+kode keluar workflow-nya.
+
 Yang berubah bagi pemakainya:
 
 | | |
