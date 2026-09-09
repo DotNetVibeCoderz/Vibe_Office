@@ -3,14 +3,16 @@
 using System.Globalization;
 using System.Text;
 using OfficeNet.Core;
+using PdfNet.Content;
 using PdfNet.Document;
+using PdfNet.Objects;
 using PdfNet.Text;
 using SkiaSharp;
 
 namespace OfficeNet.Rendering;
 
 /// <summary>A filled and/or stroked path, in PDF user space.</summary>
-internal sealed class PaintedPath(SKPath path, SKColor? fill, SKColor? stroke, float lineWidth, bool evenOdd)
+internal sealed class PaintedPath(SKPath path, SKColor? fill, SKColor? stroke, float lineWidth, bool evenOdd, SKPath? clip)
     : IDisposable
 {
     public SKPath Path { get; } = path;
@@ -20,6 +22,17 @@ internal sealed class PaintedPath(SKPath path, SKColor? fill, SKColor? stroke, f
     public SKColor? Stroke { get; } = stroke;
 
     public float LineWidth { get; } = lineWidth;
+
+    /// <summary>
+    /// The clip in force when this path was painted, or null when nothing was clipped.
+    /// </summary>
+    /// <remarks>
+    /// Carried per path rather than replayed as state, because the paths are collected first and
+    /// drawn afterwards: by the time anything is drawn the interpreter's stack is long gone. The
+    /// path is owned by the <see cref="PageContent"/> that produced it, and several painted paths
+    /// under one clip share it.
+    /// </remarks>
+    public SKPath? Clip { get; } = clip;
 
     public bool EvenOdd { get; } = evenOdd;
 
@@ -31,7 +44,16 @@ internal sealed class PaintedPath(SKPath path, SKColor? fill, SKColor? stroke, f
 /// The matrix maps the PDF image space — the unit square, origin bottom-left — onto user space.
 /// That is the whole placement: a PDF never stores an image's position on the image itself.
 /// </remarks>
-internal readonly record struct PlacedImage(string Name, SKMatrix Matrix);
+internal readonly record struct PlacedImage(string Name, SKMatrix Matrix, SKPath? Clip = null);
+
+/// <summary>
+/// A gradient, with the geometry and clip it was painted under.
+/// </summary>
+/// <param name="Shading">The shading itself, already reduced to a colour ramp.</param>
+/// <param name="Matrix">User space to device space at the moment it was painted.</param>
+/// <param name="Clip">What bounded it. A gradient with no clip covers the whole page, which is
+/// what <c>sh</c> means; a gradient used as a fill is bounded by the path it filled.</param>
+internal readonly record struct PaintedShading(PdfShading Shading, SKMatrix Matrix, SKPath? Clip);
 
 /// <summary>The fill colour in effect where a text-showing operator began.</summary>
 internal readonly record struct TextColorMark(double X, double Y, SKColor Color);
@@ -58,6 +80,8 @@ internal sealed class PageContent : IDisposable
     private readonly List<PaintedPath> _paths = [];
     private readonly List<PlacedImage> _images = [];
     private readonly List<TextColorMark> _textColors = [];
+    private readonly List<SKPath> _clips = [];
+    private readonly List<PaintedShading> _shadings = [];
 
     private PageContent()
     {
@@ -69,6 +93,8 @@ internal sealed class PageContent : IDisposable
 
     public IReadOnlyList<TextColorMark> TextColors => _textColors;
 
+    public IReadOnlyList<PaintedShading> Shadings => _shadings;
+
     public void Dispose()
     {
         foreach (var path in _paths)
@@ -77,6 +103,15 @@ internal sealed class PageContent : IDisposable
         }
 
         _paths.Clear();
+
+        // Clips are shared between the paths drawn under them, so they are owned here rather than
+        // by any one of those paths.
+        foreach (var clip in _clips)
+        {
+            clip.Dispose();
+        }
+
+        _clips.Clear();
     }
 
     /// <summary>
@@ -88,7 +123,7 @@ internal sealed class PageContent : IDisposable
 
         try
         {
-            new Interpreter(content).Run(page.GetContent());
+            new Interpreter(content, page).Run(page.GetContent());
         }
         catch (OfficeNetException)
         {
@@ -128,7 +163,7 @@ internal sealed class PageContent : IDisposable
         return bestDistance <= 4 * 4 ? best : SKColors.Black;
     }
 
-    private sealed class Interpreter(PageContent output)
+    private sealed class Interpreter(PageContent output, PdfPage page)
     {
         private readonly List<double> _numbers = [];
         private readonly Stack<State> _stack = new();
@@ -147,6 +182,17 @@ internal sealed class PageContent : IDisposable
         private float _startX;
         private float _startY;
         private bool _hasCurrent;
+
+        // W and W* do not clip on their own: they mark the current path so that the painting
+        // operator which follows installs it as the clip, after painting. Anything else in between
+        // would be a malformed stream.
+        private bool _pendingClip;
+        private bool _pendingClipEvenOdd;
+
+        // A fill in the /Pattern colour space names a pattern rather than carrying components, and
+        // a shading pattern then paints a gradient inside whatever path is filled.
+        private bool _fillIsPattern;
+        private string? _fillPattern;
 
         public void Run(byte[] content)
         {
@@ -232,6 +278,17 @@ internal sealed class PageContent : IDisposable
                     _state.Stroke = Cmyk(Number(3), Number(2), Number(1), Number(0));
                     break;
 
+                case "cs" when _pendingNames.Count > 0:
+                    // Only whether the space is /Pattern matters here: a pattern fill is painted as
+                    // a gradient rather than as a flat colour, and nothing else changes.
+                    _fillIsPattern = _pendingNames[^1] == "Pattern";
+                    _fillPattern = null;
+                    break;
+
+                case "sc" or "scn" when _fillIsPattern && _pendingNames.Count > 0:
+                    _fillPattern = _pendingNames[^1];
+                    break;
+
                 case "sc" or "scn":
                     if (Components() is { } fill)
                     {
@@ -310,9 +367,19 @@ internal sealed class PageContent : IDisposable
                     break;
 
                 case "n":
-                    // A path used only to set a clip. Clipping is not applied, so it is discarded —
-                    // drawing it would put a stray outline on the page.
+                    // Ends a path without painting it. Almost always a clip: W n is the idiom.
                     Paint(filled: false, stroked: false, evenOdd: false);
+                    break;
+
+                // ---- Shading -----------------------------------------------------------------
+                case "sh" when _pendingNames.Count > 0:
+                    PaintShading(Lookup("Shading", _pendingNames[^1]), _state.Clip);
+                    break;
+
+                // ---- Clipping ----------------------------------------------------------------
+                case "W" or "W*":
+                    _pendingClip = true;
+                    _pendingClipEvenOdd = op == "W*";
                     break;
 
                 // ---- Text --------------------------------------------------------------------
@@ -360,7 +427,7 @@ internal sealed class PageContent : IDisposable
 
                 // ---- XObjects ----------------------------------------------------------------
                 case "Do" when _pendingNames.Count > 0:
-                    output._images.Add(new PlacedImage(_pendingNames[^1], _state.Ctm));
+                    output._images.Add(new PlacedImage(_pendingNames[^1], _state.Ctm, _state.Clip));
                     break;
 
                 default:
@@ -460,8 +527,12 @@ internal sealed class PageContent : IDisposable
         private void Paint(bool filled, bool stroked, bool evenOdd)
         {
             var builder = _builder;
+            var clipping = _pendingClip;
+            var clipEvenOdd = _pendingClipEvenOdd;
+
             _builder = null;
             _hasCurrent = false;
+            _pendingClip = false;
 
             if (builder is null)
             {
@@ -470,13 +541,55 @@ internal sealed class PageContent : IDisposable
 
             using (builder)
             {
-                if (!filled && !stroked)
+                // The path is needed twice when it both paints and clips, and Detach empties the
+                // builder, so it is taken once and copied if the clip wants its own.
+                if (filled || stroked)
                 {
-                    return;
-                }
+                    var painted = builder.Detach();
 
-                Emit(builder.Detach(), filled, stroked, evenOdd);
+                    if (clipping)
+                    {
+                        Clip(new SKPath(painted), clipEvenOdd);
+                    }
+
+                    Emit(painted, filled, stroked, evenOdd);
+                }
+                else if (clipping)
+                {
+                    Clip(builder.Detach(), clipEvenOdd);
+                }
             }
+        }
+
+        /// <summary>
+        /// Narrows the clip to the intersection of what it was and the path just built.
+        /// </summary>
+        /// <remarks>
+        /// Intersection, never replacement: PDF's clip only ever shrinks, and it widens again only
+        /// by restoring a saved state. Getting that backwards makes a nested clip reveal what its
+        /// parent hid, which looks like a layout bug rather than a clipping one.
+        /// </remarks>
+        private void Clip(SKPath path, bool evenOdd)
+        {
+            path.FillType = evenOdd ? SKPathFillType.EvenOdd : SKPathFillType.Winding;
+
+            if (_state.Clip is null)
+            {
+                output._clips.Add(path);
+                _state.Clip = path;
+                return;
+            }
+
+            var combined = _state.Clip.Op(path, SKPathOp.Intersect);
+            path.Dispose();
+
+            if (combined is null)
+            {
+                return;
+            }
+
+            output._clips.Add(combined);
+            _state.Clip = combined;
         }
 
         private void Emit(SKPath path, bool filled, bool stroked, bool evenOdd)
@@ -489,12 +602,84 @@ internal sealed class PageContent : IDisposable
 
             var width = (float)Math.Max(_state.LineWidth * scale, 0.1);
 
+            // A pattern fill is a gradient bounded by the path, not a colour. Painting it as a
+            // flat fill would put the pattern's last-set colour — usually black — over the whole
+            // shape, which is worse than leaving it unpainted.
+            if (filled && _fillIsPattern)
+            {
+                var shading = ShadingOfPattern(_fillPattern);
+
+                if (shading is not null)
+                {
+                    var bound = new SKPath(path);
+                    bound.FillType = evenOdd ? SKPathFillType.EvenOdd : SKPathFillType.Winding;
+
+                    if (_state.Clip is not null)
+                    {
+                        var narrowed = _state.Clip.Op(bound, SKPathOp.Intersect);
+                        bound.Dispose();
+                        bound = narrowed ?? new SKPath();
+                    }
+
+                    output._clips.Add(bound);
+                    output._shadings.Add(new PaintedShading(shading, _state.Ctm, bound));
+                }
+
+                filled = false;
+
+                if (!stroked)
+                {
+                    path.Dispose();
+                    return;
+                }
+            }
+
             output._paths.Add(new PaintedPath(
                 path,
                 filled ? _state.Fill : null,
                 stroked ? _state.Stroke : null,
                 width,
-                evenOdd));
+                evenOdd,
+                _state.Clip));
+        }
+
+        /// <summary>Finds a named entry in one of the page's resource dictionaries.</summary>
+        private PdfObject? Lookup(string category, string name)
+        {
+            var resources = page.Resources;
+
+            return resources?.Get(PdfName.Get(category)) is { } entry &&
+                   page.Document.Follow(entry) is PdfDictionary dictionary
+                ? dictionary.Get(PdfName.Get(name))
+                : null;
+        }
+
+        /// <summary>
+        /// The shading a named pattern paints, when that pattern is a shading pattern.
+        /// </summary>
+        /// <remarks>
+        /// Pattern type 1 is a tiling pattern — a whole content stream stamped repeatedly — and is
+        /// not drawn. Returning null lets the fill be skipped rather than filled with a wrong flat
+        /// colour.
+        /// </remarks>
+        private PdfShading? ShadingOfPattern(string? name)
+        {
+            if (name is null || page.Document.Follow(Lookup("Pattern", name)) is not PdfDictionary pattern)
+            {
+                return null;
+            }
+
+            return pattern.GetInt(PdfName.Get("PatternType"), 0) == 2
+                ? PdfShading.Read(pattern.Get(PdfName.Get("Shading")), page.Document)
+                : null;
+        }
+
+        private void PaintShading(PdfObject? entry, SKPath? clip)
+        {
+            if (PdfShading.Read(entry, page.Document) is { } shading)
+            {
+                output._shadings.Add(new PaintedShading(shading, _state.Ctm, clip));
+            }
         }
 
         private static SKMatrix Matrix(double a, double b, double c, double d, double e, double f) =>
@@ -531,6 +716,9 @@ internal sealed class PageContent : IDisposable
             public SKColor Fill;
             public SKColor Stroke;
             public float LineWidth;
+
+            /// <summary>The clip, which q saves and Q restores like everything else here.</summary>
+            public SKPath? Clip;
         }
     }
 

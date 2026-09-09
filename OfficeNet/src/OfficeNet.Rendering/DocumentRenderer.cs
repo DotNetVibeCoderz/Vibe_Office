@@ -2,6 +2,7 @@
 
 using OfficeNet.Core;
 using OfficeNet.Core.Drawing;
+using PdfNet.Content;
 using PdfNet.Document;
 using PdfNet.Text;
 using SkiaSharp;
@@ -164,8 +165,9 @@ public static class DocumentRenderer
     /// text — which already resolved fonts, encodings and the text matrix.
     /// </para>
     /// <para>
-    /// What it does not draw: gradients, patterns, soft masks, transparency groups, blend modes and
-    /// clipping paths. Text uses the file's own embedded font when that font is a TrueType program,
+    /// What it does not draw: tiling patterns, soft masks, transparency groups, blend modes, and
+    /// mesh shadings (types 4 to 7). Axial and radial gradients and clipping paths are drawn.
+    /// Text uses the file's own embedded font when that font is a TrueType program,
     /// which is what makes a page of a script the machine has no font for render as text rather than
     /// as empty boxes; a CFF or Type 1 program, or a font the file does not embed at all, still
     /// falls back to a substituted system face and its glyph shapes are then close but not exact.
@@ -182,6 +184,13 @@ public static class DocumentRenderer
         foreach (var path in content.Paths)
         {
             DrawPath(canvas, path, box, scale);
+        }
+
+        // After the flat paths and before the images: a gradient is a background in almost every
+        // page that has one, and the stream's own order puts it there.
+        foreach (var shading in content.Shadings)
+        {
+            DrawShading(canvas, shading, box, scale);
         }
 
         var placements = content.Images;
@@ -202,33 +211,66 @@ public static class DocumentRenderer
         }
     }
 
-    private static SKMatrix? FindPlacement(
+    private static PlacedImage? FindPlacement(
         IReadOnlyList<PlacedImage> placements, string name, ref int index)
     {
         foreach (var placement in placements)
         {
             if (string.Equals(placement.Name, name, StringComparison.Ordinal))
             {
-                return placement.Matrix;
+                return placement;
             }
         }
 
-        return index < placements.Count ? placements[index++].Matrix : null;
+        return index < placements.Count ? placements[index++] : null;
+    }
+
+    /// <summary>
+    /// PDF user space to device pixels: scale, and flip y because PDF measures up from the bottom.
+    /// </summary>
+    private static SKMatrix DeviceMatrix(PdfRectangle box, double scale) =>
+        new(
+            (float)scale, 0, (float)(-box.Left * scale),
+            0, (float)-scale, (float)(box.Top * scale),
+            0, 0, 1);
+
+    /// <summary>
+    /// Applies a clip to the canvas, returning whether the canvas needs restoring afterwards.
+    /// </summary>
+    /// <remarks>
+    /// The clip was recorded in user space alongside the path it applies to, so it takes the same
+    /// transform. Returning the save/restore decision rather than doing both here keeps the
+    /// canvas's state balanced when the caller draws several things under one clip.
+    /// </remarks>
+    private static bool ApplyClip(SKCanvas canvas, SKPath? clip, in SKMatrix matrix)
+    {
+        if (clip is null)
+        {
+            return false;
+        }
+
+        using var device = new SKPath();
+        clip.Transform(in matrix, device);
+        device.FillType = clip.FillType;
+
+        canvas.Save();
+        canvas.ClipPath(device, SKClipOperation.Intersect, antialias: true);
+
+        return true;
     }
 
     private static void DrawPath(SKCanvas canvas, PaintedPath painted, PdfRectangle box, double scale)
     {
         // The path was built in PDF user space, so one transform takes the whole thing to device
         // space — which is why the interpreter does not need to know the output resolution.
-        var matrix = new SKMatrix(
-            (float)scale, 0, (float)(-box.Left * scale),
-            0, (float)-scale, (float)(box.Top * scale),
-            0, 0, 1);
+        var matrix = DeviceMatrix(box, scale);
 
         using var path = new SKPath();
         painted.Path.Transform(in matrix, path);
 
         path.FillType = painted.EvenOdd ? SKPathFillType.EvenOdd : SKPathFillType.Winding;
+
+        var clipped = ApplyClip(canvas, painted.Clip, in matrix);
 
         if (painted.Fill is { } fill)
         {
@@ -257,6 +299,11 @@ public static class DocumentRenderer
 
             canvas.DrawPath(path, paint);
         }
+
+        if (clipped)
+        {
+            canvas.Restore();
+        }
     }
 
     private static IReadOnlyList<PdfImage> SafeExtractImages(PdfPage page)
@@ -273,8 +320,79 @@ public static class DocumentRenderer
         }
     }
 
+    /// <summary>
+    /// Paints a gradient over its clip, or over the whole page when it has none.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The shading arrives as an evenly spaced colour ramp rather than as a function, which is what
+    /// Skia's gradients take: sampling is the only way to turn a stitched or sampled PDF function
+    /// into stops, and doing it once in PdfNet keeps the interpolation the same for every consumer.
+    /// </para>
+    /// <para>
+    /// PDF's <c>Extend</c> decides whether the end colours continue beyond the geometry. Skia's
+    /// clamp tile mode does exactly that, and its decal mode does the opposite, so the two flags
+    /// map onto tile modes rather than needing to be drawn around.
+    /// </para>
+    /// </remarks>
+    private static void DrawShading(SKCanvas canvas, PaintedShading painted, PdfRectangle box,
+        double scale)
+    {
+        var shading = painted.Shading;
+
+        if (shading.Ramp.Length == 0)
+        {
+            return;
+        }
+
+        var device = DeviceMatrix(box, scale);
+
+        // The shading's coordinates are in the user space in force when it was painted, so they go
+        // through that CTM before the page's own transform.
+        var toDevice = painted.Matrix.PostConcat(device);
+
+        var colors = new SKColor[shading.Ramp.Length];
+
+        for (var i = 0; i < colors.Length; i++)
+        {
+            colors[i] = ToSkia(shading.Ramp[i]);
+        }
+
+        // Extending only one end is not expressible as a tile mode, and clamping is the safer of
+        // the two answers: it continues a colour that is already on the page rather than leaving a
+        // hard edge where the file asked for none.
+        var tile = shading.ExtendStart || shading.ExtendEnd
+            ? SKShaderTileMode.Clamp
+            : SKShaderTileMode.Decal;
+
+        var coords = shading.Coords;
+
+        using var shader = shading.Kind == ShadingKind.Axial
+            ? SKShader.CreateLinearGradient(
+                new SKPoint((float)coords[0], (float)coords[1]),
+                new SKPoint((float)coords[2], (float)coords[3]),
+                colors, null, tile, toDevice)
+            : SKShader.CreateTwoPointConicalGradient(
+                new SKPoint((float)coords[0], (float)coords[1]), (float)coords[2],
+                new SKPoint((float)coords[3], (float)coords[4]), (float)coords[5],
+                colors, null, tile, toDevice);
+
+        using var paint = new SKPaint { IsAntialias = true, Shader = shader };
+
+        var clipped = ApplyClip(canvas, painted.Clip, in device);
+
+        // With no clip the gradient covers the page, which is what a bare sh operator means.
+        canvas.DrawRect(SKRect.Create(0, 0,
+            (float)(box.Width * scale), (float)(box.Height * scale)), paint);
+
+        if (clipped)
+        {
+            canvas.Restore();
+        }
+    }
+
     private static void DrawImage(
-        SKCanvas canvas, PdfImage image, SKMatrix? placement, PdfRectangle box, double scale)
+        SKCanvas canvas, PdfImage image, PlacedImage? placement, PdfRectangle box, double scale)
     {
         using var bitmap = SKBitmap.Decode(image.Data);
 
@@ -285,7 +403,7 @@ public static class DocumentRenderer
 
         float left, top, width, height;
 
-        if (placement is { } matrix)
+        if (placement is { Matrix: var matrix })
         {
             // The matrix maps the unit square onto user space, so its image is the placed rectangle.
             // Only the axis-aligned case is handled: a rotated or skewed image is drawn upright in
@@ -325,7 +443,16 @@ public static class DocumentRenderer
         // nearest-neighbour there produces visible aliasing on every edge.
         var sampling = new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear);
 
+        // Cropping an image by clipping it is the ordinary way a producer places a photograph in a
+        // frame, so ignoring the clip draws the whole photograph over whatever surrounds it.
+        var clipped = ApplyClip(canvas, placement?.Clip, DeviceMatrix(box, scale));
+
         canvas.DrawImage(skImage, new SKRect(left, top, left + width, top + height), sampling, paint);
+
+        if (clipped)
+        {
+            canvas.Restore();
+        }
     }
 
     private static void DrawText(

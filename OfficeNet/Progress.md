@@ -499,11 +499,37 @@ daripada selisih antar-perbaikan, jadi angka alokasi yang layak dibaca.
 datar di 331 KB per halaman (angka 167 MB pada benchmark adalah artefak harness-nya sendiri), dan
 `Styles[styleId]` bukan jalur panas — paragraf bergaya dan polos hanya berbeda 6%.
 
+## v1.3 — renderer
+
+**Font tersemat.** PDF buatan pustaka ini sendiri, dengan font yang disematkan pustaka ini sendiri,
+dirender oleh renderer pustaka ini: baris Devanagari keluar sebagai kotak kosong. `TextFragment`
+kini membawa id glyph dan posisinya — memang harus, karena subset sengaja tidak membawa `cmap`
+sehingga tidak ada jalan dari karakter kembali ke bentuknya; pemetaannya ada di `/CIDToGIDMap`.
+
+Dua temuan yang hanya muncul karena ada yang benar-benar melihat pikselnya. Font uji `SyntheticFont`
+menulis `maxp` dengan `maxPoints` dan `maxContours` nol: fontTools membaca setiap glyph-nya dengan
+sempurna, rasteriser menggambar **nol piksel**. Dan penjaga pertamanya tidak menjaga apa pun — ia
+hanya membandingkan "dua gambar ini berbeda", padahal itu tetap benar dengan penyematan dimatikan.
+
+**Clipping dan gradien.** `W`/`W*` sebelumnya tidak diurai sama sekali, jadi yang seharusnya
+tersembunyi tetap tergambar. Sekarang clip ikut `q`/`Q` dan **beririsan**, tidak menggantikan.
+Shading aksial dan radial digambar, lewat `sh` maupun lewat isian pola. PdfNet dapat `PdfFunction`
+dan `PdfShading` untuk itu.
+
+Yang ditolak dengan sengaja, bukan dikira-kira: fungsi tipe 4 (bahasa PostScript), shading mesh
+(tipe 1 dan 4–7), dan tiling pattern. Semuanya `null` sehingga pemanggilnya melewati alih-alih
+menggambar warna keliru dengan percaya diri.
+
 ## Yang masih tersisa
 
 **v1.1 selesai seluruhnya.** Setiap butir di bagian v1.1 [Plan.md](Plan.md) sudah dikerjakan, kecuali
 ekspor video yang sengaja tidak dikerjakan dan alasannya dicatat di sana.
 
-v1.2 masih berjalan. Yang tersisa di sana semuanya masih hipotesis: parser XML pull untuk WordNet
-hanya-baca, `Span<T>` di lexer dan filter PdfNet, serta buffer pooling saat menulis paket. Setelah
-itu v1.3 (renderer memakai font tersemat) dan v2.0.
+**v1.2 dan v1.3 selesai.** Setiap butir terukur sudah dikerjakan, dan yang tersisa di v1.2 sudah
+diukur lalu **ditolak** dengan angkanya: lexer PdfNet hanya 13,6x ukuran berkas dan datar, penulisan
+paket linear di ~150x keluarannya. Parser XML pull tetap jadi gagasan; kasus hanya-baca yang paling
+nyata — ekstraksi teks — sudah ditangani tanpa parser kedua.
+
+Yang tersisa adalah v2.0, dan tiga batasan yang dicatat sebagai batasan, bukan sebagai bug:
+penataan aksara kompleks (GSUB/GPOS) di penulis font, tiling pattern di renderer, serta soft mask
+dan transparency group.

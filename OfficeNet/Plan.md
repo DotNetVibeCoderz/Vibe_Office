@@ -380,9 +380,44 @@ karena font penggantinya tidak punya glyph-nya.
   penulis font di PdfNet memetakan karakter ke glyph tanpa menerapkan GSUB/GPOS, jadi matra
   Devanagari berdiri sendiri alih-alih menyatu. Itu batasan penulisnya, bukan renderernya — renderer
   menggambar persis apa yang tertulis di berkasnya.
-- **Gradien, pattern, dan clipping.** Ketiganya diabaikan sekarang.
+- [x] **Gradien dan clipping — selesai. Tiling pattern tidak.**
 
-Sampai itu ada, renderer ini tetap untuk thumbnail dan pratinjau, bukan penampil dokumen.
+  **Clipping.** `W` dan `W*` sebelumnya tidak diurai sama sekali, jadi apa pun yang seharusnya
+  disembunyikan tetap tergambar — kegagalan yang menggambar terlalu banyak, bukan terlalu sedikit.
+  Sekarang clip menjadi bagian dari graphics state, ikut disimpan `q` dan dipulihkan `Q`, dan
+  **beririsan** dengan clip sebelumnya, tidak menggantikannya. Diterapkan pada path maupun gambar;
+  memotong foto dengan clip adalah cara biasa produsen menempatkannya dalam bingkai.
+
+  **Gradien.** Shading tipe 2 (aksial) dan 3 (radial) digambar, baik lewat operator `sh` maupun
+  lewat isian pola (`/Pattern cs` + `scn`). Isian pola dulu jatuh ke warna datar terakhir — biasanya
+  hitam — menutupi seluruh bentuknya.
+
+  Untuk itu PdfNet dapat dua hal baru: `PdfFunction` (tipe 0 tersampel, 2 eksponensial, 3 stitching)
+  dan `PdfShading`, yang menyederhanakan semuanya jadi geometri plus tangga warna 64 langkah. Tangga
+  itulah yang dimau Skia, dan menyamplingnya sekali di PdfNet membuat interpolasinya sama untuk
+  semua konsumen.
+
+  **Yang sengaja ditolak, bukan dikira-kira:**
+
+  | | Alasan |
+  |---|---|
+  | Fungsi tipe 4 | Bahasa kalkulator PostScript; butuh interpreter tersendiri |
+  | Shading tipe 1, 4–7 | Mesh; menggambarnya sebagai ramp linear adalah jawaban salah yang tampak masuk akal |
+  | Tiling pattern (tipe 1) | Satu content stream yang dicap berulang |
+
+  Semuanya mengembalikan `null` sehingga pemanggilnya melewati, bukan menggambar warna yang keliru
+  dengan percaya diri.
+
+  Dijaga `PdfNet.Tests.FunctionAndShadingTests` (aritmetiknya, tanpa Skia) dan
+  `OfficeNet.Rendering.Tests.ClipAndGradientTests` (pikselnya). Dipisah dengan sengaja: gradien yang
+  warnanya salah bisa berasal dari aritmetik atau dari penggambaran, dan memisahkannya adalah beda
+  antara tes yang menyebut mana dan tes yang bilang "halamannya salah". Keempat mutasi yang dicoba —
+  clip mengganti alih-alih beririsan, clip tak pernah diterapkan, `Extend` diabaikan, isian pola
+  jadi warna datar — masing-masing digagalkan oleh tes yang memang untuk itu.
+
+Yang masih tidak digambar: tiling pattern, soft mask, transparency group, blend mode, dan mesh
+shading. Renderer ini tetap untuk thumbnail dan pratinjau, bukan penampil dokumen — tapi batasnya
+sekarang jauh lebih sempit daripada saat v1.3 dimulai.
 
 ## v2.0 — Perluasan
 
