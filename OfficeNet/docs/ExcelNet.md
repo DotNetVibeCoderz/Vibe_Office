@@ -107,10 +107,11 @@ anything that parses the file directly.
 
 The engine implements about 60 functions:
 
-`ABS AND AVERAGE CONCAT CONCATENATE COUNT COUNTA COUNTBLANK COUNTIF DATE DAY ERROR.TYPE EXP HOUR IF
-IFERROR IFNA INT ISERR ISERROR ISNA LEFT LEN LN LOG10 LOWER MAX MEDIAN MID MIN MINUTE MOD MONTH NOT
-NOW OR POWER PRODUCT RIGHT ROUND ROUNDDOWN ROUNDUP SECOND SIGN SQRT STDEV STDEV.P STDEV.S SUBSTITUTE
-SUM SUMIF TEXTJOIN TODAY TRIM UPPER VALUE VAR VAR.P VAR.S VLOOKUP WEEKDAY YEAR`
+`ABS AND AVERAGE CONCAT CONCATENATE COUNT COUNTA COUNTBLANK COUNTIF DATE DAY ERROR.TYPE EXP HLOOKUP
+HOUR IF IFERROR IFNA INDEX INT ISERR ISERROR ISNA LEFT LEN LN LOG10 LOWER MATCH MAX MEDIAN MID MIN
+MINUTE MOD MONTH NOT NOW OR POWER PRODUCT RIGHT ROUND ROUNDDOWN ROUNDUP SECOND SIGN SQRT STDEV
+STDEV.P STDEV.S SUBSTITUTE SUM SUMIF TEXTJOIN TODAY TRIM UPPER VALUE VAR VAR.P VAR.S VLOOKUP
+WEEKDAY XLOOKUP YEAR`
 
 It reproduces Excel's arithmetic where Excel differs from .NET, because a subtle mismatch is worse
 than a missing function:
@@ -128,8 +129,41 @@ sheet["A1"].SetFormula("1/0");                 // #DIV/0!
 sheet["A2"].SetFormula("IFERROR(A1,\"n/a\")"); // "n/a"
 ```
 
-**Not implemented:** array formulas, iterative calculation, cross-workbook references, and
-`INDEX`/`MATCH`/`XLOOKUP` (`VLOOKUP` assumes a two-column table). See [Plan.md](../Plan.md).
+### Lookups
+
+```csharp
+sheet["E2"].SetFormula("VLOOKUP(D2, Harga!A2:C50, 3, FALSE)");
+sheet["E3"].SetFormula("INDEX(A2:A50, MATCH(\"Adaptor\", B2:B50, 0))");
+sheet["E4"].SetFormula("XLOOKUP(D2, Harga!A2:A50, Harga!C2:C50, \"tidak ada\")");
+```
+
+`XLOOKUP` is the one to reach for. It defaults to an **exact** match, the lookup and return ranges
+are separate so the key need not sit left of the answer, and a miss can carry its own value instead
+of `#N/A`:
+
+```
+XLOOKUP(needle, lookupRange, returnRange, [ifNotFound], [matchMode], [searchMode])
+```
+
+`matchMode`: 0 exact (the default), -1 exact or next smaller, 1 exact or next larger, 2 wildcard.
+`searchMode`: 1 first to last (the default), -1 last to first. Unlike `VLOOKUP`'s approximate mode,
+the nearest-match modes scan the whole range and do not assume it is sorted.
+
+`VLOOKUP`'s fourth argument defaults to `TRUE` — approximate — which assumes the first column is
+sorted ascending and silently returns the wrong row when it is not. That default has cost more
+spreadsheets more silent errors than anything else in the format. It is kept because Excel's is:
+a formula that behaves differently here than in Excel would be worse than one that shares its trap.
+Pass `FALSE` unless you are looking up a band, like a commission tier.
+
+`INDEX(range, row, [column])` and `MATCH(needle, range, [matchType])` are both one-based. Together
+they do what `VLOOKUP` cannot — return a column to the *left* of the key. `MATCH`'s type defaults to
+1 (largest value not over, ascending); pass 0 for exact, which is the only safe one on unsorted data
+and the only one that supports wildcards.
+
+Wildcards are Excel's: `*` for any run of characters, `?` for one, `~` to escape either.
+
+**Not implemented:** array formulas, iterative calculation, and cross-workbook references. See
+[Plan.md](../Plan.md).
 
 ## Styles
 

@@ -99,6 +99,7 @@ Dibuat oleh Gravicode Studios, dipimpin oleh Kang Fadhil.
 - [x] Data validation (dropdown) — tulis dan baca; batas 255 karakter ditegakkan
 - [x] Proteksi sheet dan workbook — tulis dan baca; flag dibalik tepat sekali
 - [x] Streaming writer — sejuta baris, memori rata; hanya menulis dan hanya maju
+- [x] Lookup — `VLOOKUP`, `HLOOKUP`, `INDEX`, `MATCH`, `XLOOKUP`; argumen range membawa bentuknya
 
 ## PowerPointNet — `Gravicode.OfficeNet.PowerPointNet` (rewrite python-pptx)
 

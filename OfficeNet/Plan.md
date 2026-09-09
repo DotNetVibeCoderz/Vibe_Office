@@ -89,9 +89,11 @@ seberapa sering ketiadaannya menghentikan pekerjaan nyata.
   — hanya menulis dan hanya maju — karena kasusnya berbeda. Nama sheet ditetapkan di muka
   (`[Content_Types].xml` harus jadi entri pertama) dan string ditulis inline (tabel shared string
   harus lengkap sebelum ditulis, dan itu justru yang dihindari).
-- **Formula: fungsi lookup penuh** (`INDEX`/`MATCH`, `XLOOKUP`). `VLOOKUP` sekarang mengasumsikan
-  bentuk tabel dua kolom karena range tiba dalam bentuk datar; memperbaikinya butuh range
-  mempertahankan bentuknya sampai ke fungsi.
+- [x] **Formula: fungsi lookup penuh.** Selesai. Argumen range kini membawa bentuknya
+  (`RangeArgument`), yang memperbaiki `VLOOKUP` untuk tabel selebar apa pun dan memungkinkan
+  `HLOOKUP`, `INDEX`, `MATCH`, dan `XLOOKUP`. Wildcard `*`, `?`, dan `~` didukung. Default
+  aproksimasi `VLOOKUP` sengaja dipertahankan: formula yang berbeda perilakunya di sini dan di Excel
+  lebih buruk daripada yang ikut membawa jebakannya.
 
 ### PowerPointNet
 

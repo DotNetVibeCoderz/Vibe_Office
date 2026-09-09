@@ -109,10 +109,11 @@ di ekspor PDF, dan di apa pun yang mengurai berkasnya secara langsung.
 
 Mesinnya mengimplementasikan sekitar 60 fungsi:
 
-`ABS AND AVERAGE CONCAT CONCATENATE COUNT COUNTA COUNTBLANK COUNTIF DATE DAY ERROR.TYPE EXP HOUR IF
-IFERROR IFNA INT ISERR ISERROR ISNA LEFT LEN LN LOG10 LOWER MAX MEDIAN MID MIN MINUTE MOD MONTH NOT
-NOW OR POWER PRODUCT RIGHT ROUND ROUNDDOWN ROUNDUP SECOND SIGN SQRT STDEV STDEV.P STDEV.S SUBSTITUTE
-SUM SUMIF TEXTJOIN TODAY TRIM UPPER VALUE VAR VAR.P VAR.S VLOOKUP WEEKDAY YEAR`
+`ABS AND AVERAGE CONCAT CONCATENATE COUNT COUNTA COUNTBLANK COUNTIF DATE DAY ERROR.TYPE EXP HLOOKUP
+HOUR IF IFERROR IFNA INDEX INT ISERR ISERROR ISNA LEFT LEN LN LOG10 LOWER MATCH MAX MEDIAN MID MIN
+MINUTE MOD MONTH NOT NOW OR POWER PRODUCT RIGHT ROUND ROUNDDOWN ROUNDUP SECOND SIGN SQRT STDEV
+STDEV.P STDEV.S SUBSTITUTE SUM SUMIF TEXTJOIN TODAY TRIM UPPER VALUE VAR VAR.P VAR.S VLOOKUP
+WEEKDAY XLOOKUP YEAR`
 
 Ia meniru aritmetika Excel di tempat Excel berbeda dari .NET, karena ketidakcocokan halus lebih buruk
 daripada fungsi yang tidak ada:
@@ -130,8 +131,44 @@ sheet["A1"].SetFormula("1/0");                 // #DIV/0!
 sheet["A2"].SetFormula("IFERROR(A1,\"n/a\")"); // "n/a"
 ```
 
-**Belum ada:** array formula, iterative calculation, referensi antar-workbook, serta
-`INDEX`/`MATCH`/`XLOOKUP` (`VLOOKUP` mengasumsikan tabel dua kolom). Lihat [Plan.md](../../Plan.md).
+### Lookup
+
+```csharp
+sheet["E2"].SetFormula("VLOOKUP(D2, Harga!A2:C50, 3, FALSE)");
+sheet["E3"].SetFormula("INDEX(A2:A50, MATCH(\"Adaptor\", B2:B50, 0))");
+sheet["E4"].SetFormula("XLOOKUP(D2, Harga!A2:A50, Harga!C2:C50, \"tidak ada\")");
+```
+
+`XLOOKUP` adalah yang sebaiknya dipakai. Default-nya pencocokan **persis**, range kunci dan range
+hasilnya terpisah sehingga kuncinya tidak harus berada di kiri jawabannya, dan kalau tidak ketemu
+bisa mengembalikan nilai sendiri alih-alih `#N/A`:
+
+```
+XLOOKUP(kunci, rangeKunci, rangeHasil, [kalauTidakAda], [modeCocok], [modeCari])
+```
+
+`modeCocok`: 0 persis (default), -1 persis atau yang terdekat lebih kecil, 1 persis atau yang
+terdekat lebih besar, 2 wildcard. `modeCari`: 1 dari awal (default), -1 dari akhir. Berbeda dengan
+mode aproksimasi `VLOOKUP`, mode terdekat memindai seluruh range dan tidak mengasumsikan data
+terurut.
+
+Argumen keempat `VLOOKUP` default-nya `TRUE` — aproksimasi — yang mengasumsikan kolom pertama
+terurut menaik dan diam-diam mengembalikan baris yang salah kalau tidak. Default itu sudah
+menyebabkan lebih banyak kesalahan senyap di spreadsheet daripada apa pun di format ini. Tetap
+dipertahankan karena Excel begitu: formula yang berperilaku berbeda di sini dan di Excel lebih buruk
+daripada yang ikut membawa jebakannya. Isi `FALSE` kecuali Anda memang mencari rentang, seperti
+tingkatan komisi.
+
+`INDEX(range, baris, [kolom])` dan `MATCH(kunci, range, [tipe])` keduanya berbasis satu. Digabung,
+keduanya melakukan apa yang tidak bisa dilakukan `VLOOKUP` — mengembalikan kolom di *kiri* kuncinya.
+Tipe `MATCH` default-nya 1 (nilai terbesar yang tidak melebihi, menaik); isi 0 untuk persis, satu-
+satunya yang aman pada data tak terurut dan satu-satunya yang mendukung wildcard.
+
+Wildcard-nya milik Excel: `*` untuk deretan karakter apa pun, `?` untuk satu karakter, `~` untuk
+meng-escape keduanya.
+
+**Belum ada:** array formula, iterative calculation, dan referensi antar-workbook. Lihat
+[Plan.md](../../Plan.md).
 
 ## Style
 

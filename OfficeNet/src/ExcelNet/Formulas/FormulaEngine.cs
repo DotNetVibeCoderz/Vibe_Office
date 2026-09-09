@@ -144,6 +144,40 @@ public sealed class FormulaEngine
     /// which is Excel's own order, and getting <c>-2^2</c> wrong (it is 4 in Excel, not -4) is the
     /// classic sign that it was implemented from intuition.
     /// </remarks>
+    /// <summary>
+    /// A range argument, carrying the shape a flat list loses.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// An argument is a list because <c>SUM(A1:A10)</c> passes ten values through one position. That
+    /// is enough for every function that treats its input as a bag of numbers, and not enough for
+    /// the lookup family: <c>VLOOKUP(x, A1:C50, 3)</c> has to know the table is three columns wide,
+    /// and a flat list of 150 values cannot say whether it is 3x50, 50x3, or 150x1.
+    /// </para>
+    /// <para>
+    /// It derives from the list rather than replacing it, so the hundred functions that do not care
+    /// about shape are untouched and the handful that do can ask.
+    /// </para>
+    /// </remarks>
+    private sealed class RangeArgument : List<CellValue>
+    {
+        public RangeArgument(IEnumerable<CellValue> values, int rows, int columns) : base(values)
+        {
+            Rows = rows;
+            Columns = columns;
+        }
+
+        public int Rows { get; }
+
+        public int Columns { get; }
+
+        /// <summary>The value at a zero-based row and column. Values are stored row-major.</summary>
+        public CellValue At(int row, int column) =>
+            row < 0 || row >= Rows || column < 0 || column >= Columns
+                ? CellValue.FromError("#REF!")
+                : this[(row * Columns) + column];
+    }
+
     private sealed class Parser(string text, FormulaEngine engine, Worksheet sheet)
     {
         private int _position;
@@ -637,7 +671,8 @@ public sealed class FormulaEngine
 
                 if (_position >= text.Length || text[_position] is ',' or ')')
                 {
-                    return [.. ReadRangeValues(target, range)];
+                    return new RangeArgument(ReadRangeValues(target, range),
+                        range.RowCount, range.ColumnCount);
                 }
 
                 _position = save;
@@ -974,6 +1009,10 @@ public sealed class FormulaEngine
                 "SUMIF" => Conditional(arguments, sum: true),
                 "COUNTIF" => Conditional(arguments, sum: false),
                 "VLOOKUP" => VLookup(arguments),
+                "HLOOKUP" => HLookup(arguments),
+                "INDEX" => Index(arguments),
+                "MATCH" => Match(arguments),
+                "XLOOKUP" => XLookup(arguments),
 
                 _ => CellValue.FromError("#NAME?"),
             };
@@ -1189,6 +1228,93 @@ public sealed class FormulaEngine
             return v => string.Equals(v.AsText(), text, StringComparison.OrdinalIgnoreCase);
         }
 
+        // ---- The lookup family -----------------------------------------------------------------
+        //
+        // All five share one problem: they are the only functions whose answer depends on the shape
+        // of a range and not just on the values in it. RangeArgument carries that shape; everything
+        // below is arithmetic on it.
+
+        /// <summary>Reads an argument as a shaped range, treating a scalar as a 1x1 one.</summary>
+        private static RangeArgument Shape(List<List<CellValue>> arguments, int index)
+        {
+            if (index >= arguments.Count)
+            {
+                return new RangeArgument([], 0, 0);
+            }
+
+            return arguments[index] as RangeArgument
+                   ?? new RangeArgument(arguments[index], arguments[index].Count, 1);
+        }
+
+        /// <summary>Compares two values the way Excel does inside a lookup.</summary>
+        /// <remarks>
+        /// Text compares case-insensitively, which is Excel's behaviour and surprises people coming
+        /// from a database. Numbers compare with a tolerance, because a lookup key that came from a
+        /// division would otherwise never match the same number typed in.
+        /// </remarks>
+        private static int CompareForLookup(CellValue a, CellValue b)
+        {
+            if (a.ValueType == CellValueType.Text || b.ValueType == CellValueType.Text)
+            {
+                return string.Compare(a.AsText(), b.AsText(), StringComparison.OrdinalIgnoreCase);
+            }
+
+            var difference = a.AsNumber() - b.AsNumber();
+
+            return Math.Abs(difference) < 1e-10 ? 0 : Math.Sign(difference);
+        }
+
+        private static bool WildcardMatch(CellValue candidate, CellValue pattern)
+        {
+            var text = pattern.AsText();
+
+            if (!text.Contains('*', StringComparison.Ordinal) &&
+                !text.Contains('?', StringComparison.Ordinal))
+            {
+                return CompareForLookup(candidate, pattern) == 0;
+            }
+
+            // Excel's wildcards are * and ?, and ~ escapes them. Everything else is a literal, which
+            // is why the pattern is escaped for the regex engine rather than handed to it.
+            var builder = new System.Text.StringBuilder("^");
+
+            for (var i = 0; i < text.Length; i++)
+            {
+                if (text[i] == '~' && i + 1 < text.Length)
+                {
+                    builder.Append(System.Text.RegularExpressions.Regex.Escape(text[++i].ToString()));
+                }
+                else if (text[i] == '*')
+                {
+                    builder.Append(".*");
+                }
+                else if (text[i] == '?')
+                {
+                    builder.Append('.');
+                }
+                else
+                {
+                    builder.Append(System.Text.RegularExpressions.Regex.Escape(text[i].ToString()));
+                }
+            }
+
+            builder.Append('$');
+
+            return System.Text.RegularExpressions.Regex.IsMatch(candidate.AsText(), builder.ToString(),
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase,
+                TimeSpan.FromSeconds(1));
+        }
+
+        /// <summary>
+        /// <c>VLOOKUP(needle, table, columnIndex, [rangeLookup])</c>.
+        /// </summary>
+        /// <remarks>
+        /// The fourth argument defaults to <c>TRUE</c> — approximate match — which is the single most
+        /// common source of a wrong answer in a real spreadsheet: it assumes the first column is
+        /// sorted, and silently returns the wrong row when it is not. The default is kept because
+        /// Excel's is, and a formula that behaves differently here than in Excel is worse than one
+        /// that shares its trap.
+        /// </remarks>
         private static CellValue VLookup(List<List<CellValue>> arguments)
         {
             if (arguments.Count < 3)
@@ -1197,37 +1323,296 @@ public sealed class FormulaEngine
             }
 
             var needle = arguments[0].FirstOrDefault();
-            var table = arguments[1];
+            var table = Shape(arguments, 1);
             var columnIndex = (int)arguments[2].FirstOrDefault().AsNumber();
 
-            if (columnIndex < 1)
+            if (columnIndex < 1 || table.Rows == 0)
             {
                 return CellValue.FromError("#VALUE!");
             }
 
-            // The range arrives flattened in row-major order, so the column count has to be
-            // recovered from the lookup index. Without the original shape an exact-match VLOOKUP
-            // over a two-column table is the only case that can be served reliably, which is what
-            // the overwhelming majority of real formulas are.
-            var columns = Math.Max(columnIndex, 2);
-            var rows = table.Count / columns;
-
-            for (var row = 0; row < rows; row++)
+            if (columnIndex > table.Columns)
             {
-                var key = table[row * columns];
+                return CellValue.FromError("#REF!");
+            }
 
-                var matches = key.ValueType == CellValueType.Text || needle.ValueType == CellValueType.Text
-                    ? string.Equals(key.AsText(), needle.AsText(), StringComparison.OrdinalIgnoreCase)
-                    : Math.Abs(key.AsNumber() - needle.AsNumber()) < 1e-10;
+            var approximate = arguments.Count < 4 || arguments[3].FirstOrDefault().AsBoolean();
+            var row = FindRow(table, needle, approximate, column: 0);
 
-                if (matches)
+            return row < 0 ? CellValue.FromError("#N/A") : table.At(row, columnIndex - 1);
+        }
+
+        /// <summary><c>HLOOKUP(needle, table, rowIndex, [rangeLookup])</c>.</summary>
+        private static CellValue HLookup(List<List<CellValue>> arguments)
+        {
+            if (arguments.Count < 3)
+            {
+                return CellValue.FromError("#VALUE!");
+            }
+
+            var needle = arguments[0].FirstOrDefault();
+            var table = Shape(arguments, 1);
+            var rowIndex = (int)arguments[2].FirstOrDefault().AsNumber();
+
+            if (rowIndex < 1 || table.Columns == 0)
+            {
+                return CellValue.FromError("#VALUE!");
+            }
+
+            if (rowIndex > table.Rows)
+            {
+                return CellValue.FromError("#REF!");
+            }
+
+            var approximate = arguments.Count < 4 || arguments[3].FirstOrDefault().AsBoolean();
+            var column = FindColumn(table, needle, approximate, row: 0);
+
+            return column < 0 ? CellValue.FromError("#N/A") : table.At(rowIndex - 1, column);
+        }
+
+        /// <summary>Finds a row by its value in one column, exactly or by the largest value not over.</summary>
+        private static int FindRow(RangeArgument table, CellValue needle, bool approximate, int column)
+        {
+            if (!approximate)
+            {
+                for (var row = 0; row < table.Rows; row++)
                 {
-                    var offset = row * columns + columnIndex - 1;
-                    return offset < table.Count ? table[offset] : CellValue.FromError("#REF!");
+                    if (WildcardMatch(table.At(row, column), needle))
+                    {
+                        return row;
+                    }
+                }
+
+                return -1;
+            }
+
+            // Approximate means "the last row whose key does not exceed the needle", which is only
+            // meaningful on sorted data — and returns nonsense rather than an error when it is not.
+            var best = -1;
+
+            for (var row = 0; row < table.Rows; row++)
+            {
+                if (CompareForLookup(table.At(row, column), needle) <= 0)
+                {
+                    best = row;
+                }
+                else
+                {
+                    break;
                 }
             }
 
-            return CellValue.FromError("#N/A");
+            return best;
+        }
+
+        private static int FindColumn(RangeArgument table, CellValue needle, bool approximate, int row)
+        {
+            if (!approximate)
+            {
+                for (var column = 0; column < table.Columns; column++)
+                {
+                    if (WildcardMatch(table.At(row, column), needle))
+                    {
+                        return column;
+                    }
+                }
+
+                return -1;
+            }
+
+            var best = -1;
+
+            for (var column = 0; column < table.Columns; column++)
+            {
+                if (CompareForLookup(table.At(row, column), needle) <= 0)
+                {
+                    best = column;
+                }
+                else
+                {
+                    break;
+                }
+            }
+
+            return best;
+        }
+
+        /// <summary>
+        /// <c>INDEX(range, rowNumber, [columnNumber])</c>, one-based.
+        /// </summary>
+        /// <remarks>
+        /// A zero means "the whole row" or "the whole column" in Excel, which only makes sense inside
+        /// an array formula. Here it returns the first cell of that row or column, which is what a
+        /// non-array context collapses to anyway.
+        /// </remarks>
+        private static CellValue Index(List<List<CellValue>> arguments)
+        {
+            if (arguments.Count < 2)
+            {
+                return CellValue.FromError("#VALUE!");
+            }
+
+            var range = Shape(arguments, 0);
+            var row = (int)arguments[1].FirstOrDefault().AsNumber();
+            var column = arguments.Count > 2 ? (int)arguments[2].FirstOrDefault().AsNumber() : 0;
+
+            if (range.Rows == 0 || range.Columns == 0)
+            {
+                return CellValue.FromError("#REF!");
+            }
+
+            // A single row or column takes one index, and it counts along the range rather than down
+            // it. INDEX(A1:E1, 3) is the third cell, not the third row of a one-row range.
+            if (arguments.Count == 2 && range.Rows == 1)
+            {
+                (row, column) = (1, row);
+            }
+
+            if (row < 0 || column < 0 || row > range.Rows || column > range.Columns)
+            {
+                return CellValue.FromError("#REF!");
+            }
+
+            return range.At(Math.Max(0, row - 1), Math.Max(0, column - 1));
+        }
+
+        /// <summary>
+        /// <c>MATCH(needle, range, [matchType])</c>, returning a one-based position.
+        /// </summary>
+        /// <remarks>
+        /// The match type defaults to 1: the largest value not over the needle, assuming ascending
+        /// order. 0 is exact and supports wildcards; -1 is the smallest value not under, assuming
+        /// descending order. Only 0 is safe on unsorted data.
+        /// </remarks>
+        private static CellValue Match(List<List<CellValue>> arguments)
+        {
+            if (arguments.Count < 2)
+            {
+                return CellValue.FromError("#VALUE!");
+            }
+
+            var needle = arguments[0].FirstOrDefault();
+            var range = Shape(arguments, 1);
+            var type = arguments.Count > 2 ? (int)arguments[2].FirstOrDefault().AsNumber() : 1;
+
+            if (range.Count == 0)
+            {
+                return CellValue.FromError("#N/A");
+            }
+
+            if (type == 0)
+            {
+                for (var i = 0; i < range.Count; i++)
+                {
+                    if (WildcardMatch(range[i], needle))
+                    {
+                        return CellValue.FromNumber(i + 1);
+                    }
+                }
+
+                return CellValue.FromError("#N/A");
+            }
+
+            var best = -1;
+
+            for (var i = 0; i < range.Count; i++)
+            {
+                var comparison = CompareForLookup(range[i], needle);
+
+                if (type > 0 ? comparison <= 0 : comparison >= 0)
+                {
+                    best = i;
+                }
+                else
+                {
+                    break;
+                }
+            }
+
+            return best < 0 ? CellValue.FromError("#N/A") : CellValue.FromNumber(best + 1);
+        }
+
+        /// <summary>
+        /// <c>XLOOKUP(needle, lookupRange, returnRange, [ifNotFound], [matchMode], [searchMode])</c>.
+        /// </summary>
+        /// <remarks>
+        /// The one worth reaching for. It defaults to an <em>exact</em> match rather than an
+        /// approximate one, the lookup and return ranges are separate so the key need not be to the
+        /// left of the answer, and a miss can carry its own value instead of <c>#N/A</c>.
+        /// Match modes: 0 exact (the default), -1 exact or next smaller, 1 exact or next larger,
+        /// 2 wildcard. Search modes: 1 first to last (the default), -1 last to first.
+        /// </remarks>
+        private static CellValue XLookup(List<List<CellValue>> arguments)
+        {
+            if (arguments.Count < 3)
+            {
+                return CellValue.FromError("#VALUE!");
+            }
+
+            var needle = arguments[0].FirstOrDefault();
+            var lookup = Shape(arguments, 1);
+            var result = Shape(arguments, 2);
+
+            if (lookup.Count == 0)
+            {
+                return CellValue.FromError("#N/A");
+            }
+
+            var matchMode = arguments.Count > 4 ? (int)arguments[4].FirstOrDefault().AsNumber() : 0;
+            var reversed = arguments.Count > 5 && arguments[5].FirstOrDefault().AsNumber() < 0;
+
+            var found = -1;
+            double bestDistance = 0;
+
+            for (var step = 0; step < lookup.Count; step++)
+            {
+                var i = reversed ? lookup.Count - 1 - step : step;
+                var comparison = CompareForLookup(lookup[i], needle);
+
+                switch (matchMode)
+                {
+                    case 2 when WildcardMatch(lookup[i], needle):
+                    case 0 when comparison == 0:
+                        found = i;
+                        break;
+
+                    case -1 or 1 when comparison == 0:
+                        return Result(i);
+
+                    // Nearest smaller or nearest larger, which unlike VLOOKUP does not assume the
+                    // data is sorted: the whole range is scanned and the closest candidate kept.
+                    case -1 when comparison < 0:
+                    case 1 when comparison > 0:
+                    {
+                        var distance = Math.Abs(lookup[i].AsNumber() - needle.AsNumber());
+
+                        if (found < 0 || distance < bestDistance)
+                        {
+                            (found, bestDistance) = (i, distance);
+                        }
+
+                        break;
+                    }
+                }
+
+                if (found >= 0 && matchMode is 0 or 2)
+                {
+                    return Result(found);
+                }
+            }
+
+            if (found >= 0)
+            {
+                return Result(found);
+            }
+
+            // The fourth argument is what makes XLOOKUP readable: IFNA(VLOOKUP(...), "-") in one place.
+            return arguments.Count > 3 && arguments[3].Count > 0
+                ? arguments[3][0]
+                : CellValue.FromError("#N/A");
+
+            CellValue Result(int index) =>
+                index < result.Count ? result[index] : CellValue.FromError("#REF!");
         }
     }
 }

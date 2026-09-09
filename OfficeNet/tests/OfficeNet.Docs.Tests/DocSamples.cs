@@ -364,6 +364,32 @@ public class DocSamples : IDisposable
     }
 
     [Fact]
+    public void ExcelNet_Lookups()
+    {
+        using var workbook = Workbook.Create("Data");
+        var sheet = workbook["Data"];
+
+        sheet.WriteHeader("A1", ["Kode", "Nama", "Harga"]);
+        sheet.WriteRow("A2", "A100", "Kabel", 15000);
+        sheet.WriteRow("A3", "B200", "Adaptor", 45000);
+        sheet.WriteRow("A4", "C300", "Baterai", 27500);
+
+        sheet["E2"].SetFormula("VLOOKUP(\"C300\", A2:C4, 3, FALSE)");
+        sheet["E3"].SetFormula("INDEX(A2:A4, MATCH(\"Adaptor\", B2:B4, 0))");
+        sheet["E4"].SetFormula("XLOOKUP(\"C300\", A2:A4, C2:C4, \"tidak ada\")");
+        sheet["E5"].SetFormula("XLOOKUP(\"Z999\", A2:A4, C2:C4, \"tidak ada\")");
+        sheet["E6"].SetFormula("HLOOKUP(\"Harga\", A1:C4, 3, FALSE)");
+
+        workbook.Recalculate();
+
+        Assert.Equal(27500d, sheet["E2"].Number);
+        Assert.Equal("B200", sheet["E3"].Text);
+        Assert.Equal(27500d, sheet["E4"].Number);
+        Assert.Equal("tidak ada", sheet["E5"].Text);
+        Assert.Equal(45000d, sheet["E6"].Number);
+    }
+
+    [Fact]
     public void ExcelNet_StylesRangesAndLayout()
     {
         using var workbook = Workbook.Create("Data");
