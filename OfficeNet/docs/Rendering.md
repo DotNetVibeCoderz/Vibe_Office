@@ -60,6 +60,47 @@ using var deck = Presentation.Open("deck.pptx");
 var slides = DocumentRenderer.RenderPowerPoint(deck);
 ```
 
+### One page, and ranges
+
+A deck of two hundred slides laid out to produce one thumbnail is most of a second per thumbnail.
+Ask for the page you want instead:
+
+```csharp
+byte[] third = DocumentRenderer.RenderSlide(deck, index: 2);
+var middle  = DocumentRenderer.RenderPdf(pdf, 2..4);      // pages 3 and 4
+var lastTwo = DocumentRenderer.RenderPdf(pdf, ^2..);
+```
+
+The layout still runs — a slide's master and its page number both come from the whole document — but
+only the pages asked for are rasterised, and that is where the time and nearly all the memory go.
+
+### Writing files from a document you already have
+
+```csharp
+DocumentRenderer.RenderToFiles(deck, "keluaran");                       // slide-01.png, slide-02.png…
+DocumentRenderer.RenderToFiles(document, "keluaran", namePrefix: "hal");
+DocumentRenderer.RenderToFiles(workbook, "keluaran");
+DocumentRenderer.RenderToFiles(pdf, "keluaran");
+```
+
+Numbers are zero-padded, so a directory listing sorts the way the document reads, and a single page
+is written without a number at all. `WriteImages` does the same for images you rendered yourself.
+
+### Video
+
+There is none, and it is not an oversight. Rendering a deck to video means encoding, which means
+FFmpeg, which is a native binary rather than a NuGet package — and the one thing that makes
+`OfficeNet.Rendering` predictable is that its only native dependency is SkiaSharp. Adding a second
+one that has to be found on the host, in the right version, would make every deployment a support
+question.
+
+If you need a video, render the slides here and hand the images to FFmpeg yourself:
+
+```
+ffmpeg -framerate 1/5 -i slide-%02d.png -c:v libx264 -pix_fmt yuv420p deck.mp4
+```
+
+
 ## Options
 
 ```csharp

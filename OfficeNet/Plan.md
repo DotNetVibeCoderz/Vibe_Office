@@ -103,8 +103,12 @@ seberapa sering ketiadaannya menghentikan pekerjaan nyata.
   Hierarchy, Pyramid). `layout` adalah algoritma, bukan gambar, jadi geometrinya dihitung di sini
   dan ditulis ke part drawing; itulah yang digambar setiap konsumen sampai seseorang mengedit
   diagramnya di PowerPoint.
-- **Ekspor gambar/video.** Gambar tinggal memakai `OfficeNet.Rendering`; video butuh FFMPEG dan
-  karena itu paket terpisah lagi.
+- [x] **Ekspor gambar.** Selesai. `RenderSlide` untuk satu slide, `RenderPdf(range)` untuk rentang
+  halaman, dan `RenderToFiles` untuk dokumen hidup — sebelumnya harus disimpan ke disk dulu hanya
+  untuk dirender.
+- **Ekspor video.** Sengaja tidak ada. Encoding berarti FFmpeg, yang berupa biner native, sementara
+  satu-satunya dependensi native `OfficeNet.Rendering` adalah SkiaSharp — dan itulah yang membuatnya
+  bisa diandalkan. Dokumentasinya menunjukkan cara merangkai gambarnya sendiri dengan FFmpeg.
 - **Animasi lanjutan.** Sekarang hanya urutan klik. Motion path dan trigger butuh pohon timing
   SMIL penuh.
 

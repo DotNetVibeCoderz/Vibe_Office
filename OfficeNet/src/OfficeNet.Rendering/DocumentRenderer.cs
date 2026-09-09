@@ -509,20 +509,67 @@ public static class DocumentRenderer
         }
     }
 
-    /// <summary>Renders a document and writes one numbered image file per page.</summary>
-    /// <returns>The paths written.</returns>
-    public static IReadOnlyList<string> RenderToFiles(string path, string outputDirectory,
-        RenderOptions? options = null, string? namePrefix = null)
+    /// <summary>
+    /// Renders one slide.
+    /// </summary>
+    /// <param name="presentation">The deck.</param>
+    /// <param name="index">The slide's zero-based index.</param>
+    /// <param name="options">How to rasterise it.</param>
+    /// <remarks>
+    /// Laying out the whole deck to get one slide is what <see cref="RenderPowerPoint"/> would do,
+    /// and on a two-hundred-slide deck that is most of a second per thumbnail. The layout still has
+    /// to run — a slide's page number and its master both come from the deck — but only one page is
+    /// rasterised, which is where the time and nearly all the memory go.
+    /// </remarks>
+    /// <exception cref="ArgumentOutOfRangeException">There is no such slide.</exception>
+    public static byte[] RenderSlide(PowerPointNet.Presentation presentation, int index,
+        RenderOptions? options = null)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(outputDirectory);
+        ArgumentNullException.ThrowIfNull(presentation);
+        ArgumentOutOfRangeException.ThrowIfNegative(index);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(index, presentation.Slides.Count);
 
-        options ??= new RenderOptions();
-        var images = Render(path, options);
+        using var pdf = presentation.ToPdf();
+
+        return RenderPage(pdf.Pages[index], options);
+    }
+
+    /// <summary>
+    /// Renders a range of a document's pages.
+    /// </summary>
+    /// <param name="document">The PDF, which the Word, Excel and PowerPoint exporters all produce.</param>
+    /// <param name="range">Which pages, zero-based.</param>
+    /// <param name="options">How to rasterise them.</param>
+    public static IReadOnlyList<byte[]> RenderPdf(PdfDocument document, Range range,
+        RenderOptions? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+
+        var (offset, length) = range.GetOffsetAndLength(document.Pages.Count);
+
+        return [.. Enumerable.Range(offset, length).Select(i => RenderPage(document.Pages[i], options))];
+    }
+
+    // ---- Writing files ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// Writes rendered images to a directory, one numbered file per page.
+    /// </summary>
+    /// <remarks>
+    /// Split out so that a caller holding a live document does not have to save it to disk first
+    /// just to render it — which is what the path-based overload forced, and which meant a temporary
+    /// file in every pipeline that generated a deck and wanted thumbnails of it.
+    /// </remarks>
+    public static IReadOnlyList<string> WriteImages(IReadOnlyList<byte[]> images,
+        string outputDirectory, string namePrefix, RenderFormat format = RenderFormat.Png)
+    {
+        ArgumentNullException.ThrowIfNull(images);
+        ArgumentException.ThrowIfNullOrWhiteSpace(outputDirectory);
+        ArgumentException.ThrowIfNullOrWhiteSpace(namePrefix);
 
         Directory.CreateDirectory(outputDirectory);
 
-        var prefix = namePrefix ?? Path.GetFileNameWithoutExtension(path);
-        var extension = options.Format switch
+        var extension = format switch
         {
             RenderFormat.Jpeg => "jpg",
             RenderFormat.Webp => "webp",
@@ -535,8 +582,8 @@ public static class DocumentRenderer
         {
             // Padded so a directory listing sorts the way the document reads.
             var name = images.Count == 1
-                ? $"{prefix}.{extension}"
-                : $"{prefix}-{i + 1:D2}.{extension}";
+                ? $"{namePrefix}.{extension}"
+                : $"{namePrefix}-{i + 1:D2}.{extension}";
 
             var target = Path.Combine(outputDirectory, name);
             File.WriteAllBytes(target, images[i]);
@@ -544,6 +591,56 @@ public static class DocumentRenderer
         }
 
         return written;
+    }
+
+    /// <summary>Renders a presentation and writes one image file per slide.</summary>
+    public static IReadOnlyList<string> RenderToFiles(PowerPointNet.Presentation presentation,
+        string outputDirectory, RenderOptions? options = null, string namePrefix = "slide")
+    {
+        options ??= new RenderOptions();
+
+        return WriteImages(RenderPowerPoint(presentation, options), outputDirectory, namePrefix,
+            options.Format);
+    }
+
+    /// <summary>Renders a Word document and writes one image file per page.</summary>
+    public static IReadOnlyList<string> RenderToFiles(WordNet.WordDocument document,
+        string outputDirectory, RenderOptions? options = null, string namePrefix = "page")
+    {
+        options ??= new RenderOptions();
+
+        return WriteImages(RenderWord(document, options), outputDirectory, namePrefix, options.Format);
+    }
+
+    /// <summary>Renders a workbook and writes one image file per page.</summary>
+    public static IReadOnlyList<string> RenderToFiles(ExcelNet.Workbook workbook,
+        string outputDirectory, RenderOptions? options = null, string namePrefix = "page")
+    {
+        options ??= new RenderOptions();
+
+        return WriteImages(RenderExcel(workbook, options), outputDirectory, namePrefix, options.Format);
+    }
+
+    /// <summary>Renders a PDF and writes one image file per page.</summary>
+    public static IReadOnlyList<string> RenderToFiles(PdfDocument document,
+        string outputDirectory, RenderOptions? options = null, string namePrefix = "page")
+    {
+        options ??= new RenderOptions();
+
+        return WriteImages(RenderPdf(document, options), outputDirectory, namePrefix, options.Format);
+    }
+
+    /// <summary>Renders a document and writes one numbered image file per page.</summary>
+    /// <returns>The paths written.</returns>
+    public static IReadOnlyList<string> RenderToFiles(string path, string outputDirectory,
+        RenderOptions? options = null, string? namePrefix = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(outputDirectory);
+
+        options ??= new RenderOptions();
+
+        return WriteImages(Render(path, options), outputDirectory,
+            namePrefix ?? Path.GetFileNameWithoutExtension(path), options.Format);
     }
 
     /// <summary>Renders the first page as a thumbnail of a given width.</summary>

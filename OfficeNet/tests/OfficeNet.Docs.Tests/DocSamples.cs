@@ -1020,6 +1020,34 @@ public class DocSamples : IDisposable
     // ---- docs/Rendering.md ---------------------------------------------------------------------
 
     [Fact]
+    public void Rendering_OnePageRangesAndFiles()
+    {
+        using var directory = new OfficeNet.TestKit.TempDirectory();
+        using var deck = Presentation.Create();
+
+        for (var i = 1; i <= 4; i++)
+        {
+            deck.AddSlide(2).SetTitle($"Slide {i}");
+        }
+
+        var options = new RenderOptions { Dpi = 72 };
+
+        byte[] third = DocumentRenderer.RenderSlide(deck, index: 2, options);
+
+        using var pdf = deck.ToPdf();
+        var middle = DocumentRenderer.RenderPdf(pdf, 2..4, options);
+        var lastTwo = DocumentRenderer.RenderPdf(pdf, ^2.., options);
+
+        var files = DocumentRenderer.RenderToFiles(deck, directory.Path, options);
+
+        Assert.NotEmpty(third);
+        Assert.Equal(2, middle.Count);
+        Assert.Equal(2, lastTwo.Count);
+        Assert.Equal(["slide-01.png", "slide-02.png", "slide-03.png", "slide-04.png"],
+            files.Select(Path.GetFileName));
+    }
+
+    [Fact]
     public void Rendering_AnyFormatToImages()
     {
         var docx = Path_("render.docx");

@@ -62,6 +62,49 @@ using var deck = Presentation.Open("deck.pptx");
 var slides = DocumentRenderer.RenderPowerPoint(deck);
 ```
 
+### Satu halaman, dan rentang
+
+Deck berisi dua ratus slide yang ditata seluruhnya demi satu thumbnail memakan hampir satu detik per
+thumbnail. Minta halaman yang Anda butuhkan saja:
+
+```csharp
+byte[] third = DocumentRenderer.RenderSlide(deck, index: 2);
+var middle  = DocumentRenderer.RenderPdf(pdf, 2..4);      // halaman 3 dan 4
+var lastTwo = DocumentRenderer.RenderPdf(pdf, ^2..);
+```
+
+Layout-nya tetap dijalankan — master sebuah slide dan nomor halamannya sama-sama berasal dari
+keseluruhan dokumen — tetapi hanya halaman yang diminta yang dirasterisasi, dan di situlah waktu
+serta hampir seluruh memorinya terpakai.
+
+### Menulis berkas dari dokumen yang sudah Anda pegang
+
+```csharp
+DocumentRenderer.RenderToFiles(deck, "keluaran");                       // slide-01.png, slide-02.png…
+DocumentRenderer.RenderToFiles(document, "keluaran", namePrefix: "hal");
+DocumentRenderer.RenderToFiles(workbook, "keluaran");
+DocumentRenderer.RenderToFiles(pdf, "keluaran");
+```
+
+Nomornya diberi nol di depan agar daftar direktori terurut sesuai urutan bacanya, dan satu halaman
+ditulis tanpa nomor sama sekali. `WriteImages` melakukan hal yang sama untuk gambar yang Anda render
+sendiri.
+
+### Video
+
+Tidak ada, dan itu bukan kelalaian. Merender deck menjadi video berarti encoding, yang berarti
+FFmpeg, yang berupa biner native dan bukan paket NuGet — sementara satu hal yang membuat
+`OfficeNet.Rendering` bisa diandalkan adalah bahwa satu-satunya dependensi native-nya adalah
+SkiaSharp. Menambah satu lagi yang harus ditemukan di host, dalam versi yang tepat, akan membuat
+setiap deployment jadi pertanyaan dukungan.
+
+Kalau Anda butuh video, render slide-nya di sini lalu serahkan gambarnya ke FFmpeg sendiri:
+
+```
+ffmpeg -framerate 1/5 -i slide-%02d.png -c:v libx264 -pix_fmt yuv420p deck.mp4
+```
+
+
 ## Opsi
 
 ```csharp
