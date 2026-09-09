@@ -4,10 +4,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current state
 
-**v1.1.0 is published to NuGet** (tag `officenet-v1.1.0`); work is now on v1.2, which is
-performance. All six libraries build clean with zero warnings: `OfficeNet.Core`, `PdfNet`,
-`WordNet`, `ExcelNet`, `PowerPointNet`, `OfficeNet` (meta) and `OfficeNet.Rendering`.
-**673 tests pass** across seven test projects.
+**v1.1.0 is published to NuGet** (tag `officenet-v1.1.0`). **v1.2 (performance) and v1.3 (renderer)
+are both complete**; the next milestone is v2.0. All six libraries build clean with zero warnings:
+`OfficeNet.Core`, `PdfNet`, `WordNet`, `ExcelNet`, `PowerPointNet`, `OfficeNet` (meta) and
+`OfficeNet.Rendering`. **700 tests pass** across seven test projects.
 
 Everything the plan listed through v1.1 exists: the libraries, tests with independent structural
 validators, `docs/` and its `docs/id/` mirror, `notebooks/`, `benchmarks/`, the five `samples/`

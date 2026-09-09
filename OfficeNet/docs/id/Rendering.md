@@ -24,9 +24,10 @@ Menahan SkiaSharp di sini berarti layanan yang hanya menulis berkas `.xlsx` tida
 mengirim biner native yang tidak dipakainya, dan kontainer tanpa paket font sistem tetap berfungsi
 untuk semuanya kecuali rendering.
 
-Di Linux, paket ini menarik `SkiaSharp.NativeAssets.Linux`. Perenderan teks membutuhkan font
-sungguhan yang terpasang — kontainer ramping tanpa font akan menghasilkan kotak-kotak, dan itu
-masalah lingkungan, bukan bug library.
+Di Linux, paket ini menarik `SkiaSharp.NativeAssets.Linux`. Teks yang fontnya disematkan di berkasnya
+digambar dari font itu dan tidak butuh apa pun terpasang; teks yang jatuh ke font pengganti butuh
+font sungguhan, jadi kontainer ramping tanpa font akan menghasilkan kotak-kotak untuk teks itu — dan
+itu masalah lingkungan, bukan bug library.
 
 ## Merender apa saja
 
@@ -136,13 +137,21 @@ yang membukanya.
 benar, teks pada posisinya dengan warna isiannya sendiri, dan gambar yang ditempatkan oleh transform
 di content stream.
 
-**Tidak digambar:** gradien, pattern, soft mask, grup transparansi, blend mode, atau clipping path.
-Teks digambar dengan font sistem pengganti alih-alih font tersemat berkasnya, sehingga bentuk glyph
-dan panjang barisnya mendekati tetapi tidak persis.
+**Digambar juga:** clipping path, serta gradien aksial dan radial — baik yang dilukis operator `sh`
+maupun yang dipakai sebagai isian pola.
 
-Itu batasan yang nyata, dan itulah sebabnya ini renderer untuk thumbnail dan pratinjau, bukan
-penampil. Halaman yang sebagian besar berupa diagram penuh gradien akan keluar lebih datar dari
-seharusnya. Halaman yang berupa laporan keluar terlihat seperti laporan — dan itulah yang menjadi
+**Teks memakai font tersemat berkasnya** bila font itu berupa program TrueType, dan itulah yang
+membuat halaman beraksara yang fontnya tidak ada di mesin keluar sebagai teks, bukan sebagai deretan
+kotak kosong. Program CFF atau Type 1, atau font yang memang tidak disematkan berkasnya, masih jatuh
+ke font sistem pengganti sehingga bentuk glyph-nya mendekati tetapi tidak persis.
+
+**Tidak digambar:** tiling pattern, soft mask, grup transparansi, blend mode, dan mesh shading
+(tipe 4 sampai 7). Semuanya dilewati, bukan dikira-kira: mesh yang digambar sebagai gradien linear
+adalah jawaban salah yang tampak masuk akal, dan tiling pattern yang digambar sebagai warna datar
+membanjiri bentuknya.
+
+Itu tetap batasan yang nyata, dan itulah sebabnya ini renderer untuk thumbnail dan pratinjau, bukan
+penampil. Halaman yang berupa laporan keluar terlihat seperti laporan — dan itulah yang menjadi
 tangkapan layar di seluruh dokumentasi ini.
 
 Gambar yang diputar atau dimiringkan digambar tegak di dalam kotak pembatasnya: salah, tetapi masih

@@ -316,10 +316,10 @@ Honest gaps, tracked in [Progress.md](Progress.md) and [Plan.md](Plan.md):
 - **Formulas** do not do array formulas, iterative calculation or cross-workbook references.
 - A **pivot table** writes its cache and layout; Excel computes the result grid when it opens the
   file, so a non-Excel consumer sees that area empty. [Why](docs/ExcelNet.md#pivot-tables).
-- The **renderer** draws paths, images and text, but finds fonts by name in the system rather than
-  using the one embedded in the file — so a PDF this library writes in a non-Latin script renders as
-  empty boxes — and does not do gradients, patterns or clipping. It is for thumbnails and previews,
-  not a viewer. Tracked in [Plan.md](Plan.md).
+- The **renderer** draws paths, images, text, clipping paths and gradients, and uses the file's own
+  embedded font when that font is TrueType. It does not do tiling patterns, soft masks, transparency
+  groups or mesh shadings, and a CFF or Type 1 font still falls back to a system face. It is for
+  thumbnails and previews, not a viewer. Tracked in [Plan.md](Plan.md).
 
 ## Licence
 

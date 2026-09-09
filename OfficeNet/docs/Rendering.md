@@ -23,9 +23,10 @@ Keeping SkiaSharp here means a service that only writes `.xlsx` files never ship
 does not use, and a container without system font packages still works for everything except
 rendering.
 
-On Linux the package pulls in `SkiaSharp.NativeAssets.Linux`. Text rendering needs real fonts
-installed — a slim container with none will produce boxes, and that is an environment problem rather
-than a library bug.
+On Linux the package pulls in `SkiaSharp.NativeAssets.Linux`. Text whose font the file embeds is
+drawn from that font and needs nothing installed; text that falls back to substitution needs real
+fonts present, so a slim container with none will produce boxes for it, and that is an environment
+problem rather than a library bug.
 
 ## Rendering anything
 
@@ -129,14 +130,21 @@ rendering onto nothing gives you a transparent PNG that looks black in half the 
 **Draws:** filled and stroked paths with the correct colours and even-odd/winding fill rules,
 positioned text in its own fill colour, and images placed by the content stream's transform.
 
-**Does not:** gradients, patterns, soft masks, transparency groups, blend modes, or clipping paths.
-Text is drawn with a substituted system face rather than the file's embedded font, so glyph shapes
-and line lengths are close but not exact.
+**Draws too:** clipping paths, and axial and radial gradients — whether painted by the `sh`
+operator or used as a pattern fill.
 
-That is a real limit, and it is why this is a renderer for thumbnails and previews rather than a
-viewer. A page that is mostly a gradient-heavy diagram will come out flatter than it should. A page
-that is a report comes out looking like the report — which is what the screenshots throughout this
-documentation are.
+**Text uses the file's own embedded font** when that font is a TrueType program, which is what makes
+a page in a script the machine has no font for come out as text rather than as a row of empty boxes.
+A CFF or Type 1 program, or a font the file does not embed at all, still falls back to a substituted
+system face, and its glyph shapes are then close but not exact.
+
+**Does not:** tiling patterns, soft masks, transparency groups, blend modes, or mesh shadings
+(types 4 to 7). Each of those is skipped rather than approximated: a mesh drawn as a linear gradient
+is a plausible-looking wrong answer, and a tiling pattern drawn as a flat colour floods the shape.
+
+That is still a real limit, and it is why this is a renderer for thumbnails and previews rather than
+a viewer. A page that is a report comes out looking like the report — which is what the screenshots
+throughout this documentation are.
 
 A rotated or skewed image is drawn upright in its bounding box: wrong, but still recognisable at
 thumbnail size, which beats dropping it.

@@ -313,10 +313,10 @@ Kekurangan yang jujur, dilacak di [Progress.md](Progress.md) dan [Plan.md](Plan.
 - **Formula** belum menangani array formula, iterative calculation, dan referensi antar-workbook.
 - **Pivot table** menulis cache dan tata letaknya; Excel menghitung grid hasilnya saat membuka
   berkas, jadi konsumen non-Excel melihat area itu kosong. [Alasannya](docs/id/ExcelNet.md#pivot-table).
-- **Renderer** menggambar path, gambar, dan teks, tetapi mencari font di sistem berdasarkan namanya
-  alih-alih memakai font yang tersemat di berkasnya — sehingga PDF beraksara non-Latin yang ditulis
-  pustaka ini sendiri tampil sebagai kotak kosong — dan tidak menangani gradien, pattern, atau
-  clipping. Ia untuk thumbnail dan pratinjau, bukan penampil. Dilacak di [Plan.md](Plan.md).
+- **Renderer** menggambar path, gambar, teks, clipping, dan gradien, serta memakai font yang tersemat
+  di berkasnya sendiri bila font itu TrueType. Ia belum menangani tiling pattern, soft mask,
+  transparency group, dan mesh shading; font CFF atau Type 1 masih jatuh ke font sistem. Ia untuk
+  thumbnail dan pratinjau, bukan penampil. Dilacak di [Plan.md](Plan.md).
 
 ## Lisensi
 

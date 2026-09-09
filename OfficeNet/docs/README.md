@@ -111,9 +111,9 @@ Stated plainly, because a limit you know about is a limit you can plan around:
 
 - **PDF export is a real layout engine, not Word's.** Flowed text, headings, lists, tables, images
   and page fields are laid out correctly. Floating objects with `wrap="square"` are drawn inline.
-- **The renderer is for thumbnails and previews.** It draws paths, images and text, but substitutes
-  a system font for the file's embedded one, and does not do gradients, patterns, soft masks or
-  clipping.
+- **The renderer is for thumbnails and previews.** It draws paths, images, text, clipping paths and
+  gradients, and uses the file's own embedded font when that font is TrueType. It does not do tiling
+  patterns, soft masks, transparency groups or mesh shadings.
 - **The formula engine fills the cache; it is not Excel.** About 60 functions, enough that a
   non-Excel consumer sees numbers rather than blanks. Array formulas and iterative calculation are
   out of scope.

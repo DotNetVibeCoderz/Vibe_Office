@@ -112,9 +112,9 @@ Disebutkan terus terang, karena batasan yang Anda ketahui adalah batasan yang bi
 - **Ekspor PDF adalah mesin layout sungguhan, tapi bukan mesin Word.** Teks mengalir, heading, daftar,
   tabel, gambar, dan field halaman ditata dengan benar. Objek mengambang dengan `wrap="square"`
   digambar inline.
-- **Renderer ditujukan untuk thumbnail dan pratinjau.** Ia menggambar path, gambar, dan teks, tetapi
-  mengganti font tersemat berkas dengan font sistem, dan tidak menangani gradien, pattern, soft mask,
-  atau clipping.
+- **Renderer ditujukan untuk thumbnail dan pratinjau.** Ia menggambar path, gambar, teks, clipping,
+  dan gradien, serta memakai font tersemat berkasnya bila font itu TrueType. Ia belum menangani
+  tiling pattern, soft mask, grup transparansi, dan mesh shading.
 - **Mesin formula mengisi cache; ia bukan Excel.** Sekitar 60 fungsi, cukup agar konsumen non-Excel
   melihat angka, bukan sel kosong. Array formula dan iterative calculation di luar cakupan.
 - **PDF → Word dan PDF → Excel belum ada.** Ekstraksi teks sudah ada; merekonstruksi paragraf dan
