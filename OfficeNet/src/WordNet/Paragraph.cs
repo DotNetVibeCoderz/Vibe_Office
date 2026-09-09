@@ -5,6 +5,7 @@ using System.Xml.Linq;
 using OfficeNet.Core;
 using OfficeNet.Core.Drawing;
 using OfficeNet.Core.Xml;
+using WordNet.Drawing;
 using WordNet.Notes;
 
 namespace WordNet;
@@ -312,6 +313,68 @@ public sealed class Paragraph
 
     /// <summary>Appends an endnote reference, and creates the endnote.</summary>
     public Note AddEndnote(string text) => AddNote(text, NoteKind.Endnote);
+
+    /// <summary>
+    /// Adds a text box anchored to this paragraph.
+    /// </summary>
+    /// <param name="text">The first line of text, or empty for an empty box.</param>
+    /// <param name="width">The box's width.</param>
+    /// <param name="height">The box's height.</param>
+    /// <param name="wrap">How body text flows around it; <c>null</c> puts it in the line of text.</param>
+    /// <param name="altText">Alternative text, for screen readers.</param>
+    /// <returns>The shape, so more paragraphs and formatting can be added to it.</returns>
+    /// <remarks>
+    /// A text box is a rectangle with a text body, so this is <see cref="AddShape"/> with the
+    /// geometry chosen for you. It comes with no fill and no outline — a plain box of text sitting
+    /// over the page — because that is what a pull quote or a caption wants; set
+    /// <see cref="Shape.FillColor"/> and <see cref="Shape.LineColor"/> for a bordered one.
+    /// </remarks>
+    public Shape AddTextBox(string text, Length width, Length height,
+        TextWrap? wrap = TextWrap.Square, string? altText = null)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+
+        var shape = AddShape(ShapeGeometry.Rectangle, width, height, wrap, altText);
+
+        // Marking the shape as a text box is what makes Word offer text editing on it rather than
+        // treating it as a drawing that happens to contain words.
+        shape.Wsp.Element(Ns.Wps + "cNvSpPr")!.SetAttributeValue("txBox", "1");
+        shape.AddParagraph(text);
+
+        return shape;
+    }
+
+    /// <summary>
+    /// Adds a shape anchored to this paragraph.
+    /// </summary>
+    /// <param name="geometry">The outline.</param>
+    /// <param name="width">The shape's width.</param>
+    /// <param name="height">The shape's height.</param>
+    /// <param name="wrap">How body text flows around it; <c>null</c> puts it in the line of text.</param>
+    /// <param name="altText">Alternative text, for screen readers.</param>
+    /// <remarks>
+    /// The shape floats at the paragraph's own origin until <see cref="Shape.MoveTo"/> says
+    /// otherwise. An inline shape — <paramref name="wrap"/> of <c>null</c> — has no position at all;
+    /// it is laid out as if it were one very large character.
+    /// </remarks>
+    public Shape AddShape(ShapeGeometry geometry, Length width, Length height,
+        TextWrap? wrap = TextWrap.Square, string? altText = null)
+    {
+        var run = new XElement(Ns.W + "r");
+        Element.Add(run);
+
+        _document.Touch();
+
+        return Shape.Create(_document, run, Shape.PresetName(geometry), width, height, wrap, altText);
+    }
+
+    /// <summary>Every shape anchored to this paragraph, in document order.</summary>
+    public IReadOnlyList<Shape> Shapes =>
+    [
+        .. Element.Descendants(Ns.W + "drawing")
+            .Where(d => d.Descendants(Ns.Wps + "wsp").Any())
+            .Select(d => new Shape(_document, d)),
+    ];
 
     private Note AddNote(string text, NoteKind kind)
     {

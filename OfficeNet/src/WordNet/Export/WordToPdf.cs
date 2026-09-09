@@ -112,6 +112,12 @@ public static class WordToPdf
         private double _noteAreaHeight;
         private int _nextNoteNumber = 1;
 
+        // Floating objects met on the page being laid out. Their rectangles stay for the rest of the
+        // page so that later lines flow around them; the ones that belong in front of the text are
+        // held back and painted when the page is finished, since PDF has no z-order but paint order.
+        private readonly List<Exclusion> _floats = [];
+        private readonly List<Action<PdfCanvas>> _deferredFloats = [];
+
         public LayoutEngine(WordDocument document, PdfDocument pdf, Section section,
             PdfExportOptions options)
         {
@@ -158,6 +164,7 @@ public static class WordToPdf
         public void Finish()
         {
             DrawPageNotes();
+            DrawDeferredFloats();
 
             _canvas?.Dispose();
             _canvas = null;
@@ -181,8 +188,10 @@ public static class WordToPdf
             // The page's footnotes are drawn last but belong at its foot, which is why the space
             // was reserved as the references were met rather than found at the end.
             DrawPageNotes();
+            DrawDeferredFloats();
 
             _canvas?.Dispose();
+            _floats.Clear();
 
             _page = _pdf.Pages.Add(_pageBox);
             _pages.Add(_page);
@@ -413,9 +422,22 @@ public static class WordToPdf
 
             if (_options.IncludeImages)
             {
-                foreach (var run in runs.Where(r => r.HasDrawing))
+                // An anchored drawing floats: it is placed once, at its own coordinates, and the
+                // lines that follow flow around it. An inline one is laid out where it sits, like a
+                // very large character. Sending both down the inline path — which is what a flowing
+                // engine does by default — puts every text box in the wrong place and pushes the
+                // paragraph down by its height.
+                foreach (var drawing in runs.Where(r => r.HasDrawing)
+                             .SelectMany(r => r.Element.Elements(Ns.W + "drawing")))
                 {
-                    DrawInlineImage(run, contentLeft, contentWidth, alignment);
+                    if (drawing.Element(Ns.Wp + "anchor") is { } anchored)
+                    {
+                        PlaceFloating(drawing, anchored, contentLeft, contentWidth);
+                    }
+                    else
+                    {
+                        DrawInlineDrawing(drawing, contentLeft, contentWidth, alignment);
+                    }
                 }
             }
 
@@ -433,17 +455,32 @@ public static class WordToPdf
                 segments.Add(new Segment(string.Empty, baseFormat));
             }
 
-            var lines = WrapSegments(segments, contentWidth, firstLineIndent,
-                bulletText is null ? 0 : 18);
+            var filler = new LineFiller(segments);
+            var bulletIndent = bulletText is null ? 0 : 18;
 
-            for (var i = 0; i < lines.Count; i++)
+            for (var i = 0; !filler.AtEnd; i++)
             {
                 EnsureSpace(lineHeight);
 
-                var line = lines[i];
                 var indent = i == 0 ? Math.Max(0, firstLineIndent) : 0;
-                var lineLeft = contentLeft + indent + (bulletText is not null ? 18 : 0);
-                var lineWidth = contentWidth - indent - (bulletText is not null ? 18 : 0);
+                var slotLeft = contentLeft + indent + bulletIndent;
+                var slotWidth = contentWidth - indent - bulletIndent;
+
+                // The width has to be settled here rather than up front, because it depends on which
+                // floats this line is level with, and that depends on where the cursor has reached.
+                var (lineLeft, lineWidth) = FreeSpan(slotLeft, slotWidth, lineHeight);
+
+                if (lineWidth < MinimumLineWidth)
+                {
+                    // Not enough room beside a float for even a short word. Step down past it rather
+                    // than setting text on top of it. This terminates: the cursor only moves down,
+                    // and the next page starts with no floats on it.
+                    _cursor += lineHeight;
+                    i--;
+                    continue;
+                }
+
+                var line = filler.Next(lineWidth);
 
                 if (i == 0 && bulletText is not null)
                 {
@@ -451,11 +488,12 @@ public static class WordToPdf
                     canvas.SetFont(StandardFonts.Match(baseFormat.FontFamily, false, false),
                         baseFormat.SizePoints);
                     canvas.SetFillColor(baseFormat.Color);
-                    canvas.DrawText(bulletText, contentLeft, _cursor + baseFormat.SizePoints * 0.85);
+                    canvas.DrawText(bulletText, lineLeft - bulletIndent,
+                        _cursor + baseFormat.SizePoints * 0.85);
                 }
 
                 // The last line of a justified paragraph is set flush left, as typesetting requires.
-                var effectiveAlignment = alignment == ParagraphAlignment.Justify && i == lines.Count - 1
+                var effectiveAlignment = alignment == ParagraphAlignment.Justify && filler.AtEnd
                     ? ParagraphAlignment.Left
                     : alignment;
 
@@ -678,67 +716,107 @@ public static class WordToPdf
 
         private readonly record struct LinePiece(string Text, Effective Format);
 
-        private List<List<LinePiece>> WrapSegments(List<Segment> segments, double width,
+        private static List<List<LinePiece>> WrapSegments(List<Segment> segments, double width,
             double firstLineIndent, double bulletIndent)
         {
+            var filler = new LineFiller(segments);
             var lines = new List<List<LinePiece>>();
-            var current = new List<LinePiece>();
-            double used = 0;
-
             var available = width - Math.Max(0, firstLineIndent) - bulletIndent;
 
-            foreach (var segment in segments)
+            while (!filler.AtEnd)
             {
-                var font = StandardFonts.Match(segment.Format.FontFamily, segment.Format.Bold,
-                    segment.Format.Italic);
-
-                // Splitting on spaces but keeping them attached to the preceding word is what makes
-                // the measured width match what is drawn.
-                foreach (var word in SplitWords(segment.Text))
-                {
-                    var wordWidth = StandardFonts.MeasurePoints(font, word, segment.Format.SizePoints);
-
-                    // A footnote marker belongs to the word before it. Letting it wrap on its own
-                    // leaves a bare superscript digit at the start of a line, which reads as a
-                    // typesetting error rather than as a reference.
-                    if (segment.Format.Superscript && current.Count > 0)
-                    {
-                        current.Add(new LinePiece(word, segment.Format));
-                        used += wordWidth;
-                        continue;
-                    }
-
-                    if (used + wordWidth > available && current.Count > 0)
-                    {
-                        lines.Add(current);
-                        current = [];
-                        used = 0;
-                        available = width - bulletIndent;
-
-                        // A wrapped line never starts with a space.
-                        var trimmed = word.TrimStart();
-                        if (trimmed.Length == 0)
-                        {
-                            continue;
-                        }
-
-                        wordWidth = StandardFonts.MeasurePoints(font, trimmed, segment.Format.SizePoints);
-                        current.Add(new LinePiece(trimmed, segment.Format));
-                        used += wordWidth;
-                        continue;
-                    }
-
-                    current.Add(new LinePiece(word, segment.Format));
-                    used += wordWidth;
-                }
-            }
-
-            if (current.Count > 0)
-            {
-                lines.Add(current);
+                lines.Add(filler.Next(available));
+                available = width - bulletIndent;
             }
 
             return lines;
+        }
+
+        /// <summary>
+        /// Fills one line at a time, so the width can change from line to line.
+        /// </summary>
+        /// <remarks>
+        /// Wrapping a whole paragraph at one fixed width is simpler, and wrong the moment something
+        /// floats beside it: the lines level with a text box are narrower than the ones above and
+        /// below it. The width is therefore asked for per line, once the cursor is known and the
+        /// floats it passes are known with it.
+        /// </remarks>
+        private sealed class LineFiller
+        {
+            private readonly List<(string Word, Effective Format, StandardFont Font, double Width)> _words = [];
+            private int _index;
+
+            public LineFiller(List<Segment> segments)
+            {
+                foreach (var segment in segments)
+                {
+                    var font = StandardFonts.Match(segment.Format.FontFamily, segment.Format.Bold,
+                        segment.Format.Italic);
+
+                    // Splitting on spaces but keeping each space attached to the word before it is
+                    // what makes the measured width match what is drawn.
+                    foreach (var word in SplitWords(segment.Text))
+                    {
+                        _words.Add((word, segment.Format, font,
+                            StandardFonts.MeasurePoints(font, word, segment.Format.SizePoints)));
+                    }
+                }
+            }
+
+            /// <summary>Whether every word has been placed.</summary>
+            public bool AtEnd => _index >= _words.Count;
+
+            /// <summary>Takes as many words as fit in <paramref name="available"/> points.</summary>
+            public List<LinePiece> Next(double available)
+            {
+                var line = new List<LinePiece>();
+                double used = 0;
+
+                while (_index < _words.Count)
+                {
+                    var (word, format, font, width) = _words[_index];
+
+                    if (line.Count == 0)
+                    {
+                        // A line never starts with a space — it would print as an indent nobody asked
+                        // for, and a different one on every line.
+                        var trimmed = word.TrimStart();
+
+                        if (trimmed.Length == 0)
+                        {
+                            _index++;
+                            continue;
+                        }
+
+                        if (trimmed.Length != word.Length)
+                        {
+                            word = trimmed;
+                            width = StandardFonts.MeasurePoints(font, trimmed, format.SizePoints);
+                        }
+                    }
+                    else if (format.Superscript)
+                    {
+                        // A footnote marker belongs to the word before it. Letting it wrap on its own
+                        // leaves a bare superscript digit at the start of a line, which reads as a
+                        // typesetting error rather than as a reference.
+                        line.Add(new LinePiece(word, format));
+                        used += width;
+                        _index++;
+                        continue;
+                    }
+
+                    if (used + width > available && line.Count > 0)
+                    {
+                        return line;
+                    }
+
+                    line.Add(new LinePiece(word, format));
+                    used += width;
+                    _index++;
+                }
+
+                return line;
+            }
         }
 
         private static IEnumerable<string> SplitWords(string text)
@@ -764,10 +842,20 @@ public static class WordToPdf
         }
 
         private void DrawLine(List<LinePiece> pieces, double x, double width, double lineHeight,
-            ParagraphAlignment alignment)
-        {
-            var canvas = _canvas!;
+            ParagraphAlignment alignment) =>
+            DrawLineOn(_canvas!, pieces, x, width, _cursor, lineHeight, alignment);
 
+        /// <summary>
+        /// Sets one line on a given canvas at a given top.
+        /// </summary>
+        /// <remarks>
+        /// Taking both explicitly is what lets a shape reuse the whole of this: its text is laid out
+        /// inside its own box rather than at the page cursor, and duplicating the baseline and
+        /// justification arithmetic to say so is how the two quietly drift apart.
+        /// </remarks>
+        private static void DrawLineOn(PdfCanvas canvas, List<LinePiece> pieces, double x,
+            double width, double top, double lineHeight, ParagraphAlignment alignment)
+        {
             var totalWidth = pieces.Sum(p => StandardFonts.MeasurePoints(
                 StandardFonts.Match(p.Format.FontFamily, p.Format.Bold, p.Format.Italic),
                 p.Text, p.Format.SizePoints));
@@ -792,7 +880,7 @@ public static class WordToPdf
             }
 
             var maxSize = pieces.Max(p => p.Format.SizePoints);
-            var baseline = _cursor + lineHeight - (lineHeight - maxSize) / 2 - maxSize * 0.22;
+            var baseline = top + lineHeight - (lineHeight - maxSize) / 2 - maxSize * 0.22;
 
             foreach (var piece in pieces)
             {
@@ -865,61 +953,501 @@ public static class WordToPdf
             }
         }
 
-        private void DrawInlineImage(Run run, double x, double width, ParagraphAlignment alignment)
+        private void DrawInlineDrawing(XElement drawing, double x, double width,
+            ParagraphAlignment alignment)
         {
-            var blip = run.Element.Descendants(Ns.A + "blip").FirstOrDefault();
-            var embedId = blip?.Attr(Ns.R + "embed");
+            var extent = drawing.Descendants(Ns.Wp + "extent").FirstOrDefault();
+            var drawnWidth = Length.FromEmu(extent.LongAttr("cx")).Points;
+            var drawnHeight = Length.FromEmu(extent.LongAttr("cy")).Points;
 
-            if (embedId is null)
+            if (drawnWidth <= 0 || drawnHeight <= 0)
             {
                 return;
             }
 
-            var part = _document.DocumentPart.RelatedPart(embedId);
-            if (part is null)
-            {
-                return;
-            }
-
-            var extent = run.Element.Descendants(Ns.Wp + "extent").FirstOrDefault();
-            var imageWidth = Length.FromEmu(extent.LongAttr("cx")).Points;
-            var imageHeight = Length.FromEmu(extent.LongAttr("cy")).Points;
-
-            if (imageWidth <= 0 || imageHeight <= 0)
-            {
-                return;
-            }
-
-            // An image wider than the text column is scaled down rather than clipped, which is what
+            // An object wider than the text column is scaled down rather than clipped, which is what
             // Word does when a picture is pasted at full resolution.
-            if (imageWidth > width)
+            if (drawnWidth > width)
             {
-                imageHeight *= width / imageWidth;
-                imageWidth = width;
+                drawnHeight *= width / drawnWidth;
+                drawnWidth = width;
             }
 
-            EnsureSpace(imageHeight);
+            EnsureSpace(drawnHeight);
 
             var offset = alignment switch
             {
-                ParagraphAlignment.Center => (width - imageWidth) / 2,
-                ParagraphAlignment.Right => width - imageWidth,
+                ParagraphAlignment.Center => (width - drawnWidth) / 2,
+                ParagraphAlignment.Right => width - drawnWidth,
                 _ => 0,
             };
 
+            Paint(_canvas!, drawing, x + Math.Max(0, offset), _cursor, drawnWidth, drawnHeight);
+
+            _cursor += drawnHeight + 6;
+        }
+
+        /// <summary>
+        /// Places an anchored drawing at its own coordinates and records the space it takes from the
+        /// text.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// The position is an offset from something the anchor names, and the names do not all mean
+        /// the same origin: <c>page</c> counts from the paper edge, <c>margin</c> and <c>column</c>
+        /// from the text area, <c>paragraph</c> from wherever this paragraph has reached. Reading all
+        /// four as one origin puts objects a margin out of place, consistently enough to look
+        /// deliberate.
+        /// </para>
+        /// <para>
+        /// The float is painted before the text so the text sits over it, which is what a watermark
+        /// and a filled box both want. Only <c>InFrontOfText</c> needs the other order, and that one
+        /// is held back until the page is finished.
+        /// </para>
+        /// </remarks>
+        private void PlaceFloating(XElement drawing, XElement anchor, double contentLeft,
+            double contentWidth)
+        {
+            var extent = anchor.Element(Ns.Wp + "extent");
+            var width = Length.FromEmu(extent.LongAttr("cx")).Points;
+            var height = Length.FromEmu(extent.LongAttr("cy")).Points;
+
+            if (width <= 0 || height <= 0)
+            {
+                return;
+            }
+
+            var x = Origin(anchor, Ns.Wp + "positionH", horizontal: true, contentLeft) +
+                    Offset(anchor, Ns.Wp + "positionH");
+
+            var y = Origin(anchor, Ns.Wp + "positionV", horizontal: false, contentLeft) +
+                    Offset(anchor, Ns.Wp + "positionV");
+
+            // A float positioned off the page comes from a template that assumed different paper.
+            // Clamping keeps it visible instead of silently dropping it.
+            x = Math.Clamp(x, 0, Math.Max(0, _pageBox.Width - width));
+            y = Math.Max(0, y);
+
+            var wrap = WrapOf(anchor);
+
+            if (wrap is FloatWrap.InFrontOfText)
+            {
+                // Captured by value, so the page it was met on is the page it lands on.
+                var (px, py, pw, ph) = (x, y, width, height);
+                _deferredFloats.Add(canvas => Paint(canvas, drawing, px, py, pw, ph));
+            }
+            else
+            {
+                Paint(_canvas!, drawing, x, y, width, height);
+            }
+
+            if (wrap is FloatWrap.None)
+            {
+                return;
+            }
+
+            // The gaps Word keeps between the object and the text flowing past it.
+            var gapLeft = Length.FromEmu(anchor.LongAttr("distL")).Points;
+            var gapRight = Length.FromEmu(anchor.LongAttr("distR")).Points;
+            var gapTop = Length.FromEmu(anchor.LongAttr("distT")).Points;
+            var gapBottom = Length.FromEmu(anchor.LongAttr("distB")).Points;
+
+            // Top-and-bottom wrap stops the text rather than narrowing it, which is the same thing as
+            // an exclusion spanning the whole column.
+            var (excludeLeft, excludeRight) = wrap == FloatWrap.TopAndBottom
+                ? (contentLeft, contentLeft + contentWidth)
+                : (x - gapLeft, x + width + gapRight);
+
+            _floats.Add(new Exclusion(excludeLeft, y - gapTop, excludeRight, y + height + gapBottom));
+        }
+
+        private void DrawDeferredFloats()
+        {
+            if (_canvas is not { } canvas)
+            {
+                _deferredFloats.Clear();
+                return;
+            }
+
+            foreach (var paint in _deferredFloats)
+            {
+                paint(canvas);
+            }
+
+            _deferredFloats.Clear();
+        }
+
+        /// <summary>What an anchor offset is measured from, in page points.</summary>
+        private double Origin(XElement anchor, XName position, bool horizontal, double contentLeft) =>
+            anchor.Element(position)?.Attr("relativeFrom") switch
+            {
+                "page" => 0,
+                "margin" => horizontal ? _left : _top,
+                "character" => contentLeft,
+                "line" or "paragraph" => horizontal ? _left : _cursor,
+                // "column" and anything unrecognised: the text area, which is where Word puts it in a
+                // single-column document and the closest honest answer in a multi-column one.
+                _ => horizontal ? _left : _cursor,
+            };
+
+        private static double Offset(XElement anchor, XName position) =>
+            Length.FromEmu(
+                long.TryParse(anchor.Element(position)?.Element(Ns.Wp + "posOffset")?.Value,
+                    CultureInfo.InvariantCulture, out var emu) ? emu : 0).Points;
+
+        private enum FloatWrap { None, Square, TopAndBottom, InFrontOfText }
+
+        private static FloatWrap WrapOf(XElement anchor)
+        {
+            if (anchor.Element(Ns.Wp + "wrapSquare") is not null ||
+                anchor.Element(Ns.Wp + "wrapTight") is not null ||
+                anchor.Element(Ns.Wp + "wrapThrough") is not null)
+            {
+                // Tight and through follow the object outline rather than its box. Doing that
+                // properly means intersecting every line with the wrap polygon; the box is a visible
+                // approximation rather than a wrong answer.
+                return FloatWrap.Square;
+            }
+
+            if (anchor.Element(Ns.Wp + "wrapTopAndBottom") is not null)
+            {
+                return FloatWrap.TopAndBottom;
+            }
+
+            // wrapNone covers both no-wrap cases, and behindDoc is what tells them apart.
+            return anchor.Attr("behindDoc") == "1" ? FloatWrap.None : FloatWrap.InFrontOfText;
+        }
+
+        /// <summary>A rectangle text may not enter, in page points with y growing downwards.</summary>
+        private readonly record struct Exclusion(double Left, double Top, double Right, double Bottom);
+
+        /// <summary>The narrowest line worth setting beside a float.</summary>
+        private const double MinimumLineWidth = 36;
+
+        /// <summary>
+        /// The widest run of a line slot that no float occupies.
+        /// </summary>
+        /// <remarks>
+        /// Word can break one line into several pieces around several objects. This takes the widest
+        /// single gap instead, which is the same answer whenever one object floats beside the text —
+        /// the case that covers pull quotes, logos and side figures — and a narrower one when two do.
+        /// </remarks>
+        private (double Left, double Width) FreeSpan(double left, double width, double lineHeight)
+        {
+            if (_floats.Count == 0)
+            {
+                return (left, width);
+            }
+
+            var top = _cursor;
+            var bottom = _cursor + lineHeight;
+
+            var blocking = _floats
+                .Where(f => f.Top < bottom && f.Bottom > top)
+                .OrderBy(f => f.Left)
+                .ToList();
+
+            if (blocking.Count == 0)
+            {
+                return (left, width);
+            }
+
+            var bestLeft = left;
+            double bestWidth = 0;
+            var cursor = left;
+
+            foreach (var block in blocking)
+            {
+                var gap = Math.Min(block.Left, left + width) - cursor;
+
+                if (gap > bestWidth)
+                {
+                    (bestLeft, bestWidth) = (cursor, gap);
+                }
+
+                cursor = Math.Max(cursor, block.Right);
+            }
+
+            var tail = left + width - cursor;
+
+            if (tail > bestWidth)
+            {
+                (bestLeft, bestWidth) = (cursor, tail);
+            }
+
+            return (bestLeft, Math.Max(0, bestWidth));
+        }
+
+        /// <summary>Draws whatever a <c>w:drawing</c> holds: a picture, or a shape.</summary>
+        private void Paint(PdfCanvas canvas, XElement drawing, double x, double y,
+            double width, double height)
+        {
+            if (drawing.Descendants(Ns.Wps + "wsp").FirstOrDefault() is { } shape)
+            {
+                PaintShape(canvas, shape, x, y, width, height);
+                return;
+            }
+
+            PaintPicture(canvas, drawing, x, y, width, height);
+        }
+
+        private void PaintPicture(PdfCanvas canvas, XElement drawing, double x, double y,
+            double width, double height)
+        {
+            var embedId = drawing.Descendants(Ns.A + "blip").FirstOrDefault()?.Attr(Ns.R + "embed");
+
+            if (embedId is null || _document.DocumentPart.RelatedPart(embedId) is not { } part)
+            {
+                return;
+            }
+
             try
             {
-                _canvas!.DrawImage(part.GetBytes(), x + Math.Max(0, offset), _cursor,
-                    imageWidth, imageHeight);
+                canvas.DrawImage(part.GetBytes(), x, y, width, height);
             }
             catch (OfficeNetException)
             {
                 // A format PdfNet cannot embed (GIF, TIFF, a metafile) leaves a gap rather than
                 // aborting the whole export.
             }
-
-            _cursor += imageHeight + 6;
         }
+
+        /// <summary>
+        /// Draws a shape: its outline, its fill, and any text inside it.
+        /// </summary>
+        /// <remarks>
+        /// The geometry is a preset name out of a list of some two hundred. Six of them cover almost
+        /// everything anyone puts in a Word document, and the rest fall back to a rectangle: a shape
+        /// drawn as the wrong outline still holds the right words in the right place, which is a
+        /// better failure than a blank hole.
+        /// </remarks>
+        private void PaintShape(PdfCanvas canvas, XElement shape, double x, double y,
+            double width, double height)
+        {
+            var properties = shape.Element(Ns.Wps + "spPr");
+            var fill = SolidColor(properties?.Element(Ns.A + "solidFill"));
+            var outline = properties?.Element(Ns.A + "ln");
+            var stroke = SolidColor(outline?.Element(Ns.A + "solidFill"));
+            var strokeWidth = Length.FromEmu(outline.LongAttr("w")).Points;
+
+            // An outline with a colour and no width is Word saying "use the default", not "hairline".
+            if (stroke is not null && strokeWidth <= 0)
+            {
+                strokeWidth = 0.75;
+            }
+
+            var rotation = properties?.Element(Ns.A + "xfrm")?.Attr("rot") is { } rot &&
+                           long.TryParse(rot, CultureInfo.InvariantCulture, out var units)
+                ? units / 60000.0
+                : 0;
+
+            var geometry = properties?.Element(Ns.A + "prstGeom")?.Attr("prst") ?? "rect";
+
+            canvas.Save();
+
+            if (rotation != 0)
+            {
+                // DrawingML rotates about the centre of the box, clockwise, in a top-down system.
+                // The canvas flips y per drawing call rather than through the matrix, so the centre
+                // has to be named in PDF space — y up from the bottom of the page — or the rotation
+                // turns about a point reflected across the middle of the sheet and the shape lands
+                // somewhere else entirely. Translate() is no use here for the same reason: it negates
+                // dy for top-down callers, which does not compose either side of a rotation.
+                var centreX = x + width / 2;
+                var centreY = _pageBox.Height - (y + height / 2);
+
+                canvas.Transform(1, 0, 0, 1, centreX, centreY);
+                canvas.Rotate(-rotation);
+                canvas.Transform(1, 0, 0, 1, -centreX, -centreY);
+            }
+
+            if (fill is not null || stroke is not null)
+            {
+                if (fill is { } fillColor)
+                {
+                    canvas.SetFillColor(fillColor);
+                }
+
+                if (stroke is { } strokeColor)
+                {
+                    canvas.SetStrokeColor(strokeColor);
+                    canvas.SetLineWidth(strokeWidth);
+                }
+
+                Trace(canvas, geometry, x, y, width, height);
+
+                if (fill is not null && stroke is not null)
+                {
+                    canvas.FillAndStroke();
+                }
+                else if (fill is not null)
+                {
+                    canvas.Fill();
+                }
+                else
+                {
+                    canvas.Stroke();
+                }
+            }
+
+            // Inside the transform, so the text turns with the box it sits in.
+            PaintShapeText(canvas, shape, x, y, width, height);
+
+            canvas.Restore();
+        }
+
+        /// <summary>Traces a preset geometry as a path, ready to fill or stroke.</summary>
+        private static void Trace(PdfCanvas canvas, string geometry, double x, double y,
+            double width, double height)
+        {
+            switch (geometry)
+            {
+                case "ellipse":
+                    canvas.Ellipse(x, y, width, height);
+                    break;
+
+                case "roundRect":
+                case "wedgeRoundRectCallout":
+                    // Word measures the corner as a fraction of the shorter side; this is its default.
+                    canvas.RoundedRectangle(x, y, width, height, Math.Min(width, height) * 0.16667);
+                    break;
+
+                case "line":
+                case "straightConnector1":
+                    canvas.MoveTo(x, y);
+                    canvas.LineTo(x + width, y + height);
+                    break;
+
+                case "triangle":
+                    canvas.MoveTo(x + width / 2, y);
+                    canvas.LineTo(x + width, y + height);
+                    canvas.LineTo(x, y + height);
+                    canvas.ClosePath();
+                    break;
+
+                case "diamond":
+                    canvas.MoveTo(x + width / 2, y);
+                    canvas.LineTo(x + width, y + height / 2);
+                    canvas.LineTo(x + width / 2, y + height);
+                    canvas.LineTo(x, y + height / 2);
+                    canvas.ClosePath();
+                    break;
+
+                case "hexagon":
+                    var inset = width * 0.25;
+                    canvas.MoveTo(x + inset, y);
+                    canvas.LineTo(x + width - inset, y);
+                    canvas.LineTo(x + width, y + height / 2);
+                    canvas.LineTo(x + width - inset, y + height);
+                    canvas.LineTo(x + inset, y + height);
+                    canvas.LineTo(x, y + height / 2);
+                    canvas.ClosePath();
+                    break;
+
+                case "star5":
+                    TraceStar(canvas, x + width / 2, y + height / 2, width / 2, height / 2);
+                    break;
+
+                default:
+                    canvas.Rectangle(x, y, width, height);
+                    break;
+            }
+        }
+
+        private static void TraceStar(PdfCanvas canvas, double centreX, double centreY,
+            double radiusX, double radiusY)
+        {
+            // Ten points alternating between the outer and inner radius. The inner one is the ratio
+            // that makes a five-pointed star look like one.
+            const double InnerRatio = 0.382;
+
+            for (var i = 0; i < 10; i++)
+            {
+                var angle = -Math.PI / 2 + i * Math.PI / 5;
+                var scale = i % 2 == 0 ? 1 : InnerRatio;
+
+                var pointX = centreX + Math.Cos(angle) * radiusX * scale;
+                var pointY = centreY + Math.Sin(angle) * radiusY * scale;
+
+                if (i == 0)
+                {
+                    canvas.MoveTo(pointX, pointY);
+                }
+                else
+                {
+                    canvas.LineTo(pointX, pointY);
+                }
+            }
+
+            canvas.ClosePath();
+        }
+
+        /// <summary>Sets a shape text inside its box, clipped to it.</summary>
+        /// <remarks>
+        /// The insets come from <c>wps:bodyPr</c> and default to Word own: a tenth of an inch left
+        /// and right, half that above and below. Ignoring them puts the first character hard against
+        /// the outline, which is the single most obvious sign of a shape drawn by something other
+        /// than Word.
+        /// </remarks>
+        private void PaintShapeText(PdfCanvas canvas, XElement shape, double x, double y,
+            double width, double height)
+        {
+            var content = shape.Element(Ns.Wps + "txbx")?.Element(Ns.W + "txbxContent");
+
+            if (content is null)
+            {
+                return;
+            }
+
+            var body = shape.Element(Ns.Wps + "bodyPr");
+            var insetLeft = Inset(body, "lIns", 91440);
+            var insetRight = Inset(body, "rIns", 91440);
+            var insetTop = Inset(body, "tIns", 45720);
+            var insetBottom = Inset(body, "bIns", 45720);
+
+            var textLeft = x + insetLeft;
+            var textWidth = Math.Max(1, width - insetLeft - insetRight);
+            var textBottom = y + height - insetBottom;
+            var cursor = y + insetTop;
+
+            foreach (var element in content.Elements(Ns.W + "p"))
+            {
+                var paragraph = new Paragraph(_document, element);
+                var runs = paragraph.Runs;
+                var format = Resolve(runs.FirstOrDefault(), paragraph);
+                var (before, after, lineHeight, alignment, _, _, _) =
+                    ResolveParagraph(paragraph, format.SizePoints);
+
+                cursor += before;
+
+                foreach (var line in WrapSegments(BuildSegments(runs, paragraph), textWidth, 0, 0))
+                {
+                    // Text past the bottom of the box is clipped by Word too — it simply stops being
+                    // visible. Drawing it anyway would spill words across the page.
+                    if (cursor + lineHeight > textBottom)
+                    {
+                        return;
+                    }
+
+                    DrawLineOn(canvas, line, textLeft, textWidth, cursor, lineHeight, alignment);
+                    cursor += lineHeight;
+                }
+
+                cursor += after;
+            }
+
+            static double Inset(XElement? body, string name, long fallback) =>
+                Length.FromEmu(
+                    long.TryParse(body?.Attr(name), CultureInfo.InvariantCulture, out var emu)
+                        ? emu
+                        : fallback).Points;
+        }
+
+        private static OfficeColor? SolidColor(XElement? fill) =>
+            fill?.Element(Ns.A + "srgbClr")?.Attr("val") is { } hex &&
+            OfficeColor.TryParse(hex, out var color)
+                ? color
+                : null;
 
         // ---- Tables ------------------------------------------------------------------------------
 

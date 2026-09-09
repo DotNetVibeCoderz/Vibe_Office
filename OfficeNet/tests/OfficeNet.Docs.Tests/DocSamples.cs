@@ -25,6 +25,9 @@ using WordNet.Styles;
 using WordNet;
 using Xunit;
 
+// WordNet and PowerPointNet both define ShapeGeometry, and only this file imports both.
+using WordDrawing = WordNet.Drawing;
+
 namespace OfficeNet.Docs.Tests;
 
 /// <summary>
@@ -158,6 +161,50 @@ public class DocSamples : IDisposable
         document.AddSection(SectionStart.NextPage);
 
         Assert.Equal(2, document.Sections.Count);
+    }
+
+    [Fact]
+    public void WordNet_TextBoxesAndShapes()
+    {
+        using var document = WordDocument.Create();
+
+        var paragraph = document.AddParagraph(
+            "Pendapatan naik 32 persen dibanding kuartal sebelumnya, dengan pertumbuhan " +
+            "terbesar datang dari wilayah Jakarta dan Bandung.");
+
+        var quote = paragraph.AddTextBox(
+            "Marjin kotor tetap di kisaran empat puluh persen.",
+            width: Units.Cm(6), height: Units.Cm(3));
+
+        quote.FillColor = OfficeColor.FromRgb(0xF2, 0xEC, 0xE3);
+        quote.LineColor = OfficeColor.FromRgb(0x1F, 0x3A, 0x5F);
+        quote.MoveTo(Units.Cm(9), Units.Cm(0.5));
+
+        var banner = paragraph.AddShape(WordDrawing.ShapeGeometry.RoundedRectangle,
+            Units.Cm(15), Units.Cm(1.6), WordDrawing.TextWrap.TopAndBottom);
+
+        banner.FillColor = OfficeColor.FromRgb(0x1F, 0x3A, 0x5F);
+        banner.LineColor = null;
+        banner.AddParagraph("Ringkasan Operasional").Runs[0]
+            .WithBold().WithColor(OfficeColor.White);
+
+        var run = document.AddParagraph("Dengan foto.").AddRun();
+        run.AddPicture(TinyPng(), width: Units.Cm(5), wrap: WordDrawing.TextWrap.Square);
+        run.Drawings[0].MoveTo(Units.Cm(10), Units.Cm(0));
+
+        // Two, not three: a picture is a drawing but not a shape, and Shapes says so.
+        Assert.Equal(2, document.Shapes.Count);
+        Assert.True(run.Drawings[0].IsFloating);
+
+        // An inline drawing has no position, and says so rather than moving nothing.
+        var inline = document.AddParagraph().AddShape(
+            WordDrawing.ShapeGeometry.Star, Units.Cm(2), Units.Cm(2), wrap: null);
+
+        Assert.False(inline.IsFloating);
+        Assert.Throws<OfficeNetException>(() => inline.MoveTo(Units.Cm(1), Units.Cm(1)));
+
+        using var pdf = WordNet.Export.WordToPdf.Convert(document);
+        Assert.True(pdf.Pages.Count >= 1);
     }
 
     [Fact]

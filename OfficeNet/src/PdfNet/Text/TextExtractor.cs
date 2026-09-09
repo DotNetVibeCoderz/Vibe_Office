@@ -13,15 +13,24 @@ namespace PdfNet.Text;
 /// <param name="Width">The advance width in points.</param>
 /// <param name="FontSize">The effective font size in points.</param>
 /// <param name="FontName">The font's base name, when known.</param>
+/// <param name="Rotation">
+/// The baseline's angle in degrees, anticlockwise from horizontal. Zero for the overwhelming
+/// majority of text; non-zero for a rotated stamp, a sideways table header, or a watermark.
+/// </param>
 public readonly record struct TextFragment(
     string Text,
     double X,
     double Y,
     double Width,
     double FontSize,
-    string? FontName)
+    string? FontName,
+    double Rotation = 0)
 {
-    /// <summary>The right edge of the fragment.</summary>
+    /// <summary>The right edge of the fragment, for horizontal text.</summary>
+    /// <remarks>
+    /// Meaningless once <see cref="Rotation"/> is non-zero: a fragment turned ninety degrees ends
+    /// directly above where it started, not to the right of it.
+    /// </remarks>
     public double Right => X + Width;
 
     public override string ToString() => $"\"{Text}\" @ ({X:0.#}, {Y:0.#}) {FontSize:0.#}pt";
@@ -343,7 +352,7 @@ public static class TextExtractor
         if (builder.Length > 0)
         {
             var (x, y) = Transform(startMatrix, state.Ctm, 0, state.Rise);
-            var (x2, _) = Transform(startMatrix, state.Ctm, totalAdvance, state.Rise);
+            var (x2, y2) = Transform(startMatrix, state.Ctm, totalAdvance, state.Rise);
 
             // Scale is the CTM's effect on a vertical unit, which is what makes a fragment inside a
             // scaled form XObject report the size it visually appears at.
@@ -353,13 +362,25 @@ public static class TextExtractor
                 scale = 1;
             }
 
+            // The advance is measured along the baseline, not across the page. Taking the
+            // horizontal projection instead reports a rotated fragment as narrower than it is, and
+            // a vertical one as having no width at all.
+            var runWidth = Math.Sqrt(((x2 - x) * (x2 - x)) + ((y2 - y) * (y2 - y)));
+
+            var rotation = runWidth > 0
+                ? Math.Atan2(y2 - y, x2 - x) * 180 / Math.PI
+                : 0;
+
             fragments.Add(new TextFragment(
                 builder.ToString(),
                 x,
                 y,
-                Math.Abs(x2 - x),
+                runWidth,
                 state.FontSize * scale * Math.Abs(state.TextMatrix[3] == 0 ? 1 : state.TextMatrix[3]),
-                font.BaseFont));
+                font.BaseFont,
+                // Rounded, because floating-point drift makes upright text report angles like 1e-15
+                // and every consumer then treats it as rotated.
+                Math.Abs(rotation) < 0.01 ? 0 : rotation));
         }
 
         state.TextMatrix = Multiply([1, 0, 0, 1, totalAdvance, 0], state.TextMatrix);

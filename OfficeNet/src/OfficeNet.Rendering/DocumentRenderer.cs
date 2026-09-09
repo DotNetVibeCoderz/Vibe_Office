@@ -345,7 +345,19 @@ public static class DocumentRenderer
         var x = (float)((fragment.X - box.Left) * scale);
         var y = (float)((box.Top - fragment.Y) * scale);
 
+        if (fragment.Rotation == 0)
+        {
+            canvas.DrawText(fragment.Text, x, y, SKTextAlign.Left, font, paint);
+            return;
+        }
+
+        // The baseline is turned, so the canvas turns with it, about the fragment's own origin. The
+        // angle is negated because PDF measures anticlockwise from a y axis that points up and Skia
+        // clockwise from one that points down.
+        canvas.Save();
+        canvas.RotateDegrees((float)-fragment.Rotation, x, y);
         canvas.DrawText(fragment.Text, x, y, SKTextAlign.Left, font, paint);
+        canvas.Restore();
     }
 
     private static readonly Dictionary<string, SKTypeface> TypefaceCache = new(StringComparer.Ordinal);

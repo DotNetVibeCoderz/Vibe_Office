@@ -263,6 +263,86 @@ document.AddPicture(bytes, width: Units.Cm(6), height: Units.Cm(3));
 Aspect ratio is preserved when only one dimension is given. PNG, JPEG, GIF, BMP and TIFF are
 recognised by content, not by file extension.
 
+## Text boxes and shapes
+
+A text box is a rectangle with words in it that floats over the page. It is what a pull quote, a
+caption, a stamp and a callout all are.
+
+```csharp
+using WordNet.Drawing;
+
+var quote = paragraph.AddTextBox(
+    "Marjin kotor tetap di kisaran empat puluh persen.",
+    width: Units.Cm(6), height: Units.Cm(3));
+
+quote.FillColor = OfficeColor.FromRgb(0xF2, 0xEC, 0xE3);
+quote.LineColor = OfficeColor.FromRgb(0x1F, 0x3A, 0x5F);
+quote.MoveTo(Units.Cm(9), Units.Cm(0.5));
+```
+
+`AddShape` takes a geometry instead: `Rectangle`, `RoundedRectangle`, `Ellipse`, `Triangle`,
+`Diamond`, `Hexagon`, `Star`, `RightArrow`, `DownArrow`, `Callout` and `Line`. The `Geometry`
+property also accepts any of DrawingML's other 180-odd preset names as a string.
+
+Every shape carries text, so `AddParagraph` works on all of them:
+
+```csharp
+var banner = paragraph.AddShape(ShapeGeometry.RoundedRectangle,
+    Units.Cm(15), Units.Cm(1.6), TextWrap.TopAndBottom);
+
+banner.FillColor = OfficeColor.FromRgb(0x1F, 0x3A, 0x5F);
+banner.LineColor = null;
+banner.AddParagraph("Ringkasan Operasional").Runs[0].WithBold().WithColor(OfficeColor.White);
+```
+
+### Floating and inline
+
+A drawing is one of two things, and they are different elements in the file:
+
+| | Element | Behaviour |
+| --- | --- | --- |
+| **Inline** — `wrap: null` | `wp:inline` | laid out as if it were one very large character |
+| **Floating** — any other wrap | `wp:anchor` | placed at its own coordinates, text flows around it |
+
+Only a floating object has a position, so `MoveTo` throws on an inline one. `MoveTo` measures from
+whatever you name — `HorizontalAnchor.Column` (the default) and `.Page`, `.Margin`, `.Character`;
+`VerticalAnchor.Paragraph` (the default) and `.Page`, `.Margin`, `.Line`.
+
+The wraps are `Square` (text down both sides), `Tight` (around the outline), `TopAndBottom` (text
+stops above and resumes below), `InFrontOfText` and `BehindText` — the last two ignore each other,
+and `BehindText` is what a watermark is.
+
+Pictures float the same way, since the container is what differs and not the content:
+
+```csharp
+run.AddPicture("foto.jpg", width: Units.Cm(5), wrap: TextWrap.Square);
+run.Drawings[0].MoveTo(Units.Cm(10), Units.Cm(0));
+```
+
+`document.Shapes` finds every shape and text box in the body; `run.Drawings` finds the ones in a
+single run, pictures included.
+
+### What Word needs, and what it will not tell you
+
+`wp:anchor` carries ten attributes with no schema defaults. Leaving one out does not degrade the
+layout — Word reports the whole document as unreadable, without saying which. OfficeNet writes all
+of them, which is the main reason to build a shape through this API rather than by hand.
+
+The shape itself lives in the `wps` namespace, a Microsoft extension rather than an ECMA one: the
+standard's own answer was VML, deprecated in the release that shipped it. Word 2010 and later, and
+LibreOffice, read `wps` directly. Word 2007 does not, and a fallback for it would mean writing every
+shape twice inside an `mc:AlternateContent`.
+
+### In the PDF export
+
+Floating objects are exported: the shape is drawn as a path with its fill and outline, its text is
+set inside it with Word's own insets and clipped to the box, and the body text flows around the
+space it takes.
+
+Two limits worth knowing. `Tight` and `Through` wrap around the bounding box rather than the
+outline — visibly close, not identical. And a line is broken around one object rather than several,
+so text between two floats goes to the wider side instead of filling both gaps.
+
 ## Reading a document
 
 ```csharp

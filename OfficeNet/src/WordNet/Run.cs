@@ -256,14 +256,19 @@ public sealed class Run
     }
 
     /// <summary>
-    /// Adds an inline picture to the run.
+    /// Adds a picture to the run.
     /// </summary>
     /// <param name="imageBytes">The image file.</param>
     /// <param name="width">The drawn width; the natural size is used when both are omitted.</param>
     /// <param name="height">The drawn height; computed from the aspect ratio when only one is given.</param>
     /// <param name="altText">Alternative text for accessibility.</param>
+    /// <param name="wrap">
+    /// How body text flows around it. <c>null</c>, the default, makes the picture inline — laid out
+    /// as if it were one very large character. Anything else makes it float, and
+    /// <see cref="Drawing.Shape.MoveTo"/> on the returned handle positions it.
+    /// </param>
     public Run AddPicture(byte[] imageBytes, Length? width = null, Length? height = null,
-        string? altText = null)
+        string? altText = null, Drawing.TextWrap? wrap = null)
     {
         ArgumentNullException.ThrowIfNull(imageBytes);
 
@@ -276,65 +281,58 @@ public sealed class Run
         var drawingId = _document.NextDrawingId();
         var name = $"Picture {drawingId}";
 
+        var graphic = new XElement(Ns.A + "graphic",
+            new XAttribute(XNamespace.Xmlns + "a", Ns.A.NamespaceName),
+            new XElement(Ns.A + "graphicData",
+                new XAttribute("uri", Ns.Pic.NamespaceName),
+                new XElement(Ns.Pic + "pic",
+                    new XAttribute(XNamespace.Xmlns + "pic", Ns.Pic.NamespaceName),
+                    new XElement(Ns.Pic + "nvPicPr",
+                        new XElement(Ns.Pic + "cNvPr",
+                            new XAttribute("id", "0"),
+                            new XAttribute("name", name),
+                            new XAttribute("descr", altText ?? string.Empty)),
+                        new XElement(Ns.Pic + "cNvPicPr")),
+                    new XElement(Ns.Pic + "blipFill",
+                        new XElement(Ns.A + "blip",
+                            new XAttribute(Ns.R + "embed", relationshipId)),
+                        new XElement(Ns.A + "stretch",
+                            new XElement(Ns.A + "fillRect"))),
+                    new XElement(Ns.Pic + "spPr",
+                        new XElement(Ns.A + "xfrm",
+                            new XElement(Ns.A + "off",
+                                new XAttribute("x", "0"), new XAttribute("y", "0")),
+                            new XElement(Ns.A + "ext",
+                                new XAttribute("cx", finalWidth.Emu),
+                                new XAttribute("cy", finalHeight.Emu))),
+                        new XElement(Ns.A + "prstGeom",
+                            new XAttribute("prst", "rect"),
+                            new XElement(Ns.A + "avLst"))))));
+
+        // A picture and a shape differ in what the graphicData holds and in nothing else, so the
+        // container — inline or anchored, with its five mandatory attributes — is built once, in one
+        // place, rather than written out again here with one of them quietly missing.
         var drawing = new XElement(Ns.W + "drawing",
-            new XElement(Ns.Wp + "inline",
-                new XAttribute("distT", "0"),
-                new XAttribute("distB", "0"),
-                new XAttribute("distL", "0"),
-                new XAttribute("distR", "0"),
-                new XElement(Ns.Wp + "extent",
-                    new XAttribute("cx", finalWidth.Emu),
-                    new XAttribute("cy", finalHeight.Emu)),
-                new XElement(Ns.Wp + "effectExtent",
-                    new XAttribute("l", "0"), new XAttribute("t", "0"),
-                    new XAttribute("r", "0"), new XAttribute("b", "0")),
-                new XElement(Ns.Wp + "docPr",
-                    new XAttribute("id", drawingId),
-                    new XAttribute("name", name),
-                    new XAttribute("descr", altText ?? string.Empty)),
-                new XElement(Ns.Wp + "cNvGraphicFramePr",
-                    new XElement(Ns.A + "graphicFrameLocks",
-                        new XAttribute(XNamespace.Xmlns + "a", Ns.A.NamespaceName),
-                        new XAttribute("noChangeAspect", "1"))),
-                new XElement(Ns.A + "graphic",
-                    new XAttribute(XNamespace.Xmlns + "a", Ns.A.NamespaceName),
-                    new XElement(Ns.A + "graphicData",
-                        new XAttribute("uri", Ns.Pic.NamespaceName),
-                        new XElement(Ns.Pic + "pic",
-                            new XAttribute(XNamespace.Xmlns + "pic", Ns.Pic.NamespaceName),
-                            new XElement(Ns.Pic + "nvPicPr",
-                                new XElement(Ns.Pic + "cNvPr",
-                                    new XAttribute("id", "0"),
-                                    new XAttribute("name", name),
-                                    new XAttribute("descr", altText ?? string.Empty)),
-                                new XElement(Ns.Pic + "cNvPicPr")),
-                            new XElement(Ns.Pic + "blipFill",
-                                new XElement(Ns.A + "blip",
-                                    new XAttribute(Ns.R + "embed", relationshipId)),
-                                new XElement(Ns.A + "stretch",
-                                    new XElement(Ns.A + "fillRect"))),
-                            new XElement(Ns.Pic + "spPr",
-                                new XElement(Ns.A + "xfrm",
-                                    new XElement(Ns.A + "off",
-                                        new XAttribute("x", "0"), new XAttribute("y", "0")),
-                                    new XElement(Ns.A + "ext",
-                                        new XAttribute("cx", finalWidth.Emu),
-                                        new XAttribute("cy", finalHeight.Emu))),
-                                new XElement(Ns.A + "prstGeom",
-                                    new XAttribute("prst", "rect"),
-                                    new XElement(Ns.A + "avLst"))))))));
+            Drawing.Shape.BuildContainer(drawingId, name, finalWidth, finalHeight, altText, wrap, graphic));
 
         Element.Add(drawing);
         _document.Touch();
         return this;
     }
 
-    /// <summary>Adds an inline picture from a file.</summary>
-    public Run AddPicture(string path, Length? width = null, Length? height = null, string? altText = null)
+    /// <summary>Adds a picture from a file.</summary>
+    public Run AddPicture(string path, Length? width = null, Length? height = null,
+        string? altText = null, Drawing.TextWrap? wrap = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
-        return AddPicture(File.ReadAllBytes(path), width, height, altText);
+        return AddPicture(File.ReadAllBytes(path), width, height, altText, wrap);
     }
+
+    /// <summary>The floating pictures and shapes this run holds.</summary>
+    public IReadOnlyList<Drawing.Shape> Drawings =>
+    [
+        .. Element.Elements(Ns.W + "drawing").Select(d => new Drawing.Shape(_document, d)),
+    ];
 
     private static (Length Width, Length Height) ResolveSize(ImageInfo info, Length? width, Length? height)
     {

@@ -67,14 +67,15 @@ Dibuat oleh Gravicode Studios, dipimpin oleh Kang Fadhil.
 - [x] Section — ukuran halaman (termasuk **F4/Folio**), margin, orientasi, kolom, nomor halaman
 - [x] Header & footer — default/first/even, field PAGE & NUMPAGES
 - [x] Numbering — bullet, numbered, outline multi-level
-- [x] Gambar inline dengan ukuran natural dari DPI
+- [x] Gambar inline dengan ukuran natural dari DPI, dan gambar mengambang lewat `AddPicture(wrap:)`
 - [x] Hyperlink eksternal & internal, bookmark, field, TOC
 - [x] `ReplaceText`, `ReplaceTextAcrossRuns`, `MailMerge`
 - [x] Ekspor PDF — layout mengalir, style chain, wrapping, justifikasi, tabel, header/footer
 - [x] Smoke test + **validasi struktur .docx oleh pembaca independen (python)**
-- [ ] Footnote / endnote
-- [ ] Komentar (`comments.xml`)
-- [ ] Shape / text box
+- [x] Footnote / endnote — id 0 dan 1 dicadangkan; ikut digambar di ekspor PDF
+- [x] Komentar (`comments.xml`) — termasuk mengomentari satu run saja
+- [x] Shape / text box — `wps:wsp`, sebelas geometri preset, inline dan mengambang
+- [x] Ekspor PDF objek mengambang — teks mengalir mengelilingi, shape digambar sebagai jalur
 
 ## ExcelNet — `Gravicode.OfficeNet.ExcelNet` (rewrite openpyxl + pandas)
 

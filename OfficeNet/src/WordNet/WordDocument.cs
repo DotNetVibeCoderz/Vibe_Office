@@ -7,6 +7,7 @@ using OfficeNet.Core.Documents;
 using OfficeNet.Core.Drawing;
 using OfficeNet.Core.Packaging;
 using OfficeNet.Core.Xml;
+using WordNet.Drawing;
 using WordNet.Notes;
 using WordNet.Numbering;
 using WordNet.Sections;
@@ -309,6 +310,21 @@ public sealed class WordDocument : OfficeDocument
     /// <summary>The body's paragraphs, excluding those inside tables.</summary>
     public IReadOnlyList<Paragraph> Paragraphs =>
         [.. Body.Elements(Ns.W + "p").Select(e => new Paragraph(this, e))];
+
+    /// <summary>
+    /// Every shape and text box in the body, in document order.
+    /// </summary>
+    /// <remarks>
+    /// Pictures are excluded: a <c>w:drawing</c> can hold either, and this asks for the ones that
+    /// hold a <c>wps:wsp</c>. Shapes nested inside another shape's text are included, because from a
+    /// reader's point of view they are on the page like any other.
+    /// </remarks>
+    public IReadOnlyList<Shape> Shapes =>
+    [
+        .. Body.Descendants(Ns.W + "drawing")
+            .Where(d => d.Descendants(Ns.Wps + "wsp").Any())
+            .Select(d => new Shape(this, d)),
+    ];
 
     /// <summary>The body's tables, excluding nested ones.</summary>
     public IReadOnlyList<Table> Tables =>

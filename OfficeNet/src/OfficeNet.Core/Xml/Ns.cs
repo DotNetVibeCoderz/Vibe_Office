@@ -48,6 +48,17 @@ public static class Ns
     public static readonly XNamespace Wp =
         "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing";
 
+    /// <summary>
+    /// WordprocessingShape namespace (prefix <c>wps</c>) — text boxes and shapes in a Word document.
+    /// </summary>
+    /// <remarks>
+    /// A Microsoft extension namespace rather than an ECMA one, because there is no standard way to
+    /// put a shape in a Word document: the ECMA answer was VML, which was deprecated in the same
+    /// release that shipped it. Word 2010 and later read this; Word 2007 needs a VML fallback.
+    /// </remarks>
+    public static readonly XNamespace Wps =
+        "http://schemas.microsoft.com/office/word/2010/wordprocessingShape";
+
     /// <summary>DrawingML spreadsheet drawing namespace (prefix <c>xdr</c>).</summary>
     public static readonly XNamespace Xdr =
         "http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing";

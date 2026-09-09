@@ -264,6 +264,87 @@ document.AddPicture(bytes, width: Units.Cm(6), height: Units.Cm(3));
 Rasio aspek dipertahankan bila hanya satu dimensi diberikan. PNG, JPEG, GIF, BMP, dan TIFF dikenali
 dari isinya, bukan dari ekstensi berkas.
 
+## Text box dan shape
+
+Text box adalah persegi berisi kata-kata yang mengambang di atas halaman. Kutipan, keterangan
+gambar, stempel, dan callout semuanya adalah itu.
+
+```csharp
+using WordNet.Drawing;
+
+var quote = paragraph.AddTextBox(
+    "Marjin kotor tetap di kisaran empat puluh persen.",
+    width: Units.Cm(6), height: Units.Cm(3));
+
+quote.FillColor = OfficeColor.FromRgb(0xF2, 0xEC, 0xE3);
+quote.LineColor = OfficeColor.FromRgb(0x1F, 0x3A, 0x5F);
+quote.MoveTo(Units.Cm(9), Units.Cm(0.5));
+```
+
+`AddShape` menerima bentuk sebagai gantinya: `Rectangle`, `RoundedRectangle`, `Ellipse`, `Triangle`,
+`Diamond`, `Hexagon`, `Star`, `RightArrow`, `DownArrow`, `Callout`, dan `Line`. Properti `Geometry`
+juga menerima nama preset DrawingML lainnya — ada sekitar 180 — sebagai string.
+
+Setiap shape bisa berisi teks, jadi `AddParagraph` berlaku untuk semuanya:
+
+```csharp
+var banner = paragraph.AddShape(ShapeGeometry.RoundedRectangle,
+    Units.Cm(15), Units.Cm(1.6), TextWrap.TopAndBottom);
+
+banner.FillColor = OfficeColor.FromRgb(0x1F, 0x3A, 0x5F);
+banner.LineColor = null;
+banner.AddParagraph("Ringkasan Operasional").Runs[0].WithBold().WithColor(OfficeColor.White);
+```
+
+### Mengambang dan inline
+
+Sebuah drawing adalah salah satu dari dua hal, dan keduanya elemen yang berbeda di dalam berkas:
+
+| | Elemen | Perilaku |
+| --- | --- | --- |
+| **Inline** — `wrap: null` | `wp:inline` | ditata seolah-olah satu karakter yang sangat besar |
+| **Mengambang** — wrap lainnya | `wp:anchor` | ditempatkan pada koordinatnya sendiri, teks mengalir mengelilinginya |
+
+Hanya objek mengambang yang punya posisi, jadi `MoveTo` melempar exception pada objek inline.
+`MoveTo` mengukur dari apa pun yang Anda sebut — `HorizontalAnchor.Column` (default) serta `.Page`,
+`.Margin`, `.Character`; `VerticalAnchor.Paragraph` (default) serta `.Page`, `.Margin`, `.Line`.
+
+Pilihan wrap-nya: `Square` (teks di kedua sisi), `Tight` (mengikuti garis luar), `TopAndBottom`
+(teks berhenti di atas dan lanjut di bawah), `InFrontOfText`, dan `BehindText` — dua yang terakhir
+saling mengabaikan, dan `BehindText` itulah watermark.
+
+Gambar mengambang dengan cara yang sama, karena yang berbeda adalah wadahnya, bukan isinya:
+
+```csharp
+run.AddPicture("foto.jpg", width: Units.Cm(5), wrap: TextWrap.Square);
+run.Drawings[0].MoveTo(Units.Cm(10), Units.Cm(0));
+```
+
+`document.Shapes` menemukan semua shape dan text box di body; `run.Drawings` menemukan yang ada di
+satu run, termasuk gambar.
+
+### Yang Word butuhkan, dan yang tidak akan diberitahukannya
+
+`wp:anchor` membawa sepuluh atribut tanpa default skema. Menghilangkan satu saja tidak membuat tata
+letaknya menurun — Word melaporkan seluruh dokumen tidak terbaca, tanpa menyebut yang mana. OfficeNet
+menulis semuanya, dan itu alasan utama membangun shape lewat API ini alih-alih menulisnya sendiri.
+
+Shape-nya sendiri berada di namespace `wps`, ekstensi Microsoft dan bukan ECMA: jawaban standar
+sendiri adalah VML, yang sudah ditandai usang di rilis yang sama yang mengirimkannya. Word 2010 ke
+atas dan LibreOffice membaca `wps` langsung. Word 2007 tidak, dan fallback untuknya berarti menulis
+setiap shape dua kali di dalam `mc:AlternateContent`.
+
+### Di ekspor PDF
+
+Objek mengambang ikut diekspor: shape digambar sebagai jalur lengkap dengan isian dan garis
+luarnya, teksnya ditata di dalamnya memakai inset bawaan Word dan dipotong pada batas kotak, dan
+teks body mengalir mengelilingi ruang yang dipakainya.
+
+Dua batasan yang perlu diketahui. `Tight` dan `Through` mengelilingi kotak pembatas, bukan garis
+luar — mirip, tapi tidak persis. Dan satu baris dipecah mengelilingi satu objek, bukan beberapa,
+sehingga teks di antara dua objek mengambang pergi ke sisi yang lebih lebar alih-alih mengisi kedua
+celah.
+
 ## Membaca dokumen
 
 ```csharp

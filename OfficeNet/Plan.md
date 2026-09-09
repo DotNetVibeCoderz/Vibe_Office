@@ -65,9 +65,15 @@ seberapa sering ketiadaannya menghentikan pekerjaan nyata.
   untuk pemisah, dan menghapus catatan sekaligus menghapus rujukannya. Footnote juga digambar di
   ekspor PDF, di kaki halaman tempat rujukannya berada.
 - [x] **Komentar** (`comments.xml`). Selesai, termasuk mengomentari satu run saja.
-- **Text box dan shape.** Saat ini hanya gambar inline; brosur dan formulir butuh objek mengambang.
-- **Ekspor Word→PDF: objek mengambang.** Mesin layout sekarang mengalir; gambar dengan
-  `wrap="square"` dirender inline dan posisinya salah.
+- [x] **Text box dan shape.** Selesai. `wps:wsp` di dalam `wp:anchor` atau `wp:inline`; sebelas
+  geometri preset dengan nama preset apa pun sebagai string. Sepuluh atribut wajib pada `wp:anchor`
+  ditulis semuanya — satu saja hilang membuat Word menyatakan dokumen tidak terbaca.
+- [x] **Ekspor Word→PDF: objek mengambang.** Selesai. Baris dipenuhi satu per satu terhadap
+  daftar persegi terlarang, bukan sekali di muka pada lebar tetap, sehingga teks mengalir
+  mengelilingi objek. Shape digambar sebagai jalur; teksnya ditata di dalam kotaknya dan ikut
+  berputar. Gambar juga bisa mengambang lewat `AddPicture(wrap:)`.
+  Sisa: `Tight` mengikuti kotak pembatas dan bukan garis luar, dan satu baris dipecah
+  mengelilingi satu objek, bukan beberapa.
 
 ### ExcelNet
 
