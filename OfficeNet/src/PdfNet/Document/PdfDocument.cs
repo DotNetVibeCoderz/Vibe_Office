@@ -464,6 +464,87 @@ public sealed class PdfDocument : IPdfObjectResolver, IDisposable
     }
 
     /// <summary>Saves to a file.</summary>
+    // ---- Embedded fonts ------------------------------------------------------------------------
+
+    private readonly List<Fonts.EmbeddedFont> _embeddedFonts = [];
+    private readonly Dictionary<string, Fonts.EmbeddedFont> _embeddedByKey = new(StringComparer.Ordinal);
+
+    /// <summary>The fonts embedded in this document.</summary>
+    public IReadOnlyList<Fonts.EmbeddedFont> EmbeddedFonts => _embeddedFonts;
+
+    /// <summary>
+    /// Embeds a TrueType font, so text can use characters the standard 14 fonts do not have.
+    /// </summary>
+    /// <param name="path">The <c>.ttf</c> file.</param>
+    /// <remarks>
+    /// <para>
+    /// Only the glyphs actually drawn are written into the file, and only when the document is
+    /// saved — a CJK face has tens of thousands of glyphs and a document uses a few hundred, so the
+    /// difference is a 30 KB PDF against a 20 MB one.
+    /// </para>
+    /// <para>
+    /// Embedding the same file twice returns the same font rather than a second copy of it.
+    /// </para>
+    /// </remarks>
+    public Fonts.EmbeddedFont EmbedFont(string path)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        return EmbedFont(File.ReadAllBytes(path));
+    }
+
+    /// <summary>Embeds a TrueType font from bytes.</summary>
+    public Fonts.EmbeddedFont EmbedFont(byte[] fontBytes)
+    {
+        ArgumentNullException.ThrowIfNull(fontBytes);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        // By content, so the same file loaded twice — from a cache and from disk, say — is one
+        // embedded font and not two copies of the same outlines.
+        var key = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(fontBytes));
+
+        if (_embeddedByKey.TryGetValue(key, out var existing))
+        {
+            return existing;
+        }
+
+        var font = new Fonts.EmbeddedFont(this, Fonts.TrueTypeFont.Load(fontBytes),
+            "TT" + (_embeddedFonts.Count + 1));
+
+        _embeddedFonts.Add(font);
+        _embeddedByKey[key] = font;
+
+        return font;
+    }
+
+    /// <summary>Embeds a font already parsed.</summary>
+    public Fonts.EmbeddedFont EmbedFont(Fonts.TrueTypeFont font)
+    {
+        ArgumentNullException.ThrowIfNull(font);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        var embedded = new Fonts.EmbeddedFont(this, font, "TT" + (_embeddedFonts.Count + 1));
+        _embeddedFonts.Add(embedded);
+
+        return embedded;
+    }
+
+    /// <summary>
+    /// Writes each embedded font's subset, now that the glyphs it uses are known.
+    /// </summary>
+    /// <remarks>
+    /// Has to run before the objects are written and after the last piece of text is drawn, which
+    /// is exactly at the start of a save and nowhere else.
+    /// </remarks>
+    private void FinishEmbeddedFonts()
+    {
+        foreach (var font in _embeddedFonts)
+        {
+            font.Finish();
+        }
+    }
+
     public void Save(string path)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
@@ -510,6 +591,10 @@ public sealed class PdfDocument : IPdfObjectResolver, IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(stream);
+
+        // Before Pages.Flush, so a page's resource dictionary can reference a font object that
+        // does not exist until its subset has been built.
+        FinishEmbeddedFonts();
 
         Pages.Flush();
         Info.Flush();

@@ -16,6 +16,7 @@ using OfficeNet;
 using PdfNet.Annotations;
 using PdfNet.Content;
 using PdfNet.Document;
+using PdfNet.Fonts;
 using PdfNet.Forms;
 using PowerPointNet.Animations;
 using PowerPointNet.Charts;
@@ -886,6 +887,42 @@ public class DocSamples : IDisposable
     }
 
     // ---- docs/PdfNet.md ------------------------------------------------------------------------
+
+    [Fact]
+    public void PdfNet_EmbeddingAFont()
+    {
+        // The doc example uses a real .ttf path; here the font is built so the sample runs anywhere.
+        var fontBytes = OfficeNet.TestKit.SyntheticFont.Build();
+
+        using var stream = new MemoryStream();
+
+        using (var pdf = PdfDocument.Create())
+        {
+            var font = pdf.EmbedFont(fontBytes);
+
+            using (var canvas = pdf.Pages.Add(PageSize.A4).OpenCanvas())
+            {
+                canvas.SetFont(font, 12);
+                canvas.DrawText("Pendapatan naik 32 persen", 72, 700);
+
+                // Back to a standard font on the same page.
+                canvas.SetFont(StandardFont.Helvetica, 10);
+                canvas.DrawText("A standard font, same page.", 72, 680);
+            }
+
+            // Worth asking before writing the page: a missing glyph draws as an empty box.
+            Assert.True(font.CanRender("Pendapatan"));
+            Assert.Equal(["中"], font.MissingCharacters("Pendapatan 中"));
+
+            pdf.Save(stream);
+        }
+
+        // The ToUnicode CMap is what keeps the text readable after it was written as glyph ids.
+        using var reopened = PdfDocument.Open(new MemoryStream(stream.ToArray(), writable: false));
+
+        Assert.Contains("Pendapatan naik 32 persen",
+            PdfNet.Text.TextExtractor.Extract(reopened.Pages[0]), StringComparison.Ordinal);
+    }
 
     [Fact]
     public void PdfNet_PagesMergeSplitAndDraw()

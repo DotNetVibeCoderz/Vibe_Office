@@ -122,8 +122,12 @@ seberapa sering ketiadaannya menghentikan pekerjaan nyata.
   dari kolom yang sejajar, dan level heading dari ukuran huruf relatif terhadap badan teks.
   Kegagalannya dibuat terlihat: struktur yang luput kembali sebagai paragraf, dan tidak ada teks
   yang hilang. Angka yang ambigu (`1.234`) dibiarkan teks alih-alih ditebak.
-- **Penyematan font TrueType.** Sekarang teks dipetakan ke 14 font baku. Dokumen berbahasa yang
-  tidak tercakup Latin-1 butuh font sungguhan disematkan.
+- [x] **Penyematan font TrueType.** Selesai. Font komposit (`/Type0` + `/Identity-H` di atas
+  `/CIDFontType2`), disubset ke glyph yang benar-benar dipakai, dengan glyph dinomori ulang rapat
+  dan `/CIDToGIDMap` sebagai penerjemahnya — sembilan aksara dari font 22 MB menjadi PDF 30 KB.
+  CMap `/ToUnicode` selalu ditulis, karena tanpanya teksnya tidak bisa dibaca kembali sama sekali.
+  Glyph komposit membawa komponennya. Diverifikasi dengan memuat subset-nya ke SkiaSharp — parser
+  yang bukan milik pustaka ini — dan menggambar seluruh 118 glyph-nya.
 - **Tanda tangan digital.** Verifikasi lebih dulu, penandatanganan kemudian.
 
 ---

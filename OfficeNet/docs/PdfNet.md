@@ -149,6 +149,66 @@ ends up flipping some elements and not others.
 The 14 standard fonts need no embedding and their metrics are built in, so `MeasureText` is accurate
 without any font files present. Embedding a TrueType font is on the [roadmap](../Plan.md).
 
+## Embedding a font
+
+The standard 14 fonts cover Latin-1 and nothing else. A document in Javanese, Arabic, Thai or
+Chinese — or one that has to use a brand face — needs the font in the file:
+
+```csharp
+using PdfNet.Fonts;
+
+using var pdf = PdfDocument.Create();
+var font = pdf.EmbedFont("NotoSans-Regular.ttf");
+
+using var canvas = pdf.Pages.Add(PageSize.A4).OpenCanvas();
+canvas.SetFont(font, 12);
+canvas.DrawText("ꦲꦏ꧀ꦱꦫꦗꦮ", 72, 700);
+```
+
+Only the glyphs actually drawn go into the file, and only when the document is saved. Nine scripts
+out of a 22 MB font came to a **30 KB PDF** — the subset itself was 38 KB before compression, and
+the whole point is that a CJK face has fifty thousand glyphs and a document uses a hundred.
+
+`SetFont` back to a `StandardFont` at any time; the two share a page happily. `MeasureText` uses
+whichever is selected.
+
+### Before you write the page
+
+```csharp
+if (!font.CanRender(text))
+{
+    Console.WriteLine("no glyph for: " + string.Join(", ", font.MissingCharacters(text)));
+}
+```
+
+A character the font has no glyph for is drawn as an empty box, and finding out at that point costs
+a reprint. `TrueTypeFont.Load` also reports `EmbeddingRestricted`, which is the font publisher's own
+`fsType` flag — this library reports it rather than enforcing it, because the licence is between you
+and the publisher.
+
+### What is written, and why it looks like that
+
+The font goes in as a **composite**: a `/Type0` with `/Identity-H` encoding over a `/CIDFontType2`
+descendant. That is the only arrangement that reaches past 256 characters without encoding
+gymnastics, and it is what every modern producer emits.
+
+It has one consequence that must be paid for. Text is written as two-byte **glyph ids**, so a reader
+extracting it sees numbers and has no idea what they mean — the text would be unsearchable and
+uncopyable. The `/ToUnicode` CMap written alongside is what maps them back, so it is always written
+and never optional.
+
+Two smaller decisions worth knowing:
+
+- **Glyphs are renumbered** densely from zero, and a `/CIDToGIDMap` translates. Keeping the original
+  ids would be simpler and would make `loca` and `hmtx` span the highest id used — a document with
+  one CJK glyph at id 40,000 would pay 320 KB for the gap.
+- **Composite glyphs bring their components.** An "é" is usually an "e" and an accent, referenced by
+  glyph id. A subset that does not follow those references produces a font whose accented characters
+  are blank, with nothing anywhere to say why.
+
+**Not supported:** OpenType fonts with PostScript outlines (`.otf` with a `CFF ` table) and TrueType
+collections (`.ttc`). Both are refused by name rather than loaded into a PDF with no glyphs in it.
+
 ## Encryption
 
 ```csharp

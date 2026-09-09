@@ -45,6 +45,8 @@ public sealed class PdfCanvas : IDisposable
     private readonly PdfPage _page;
     private readonly StringBuilder _content = new(4096);
     private readonly Dictionary<string, PdfObject> _fonts = [];
+    private readonly Dictionary<string, Fonts.EmbeddedFont> _embeddedFonts = [];
+    private Fonts.EmbeddedFont? _embeddedFont;
     private readonly Dictionary<string, PdfObject> _xobjects = [];
     private readonly Dictionary<string, PdfObject> _extGStates = [];
     private readonly Dictionary<StandardFont, string> _standardFontNames = [];
@@ -332,6 +334,10 @@ public sealed class PdfCanvas : IDisposable
     {
         _currentFont = font;
         _currentFontSize = size;
+
+        // Cleared, or text drawn after switching back to a standard font is still encoded as glyph
+        // ids for a font that is no longer selected — which draws as nothing at all.
+        _embeddedFont = null;
         _currentFontResource = EnsureStandardFont(font);
 
         if (_inText)
@@ -346,6 +352,30 @@ public sealed class PdfCanvas : IDisposable
     public PdfCanvas SetFont(string familyName, double size, bool bold = false, bool italic = false) =>
         SetFont(StandardFonts.Match(familyName, bold, italic), size);
 
+    /// <summary>
+    /// Selects an embedded TrueType font.
+    /// </summary>
+    /// <remarks>
+    /// Text drawn after this is written as two-byte glyph ids rather than characters, because that
+    /// is what the font's <c>Identity-H</c> encoding means. The document's <c>/ToUnicode</c> map is
+    /// what keeps it extractable, and <see cref="Fonts.EmbeddedFont"/> always writes one.
+    /// </remarks>
+    public PdfCanvas SetFont(Fonts.EmbeddedFont font, double size)
+    {
+        ArgumentNullException.ThrowIfNull(font);
+
+        _embeddedFont = font;
+        _currentFontSize = size;
+        _currentFontResource = EnsureEmbeddedFont(font);
+
+        if (_inText)
+        {
+            _content.Append(CultureInfo.InvariantCulture, $"/{_currentFontResource} {N(size)} Tf\n");
+        }
+
+        return this;
+    }
+
     /// <summary>Draws a single line of text with its left end at the baseline point.</summary>
     public PdfCanvas DrawText(string text, double x, double y)
     {
@@ -358,6 +388,22 @@ public sealed class PdfCanvas : IDisposable
 
         BeginText();
         _content.Append(CultureInfo.InvariantCulture, $"1 0 0 1 {N(x)} {N(Y(y))} Tm\n");
+
+        if (_embeddedFont is { } embedded)
+        {
+            // Hex rather than a literal string: the glyph ids are arbitrary bytes, and half of them
+            // would need escaping in a literal. Hex needs none and is what producers use here.
+            _content.Append('<');
+
+            foreach (var b in embedded.Encode(text))
+            {
+                _content.Append(CultureInfo.InvariantCulture, $"{b:X2}");
+            }
+
+            _content.Append("> Tj\n");
+            return this;
+        }
+
         _content.Append(EscapeString(StandardFonts.EncodeWinAnsi(text))).Append(" Tj\n");
         return this;
     }
@@ -381,7 +427,9 @@ public sealed class PdfCanvas : IDisposable
 
     /// <summary>The width of a string in points at the current font and size.</summary>
     public double MeasureText(string text) =>
-        StandardFonts.MeasurePoints(_currentFont, text, _currentFontSize);
+        _embeddedFont is { } embedded
+            ? embedded.MeasureText(text, _currentFontSize)
+            : StandardFonts.MeasurePoints(_currentFont, text, _currentFontSize);
 
     /// <summary>
     /// Draws wrapped text inside a box and returns the height it used.
@@ -567,6 +615,18 @@ public sealed class PdfCanvas : IDisposable
 
     // ---- Resources -----------------------------------------------------------------------------
 
+    private string EnsureEmbeddedFont(Fonts.EmbeddedFont font)
+    {
+        if (!_fonts.ContainsKey(font.ResourceName))
+        {
+            // The value is filled in at save time, once the subset exists. Registering the name now
+            // is what lets the page's resource dictionary be written in one pass at the end.
+            _embeddedFonts[font.ResourceName] = font;
+        }
+
+        return font.ResourceName;
+    }
+
     private string EnsureStandardFont(StandardFont font)
     {
         if (_standardFontNames.TryGetValue(font, out var existing))
@@ -645,6 +705,18 @@ public sealed class PdfCanvas : IDisposable
         if (_content.Length == 0)
         {
             return;
+        }
+
+        // An embedded font's object only exists once its subset has been built, which happens at
+        // save time — after this. Resolving it here would write a reference to nothing.
+        foreach (var (name, font) in _embeddedFonts)
+        {
+            font.Finish();
+
+            if (font.FontObject is { } resolved)
+            {
+                _fonts[name] = resolved;
+            }
         }
 
         MergeResource(PdfName.Font, _fonts);

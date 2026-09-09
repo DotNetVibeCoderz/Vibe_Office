@@ -47,6 +47,8 @@ Dibuat oleh Gravicode Studios, dipimpin oleh Kang Fadhil.
 - [x] `PdfDocument` / `PdfPage` / `PdfPageCollection` — buka, gabung, split, rotate, reorder
 - [x] Enkripsi: RC4-40, RC4-128, AES-128, AES-256 (R6) — **round-trip keempatnya terverifikasi**
 - [x] Ekstraksi teks: content stream, CMap, ToUnicode, simple/composite font, spasi inferensial
+- [x] Struktur halaman — baris, paragraf, heading, dan tabel disimpulkan dari posisi glyph
+- [x] Penyematan font TrueType — subset, dinomori ulang, `/CIDToGIDMap`, `/ToUnicode` selalu ditulis
 - [x] Ekstraksi gambar: DCT passthrough, PNG encoder tangan, indexed/CMYK → RGB
 - [x] `PdfCanvas` — path, teks, wrapping, justifikasi, gambar, opacity
 - [x] `StandardFonts` — metrik AFM 14 font baku

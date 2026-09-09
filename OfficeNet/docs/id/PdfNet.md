@@ -152,6 +152,69 @@ sini persis cara sebuah konverter berakhir membalik sebagian elemen dan sebagian
 Ke-14 font standar tidak perlu disematkan dan metriknya sudah tertanam, sehingga `MeasureText` akurat
 tanpa berkas font apa pun. Menyematkan font TrueType ada di [peta jalan](../../Plan.md).
 
+## Menyematkan font
+
+14 font baku hanya mencakup Latin-1 dan tidak lebih. Dokumen berbahasa Jawa, Arab, Thai, atau
+Tionghoa — atau yang harus memakai font merek tertentu — perlu fontnya ikut di dalam berkas:
+
+```csharp
+using PdfNet.Fonts;
+
+using var pdf = PdfDocument.Create();
+var font = pdf.EmbedFont("NotoSans-Regular.ttf");
+
+using var canvas = pdf.Pages.Add(PageSize.A4).OpenCanvas();
+canvas.SetFont(font, 12);
+canvas.DrawText("ꦲꦏ꧀ꦱꦫꦗꦮ", 72, 700);
+```
+
+Hanya glyph yang benar-benar digambar yang masuk ke berkas, dan hanya saat dokumennya disimpan.
+Sembilan aksara dari font 22 MB menghasilkan **PDF 30 KB** — subset-nya sendiri 38 KB sebelum
+dikompres, dan justru itulah intinya: font CJK punya lima puluh ribu glyph sementara satu dokumen
+memakai seratus.
+
+`SetFont` bisa kembali ke `StandardFont` kapan saja; keduanya bisa berbagi satu halaman.
+`MeasureText` memakai font yang sedang dipilih.
+
+### Sebelum menulis halamannya
+
+```csharp
+if (!font.CanRender(text))
+{
+    Console.WriteLine("tidak ada glyph untuk: " + string.Join(", ", font.MissingCharacters(text)));
+}
+```
+
+Karakter yang tidak punya glyph digambar sebagai kotak kosong, dan mengetahuinya pada tahap itu
+berarti cetak ulang. `TrueTypeFont.Load` juga melaporkan `EmbeddingRestricted`, yaitu flag `fsType`
+dari penerbit fontnya sendiri — pustaka ini melaporkannya, bukan menegakkannya, karena lisensinya
+adalah urusan antara Anda dan penerbit font.
+
+### Apa yang ditulis, dan kenapa bentuknya begitu
+
+Fontnya masuk sebagai font **komposit**: `/Type0` dengan encoding `/Identity-H` di atas turunan
+`/CIDFontType2`. Itu satu-satunya susunan yang bisa melewati batas 256 karakter tanpa akrobat
+encoding, dan itulah yang ditulis semua produsen modern.
+
+Ada satu konsekuensi yang harus dibayar. Teksnya ditulis sebagai **id glyph** dua byte, sehingga
+pembaca yang mengekstrak teks hanya melihat angka dan tidak tahu artinya — teksnya jadi tidak bisa
+dicari dan tidak bisa disalin. CMap `/ToUnicode` yang ditulis bersamanya itulah yang memetakannya
+kembali, jadi ia selalu ditulis dan tidak pernah opsional.
+
+Dua keputusan lebih kecil yang perlu diketahui:
+
+- **Glyph dinomori ulang** rapat mulai dari nol, dan `/CIDToGIDMap` yang menerjemahkannya.
+  Mempertahankan id aslinya memang lebih sederhana, tetapi membuat `loca` dan `hmtx` sepanjang id
+  tertinggi yang dipakai — dokumen dengan satu glyph CJK di id 40.000 akan membayar 320 KB untuk
+  celahnya.
+- **Glyph komposit membawa komponennya.** Huruf "é" biasanya adalah "e" plus aksen, dirujuk lewat id
+  glyph. Subset yang tidak mengikuti rujukan itu menghasilkan font yang huruf beraksennya kosong,
+  tanpa ada apa pun yang menjelaskan kenapa.
+
+**Belum didukung:** font OpenType dengan outline PostScript (`.otf` bertabel `CFF `) dan koleksi
+TrueType (`.ttc`). Keduanya ditolak dengan menyebutkan alasannya, bukan dimuat menjadi PDF tanpa
+glyph sama sekali.
+
 ## Enkripsi
 
 ```csharp
