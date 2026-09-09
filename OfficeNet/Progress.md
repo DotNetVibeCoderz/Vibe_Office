@@ -520,6 +520,33 @@ Yang ditolak dengan sengaja, bukan dikira-kira: fungsi tipe 4 (bahasa PostScript
 (tipe 1 dan 4–7), dan tiling pattern. Semuanya `null` sehingga pemanggilnya melewati alih-alih
 menggambar warna keliru dengan percaya diri.
 
+## Rilis v1.3.0
+
+Tujuh paket beserta paket simbolnya, dirilis lewat tag `officenet-v1.3.0`. Isinya seluruh v1.2
+(performa) dan v1.3 (renderer).
+
+Versinya berasal dari tagnya, bukan dari berkas — workflow rilis membangun dengan
+`-p:Version=` dari nama tag, jadi paket tidak mungkin terbit dengan versi yang tidak ada di
+riwayat. `VersionPrefix` di `Directory.Build.props` disamakan supaya build lokal ikut menyebut
+angka yang sama.
+
+Diperiksa sebelum menandai: **setiap dependensi antar-paket menyebut 1.3.0**, bukan 1.1.0 yang
+sudah ada di nuget.org. Paket yang menarik saudaranya versi lama lebih buruk daripada tidak
+terbit sama sekali. Tidak ada dependensi baru dibanding 1.1.0; `Gravicode.OfficeNet.Rendering`
+tetap satu-satunya yang membawa SkiaSharp, dan meta package tetap **tidak** menariknya.
+
+Yang berubah bagi pemakainya:
+
+| | |
+|---|---|
+| Ekspor Word→PDF | 10.000 paragraf: 241 MB → 82 MB, berkasnya 1.161.639 → 634.591 byte |
+| `PdfDocument.Split` | 100 halaman: 39.759 us → 1.129 us, 29,9 MB → 1,3 MB |
+| `WordDocument.ExtractText` | biaya ekstraksinya 29,5 MB → 10,5 MB |
+| Renderer | memakai font tersemat berkasnya; aksara non-Latin tidak lagi jadi kotak kosong |
+| Renderer | menggambar clipping path serta gradien aksial dan radial |
+| PdfNet | tipe publik baru `PdfFunction` dan `PdfShading` |
+| `TextFragment` | membawa `Font`, `Glyphs`, dan `GlyphOffsets` — parameter opsional, jadi kode lama tetap terkompilasi |
+
 ## Yang masih tersisa
 
 **v1.1 selesai seluruhnya.** Setiap butir di bagian v1.1 [Plan.md](Plan.md) sudah dikerjakan, kecuali
