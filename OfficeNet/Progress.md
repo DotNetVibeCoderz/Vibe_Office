@@ -443,6 +443,21 @@ melawan 241 MB kode lama — kebalikan dari kenyataannya. Probe langsung menjawa
 yang diulang menjawab 159 MB. Yang menyelamatkan bukan kecurigaan, melainkan kebiasaan menanyakan
 hal yang sama kepada dua alat.
 
+**Setiap baris mengalokasikan daftar yang tumbuh dari empat.** Setelah penggambaran diperbaiki,
+fase-fase layout diinstrumentasi satu per satu. Dua yang teratas — membangun line filler (3,5 KB per
+paragraf) dan mengambil baris berikutnya (1,4 KB per baris) — ternyata kesalahan yang sama: `List<T>`
+mulai dari empat entri lalu berlipat ganda, jadi daftar untuk selusin kata mengalokasikan empat array
+berisi dua puluh delapan slot untuk menyimpan dua belas. **10.000 paragraf: 159 MB → 123 MB.**
+
+Yang perlu dicatat dari butir ini adalah batasnya. Daftar baris aman dipakai ulang karena hidupnya
+pendek; fillernya tidak, karena ia hidup melintasi `EnsureSpace`, dan memulai halaman berarti
+menggambar catatan kaki serta float tertunda yang melakukan layout sendiri. Penjaganya pun harus
+dipertajam: versi pertama hanya memastikan teksnya ada, dan buffer basi lolos karena ia mengulang
+kata alih-alih menghilangkannya.
+
+Total sejak awal v1.2 untuk 10.000 paragraf: **449 ms → 235 ms**, **241 MB → 123 MB**, berkasnya
+**1.161.639 → 634.591 byte**.
+
 **Dua hipotesis ditolak oleh pengukuran**, dan itu juga hasil: alokasi ekstraksi teks PdfNet ternyata
 datar di 331 KB per halaman (angka 167 MB pada benchmark adalah artefak harness-nya sendiri), dan
 `Styles[styleId]` bukan jalur panas — paragraf bergaya dan polos hanya berbeda 6%.

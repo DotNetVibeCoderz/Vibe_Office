@@ -1,5 +1,6 @@
 // OfficeNet - Dibuat oleh Gravicode Studios, dipimpin oleh Kang Fadhil.
 
+using OfficeNet.Core;
 using OfficeNet.Core.Drawing;
 using PdfNet.Content;
 using PdfNet.Document;
@@ -152,5 +153,66 @@ public class RunMergingTests
 
         Assert.True(perWord < 3,
             $"The export spends {perWord:0.0} bytes per word, which is the per-word drawing back.");
+    }
+
+    [Fact]
+    public void ReusingTheLineBufferSurvivesLayoutReEnteringItself()
+    {
+        // The line list is reused across lines rather than reallocated, which is only sound because
+        // it is live from the moment the words are taken to the moment they are drawn, and nothing
+        // re-enters layout in between. What does re-enter is EnsureSpace: starting a page draws
+        // that page's footnotes and its deferred floats, both of which lay out text of their own.
+        //
+        // So this forces exactly that interleaving — pages worth of paragraphs, footnotes landing
+        // mid-page, and a floating box deferred past a break — and asserts every paragraph came out
+        // whole. An aliased buffer would drop or duplicate words here and nowhere else.
+        using var document = WordDocument.Create();
+
+        for (var i = 0; i < 120; i++)
+        {
+            var paragraph = document.AddParagraph($"Paragraf {i}: {Body}");
+
+            if (i % 7 == 0)
+            {
+                paragraph.AddFootnote($"Catatan untuk paragraf {i}.");
+            }
+
+            if (i % 40 == 0)
+            {
+                paragraph.AddTextBox($"Kutipan {i}.",
+                    Length.FromCentimeters(4), Length.FromCentimeters(3))
+                    .MoveTo(Length.FromCentimeters(11), Length.FromCentimeters(1));
+            }
+        }
+
+        using var pdf = WordToPdf.Convert(document);
+
+        var text = string.Concat(pdf.Pages.Select(TextExtractor.Extract));
+
+        Assert.True(pdf.Pages.Count > 1, "The document has to paginate for this to test anything.");
+
+        // Counted, not merely found. A buffer that is reused without being emptied still contains
+        // every word the assertion looks for — it contains them twice, which is the whole failure.
+        for (var i = 0; i < 120; i++)
+        {
+            Assert.Equal(1, Occurrences(text, $"Paragraf {i}:"));
+        }
+
+        Assert.Equal(120, Occurrences(text, "tahun ini."));
+        Assert.Equal(1, Occurrences(text, "Catatan untuk paragraf 0."));
+        Assert.Equal(1, Occurrences(text, "Kutipan 0."));
+    }
+
+    private static int Occurrences(string text, string value)
+    {
+        var count = 0;
+
+        for (var at = text.IndexOf(value, StringComparison.Ordinal); at >= 0;
+             at = text.IndexOf(value, at + value.Length, StringComparison.Ordinal))
+        {
+            count++;
+        }
+
+        return count;
     }
 }

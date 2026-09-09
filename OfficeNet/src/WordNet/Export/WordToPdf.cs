@@ -102,6 +102,9 @@ public static class WordToPdf
         private PdfPage? _page;
         private PdfCanvas? _canvas;
         private double _cursor;
+
+        /// <summary>The line being set, reused rather than reallocated for every line.</summary>
+        private readonly List<LinePiece> _line = [];
         private readonly List<PdfPage> _pages = [];
         private readonly List<(PdfPage Page, int Number)> _pageNumbers = [];
 
@@ -480,7 +483,11 @@ public static class WordToPdf
                     continue;
                 }
 
-                var line = filler.Next(lineWidth);
+                // Safe to reuse across lines because it is live only from here to the DrawLine
+                // below. EnsureSpace above is the one call that can re-enter layout — starting a
+                // page draws that page's footnotes and its deferred floats — and by then the
+                // previous line has already been drawn.
+                var line = filler.Next(lineWidth, _line);
 
                 if (i == 0 && bulletText is not null)
                 {
@@ -774,6 +781,18 @@ public static class WordToPdf
 
             public LineFiller(List<Segment> segments)
             {
+                // Growing from four doubles the list four times for a normal paragraph, and every
+                // step copies and abandons the one before — most of what building a filler cost.
+                // Words average five or six characters, so this overshoots rarely and by little.
+                var estimate = 0;
+
+                foreach (var segment in segments)
+                {
+                    estimate += (segment.Text.Length / 5) + 1;
+                }
+
+                _words.EnsureCapacity(estimate);
+
                 foreach (var segment in segments)
                 {
                     var font = StandardFonts.Match(segment.Format.FontFamily, segment.Format.Bold,
@@ -793,9 +812,22 @@ public static class WordToPdf
             public bool AtEnd => _index >= _words.Count;
 
             /// <summary>Takes as many words as fit in <paramref name="available"/> points.</summary>
-            public List<LinePiece> Next(double available)
+            public List<LinePiece> Next(double available) => Next(available, []);
+
+            /// <summary>
+            /// Takes as many words as fit, into a list the caller owns.
+            /// </summary>
+            /// <remarks>
+            /// A caller that draws each line and forgets it can hand the same list back every time,
+            /// which is worth about 1.4 KB a line — a fresh list starts at four entries and doubles
+            /// three times before it holds a normal line's words, copying and abandoning the one
+            /// before at every step. A caller that keeps its lines, as <see cref="WrapSegments"/>
+            /// does, passes a new one and gets the obvious behaviour.
+            /// </remarks>
+            public List<LinePiece> Next(double available, List<LinePiece> line)
             {
-                var line = new List<LinePiece>();
+                line.Clear();
+
                 double used = 0;
 
                 while (_index < _words.Count)

@@ -199,9 +199,37 @@ mengukur adalah cara membuang waktu pada jalur yang tidak panas.
   Dua hipotesis lain di jalur yang sama **ditolak oleh pengukuran**: alokasi ekstraksi teks PdfNet
   ternyata datar di 331 KB per halaman (angka 167 MB di benchmark adalah artefak harness), dan
   pencarian `Styles[styleId]` bukan jalur panas — paragraf bergaya dan polos hanya beda 6%.
+- [x] **Setiap baris mengalokasikan daftar yang tumbuh dari empat — selesai.** Setelah penggambaran
+  diperbaiki, 140 MB dari 159 MB sisanya ada di layout. Fasenya diinstrumentasi, bukan ditebak:
+
+  | Fase | Alokasi | Per satuan |
+  |---|---|---|
+  | Membangun line filler | 35,1 MB | 3,5 KB / paragraf |
+  | Mengambil baris berikutnya | 29,3 MB | 1,4 KB / baris |
+  | Memulai halaman | 16,1 MB | 35 KB / halaman |
+  | Membangun segmen | 15,3 MB | 1,5 KB / paragraf |
+  | Menggambar baris | 15,1 MB | 740 B / baris |
+
+  Dua teratas adalah kesalahan yang sama di dua tempat. `List<T>` mulai dari empat entri lalu
+  berlipat ganda, menyalin dan membuang arraynya setiap kali — daftar untuk selusin kata
+  mengalokasikan empat array berisi total dua puluh delapan slot untuk menyimpan dua belas.
+
+  Daftar barisnya kini diberikan oleh pemanggil sehingga dipakai ulang untuk seluruh dokumen, dan
+  daftar kata milik filler diberi kapasitas di muka dari panjang teksnya. **10.000 paragraf:
+  253 ms → 235 ms, 159 MB → 123 MB.**
+
+  **Pemakaian ulang butuh argumen, bukan harapan.** Daftar baris aman dipakai bersama karena ia
+  hidup hanya dari saat kata diambil sampai saat digambar. Fillernya **tidak** aman: ia hidup
+  melintasi `EnsureSpace`, dan memulai halaman berarti menggambar catatan kaki dan float tertunda
+  halaman itu, yang melakukan layout sendiri. Memakai ulang filler akan merusak dokumen yang
+  berganti halaman sambil membiarkan setiap tes kecil tetap hijau.
+
+  Penjaganya sendiri harus dipertajam dulu: versi pertamanya hanya memastikan teks setiap paragraf
+  ada di keluaran, dan buffer basi lolos begitu saja karena ia mengulang kata, bukan menghilangkannya.
+  Sekarang ia menghitung kemunculan, dan `Clear()` yang sengaja dihapus membuatnya gagal.
 - **Rust untuk kernel level rendah.** Spesifikasi mengizinkannya. Kandidat paling masuk akal:
   inflate/deflate dan predictor PNG. Benchmark saat ini **tidak** menunjukkan keduanya sebagai
-  hambatan — ekspor PDF Word (253 ms untuk 10.000 paragraf) didominasi layout, bukan kompresi —
+  hambatan — ekspor PDF Word (235 ms untuk 10.000 paragraf) didominasi layout, bukan kompresi —
   jadi butir ini turun peringkat sampai ada pengukuran yang membenarkan dua toolchain build.
 
 ---
