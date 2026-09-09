@@ -468,12 +468,22 @@ tiga salinan sebelum array byte yang benar-benar disimpan. Sekarang chunk builde
 langsung ke tujuan. Halaman berisi empat puluh lima baris: **52,8 KB → 37,7 KB**. Penghematannya
 sebanding dengan isi halaman: Word 111 MB → 104 MB, tapi 200 slide hanya 20,6 MB → 20,1 MB.
 
-Total sejak awal v1.2 untuk 10.000 paragraf: **449 ms → 181 ms**, **241 MB → 104 MB**, berkasnya
-**1.161.639 → 634.591 byte** — dan kolom Gen2 pada benchmark, yang semula 1.000–2.000 koleksi per
-seribu operasi, kini kosong sama sekali.
+**Melayout satu baris menyalin teks yang sedang dilayout.** Filler-nya menyimpan setiap kata sebagai
+string terpotong ditambah salinan format yang sudah diresolusi — 2,8 KB per paragraf. Sekarang
+sepotong baris hanya menyebut rentang di segmennya, dan teksnya baru diambil saat digambar, ketika
+potongan bertetangga sudah digabung. **104 MB → 82 MB**, keluaran identik byte demi byte.
 
-Yang tersisa terbesar adalah membangun line filler, 2,8 KB per paragraf: ia menyimpan salinan format
-yang sudah diresolusi dan substring baru untuk setiap kata, padahal indeks ke segmennya sudah cukup.
+Dua hal yang hanya muncul karena diuji, bukan karena dibaca. Cabang pemangkas spasi di awal potongan
+ternyata **tak pernah terjangkau** — kata dipecah sehingga spasi hanya jadi karakter terakhir, jadi
+potongan berawalan spasi pasti berisi spasi saja dan dibuang utuh; dibuktikan dengan `throw` di sana
+lalu menjalankan seluruh tes. Dan dua penjaga baru yang sudah ditulis ternyata **tidak menjaga apa
+pun**: teks berspasi ganda tak pernah menaruh spasi di awal baris karena satu spasi masih muat di
+ujung baris sebelumnya. Enam puluh spasi berurutan barulah memaksanya.
+
+Total sejak awal v1.2 untuk 10.000 paragraf: **241 MB → 82 MB**, berkasnya **1.161.639 → 634.591
+byte**, dan kolom Gen2 pada benchmark — semula 1.000–2.000 koleksi per seribu operasi — kini kosong.
+Waktunya turun dari 449 ms ke kisaran 180–210 ms; pada tahap ini ragam mesinnya sudah lebih besar
+daripada selisih antar-perbaikan, jadi angka alokasi yang layak dibaca.
 
 **Dua hipotesis ditolak oleh pengukuran**, dan itu juga hasil: alokasi ekstraksi teks PdfNet ternyata
 datar di 331 KB per halaman (angka 167 MB pada benchmark adalah artefak harness-nya sendiri), dan

@@ -251,8 +251,30 @@ public static class StandardFonts
         return total;
     }
 
+    /// <summary>The width of a run of characters in glyph-space units.</summary>
+    /// <remarks>
+    /// Taking a span means a caller measuring one word of a longer string does not have to cut that
+    /// word out of it first. Layout measures every word of a document to decide where its lines
+    /// break, so the substrings add up.
+    /// </remarks>
+    public static double MeasureString(StandardFont font, ReadOnlySpan<char> text)
+    {
+        double total = 0;
+
+        foreach (var c in text)
+        {
+            total += WidthOf(font, c);
+        }
+
+        return total;
+    }
+
     /// <summary>The width of a string in points at a given size.</summary>
     public static double MeasurePoints(StandardFont font, string text, double fontSize) =>
+        MeasureString(font, text) / 1000.0 * fontSize;
+
+    /// <summary>The width of a run of characters in points at a given size.</summary>
+    public static double MeasurePoints(StandardFont font, ReadOnlySpan<char> text, double fontSize) =>
         MeasureString(font, text) / 1000.0 * fontSize;
 
     /// <summary>Widths keyed by character code, for a font dictionary that omits <c>/Widths</c>.</summary>

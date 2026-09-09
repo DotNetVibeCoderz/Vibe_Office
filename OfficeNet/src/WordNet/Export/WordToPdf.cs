@@ -539,31 +539,11 @@ public static class WordToPdf
                     ? ParagraphAlignment.Left
                     : alignment;
 
-                DrawLine(line, lineLeft, lineWidth, lineHeight, effectiveAlignment);
+                DrawLine(segments, line, lineLeft, lineWidth, lineHeight, effectiveAlignment);
                 _cursor += lineHeight;
             }
 
             _cursor += after;
-        }
-
-        /// <summary>Counts spaces without allocating an enumerator.</summary>
-        /// <remarks>
-        /// <c>text.Count(c => c == ' ')</c> reads better and boxes the string's char enumerator every
-        /// time it is called, which is once per word on every line of the document.
-        /// </remarks>
-        private static int CountSpaces(string text)
-        {
-            var count = 0;
-
-            foreach (var c in text)
-            {
-                if (c == ' ')
-                {
-                    count++;
-                }
-            }
-
-            return count;
         }
 
         private static bool HasPageBreak(Paragraph paragraph) =>
@@ -778,11 +758,19 @@ public static class WordToPdf
 
         /// <summary>One piece of a line: some text, its formatting, and how wide it is.</summary>
         /// <remarks>
-        /// The width is carried rather than recomputed. <see cref="LineFiller"/> has to measure every
-        /// word to decide where the line breaks, and measuring it a second time to draw it was the
-        /// single largest per-word cost in the export.
+        /// <para>
+        /// A piece names a range of one segment's text rather than holding a copy of it. Cutting a
+        /// string out per word, and carrying a copy of the resolved formatting beside it, was the
+        /// largest remaining cost of laying a document out — and the text is only ever needed once
+        /// it is drawn, by which time neighbouring pieces have usually been merged into one.
+        /// </para>
+        /// <para>
+        /// The width is carried rather than recomputed. Line breaking has to measure every word to
+        /// decide where the line ends, and measuring it a second time to draw it was the largest
+        /// per-word cost before that.
+        /// </para>
         /// </remarks>
-        private readonly record struct LinePiece(string Text, Effective Format, double Width);
+        private readonly record struct LinePiece(int Segment, int Start, int Length, double Width);
 
         private static List<List<LinePiece>> WrapSegments(List<Segment> segments, double width,
             double firstLineIndent, double bulletIndent)
@@ -811,14 +799,17 @@ public static class WordToPdf
         /// </remarks>
         private sealed class LineFiller
         {
-            private readonly List<(string Word, Effective Format, StandardFont Font, double Width)> _words = [];
+            private readonly List<Segment> _segments;
+            private readonly List<LinePiece> _words = [];
             private int _index;
 
             public LineFiller(List<Segment> segments)
             {
+                _segments = segments;
+
                 // Growing from four doubles the list four times for a normal paragraph, and every
-                // step copies and abandons the one before — most of what building a filler cost.
-                // Words average five or six characters, so this overshoots rarely and by little.
+                // step copies and abandons the one before. Words average five or six characters, so
+                // this overshoots rarely and by little.
                 var estimate = 0;
 
                 foreach (var segment in segments)
@@ -828,19 +819,51 @@ public static class WordToPdf
 
                 _words.EnsureCapacity(estimate);
 
-                foreach (var segment in segments)
+                for (var index = 0; index < segments.Count; index++)
                 {
+                    var segment = segments[index];
                     var font = StandardFonts.Match(segment.Format.FontFamily, segment.Format.Bold,
                         segment.Format.Italic);
 
-                    // Splitting on spaces but keeping each space attached to the word before it is
-                    // what makes the measured width match what is drawn.
-                    foreach (var word in SplitWords(segment.Text))
+                    // Split on spaces, keeping each space attached to the word before it: that is
+                    // what makes the measured widths add up to what is drawn, and it means a run of
+                    // neighbouring words is one unbroken range of the segment's text.
+                    var start = 0;
+
+                    for (var i = 0; i <= segment.Text.Length; i++)
                     {
-                        _words.Add((word, segment.Format, font,
-                            StandardFonts.MeasurePoints(font, word, segment.Format.SizePoints)));
+                        if (i < segment.Text.Length && segment.Text[i] != ' ')
+                        {
+                            continue;
+                        }
+
+                        var end = i < segment.Text.Length ? i + 1 : i;
+
+                        if (end > start)
+                        {
+                            var width = StandardFonts.MeasurePoints(font,
+                                segment.Text.AsSpan(start, end - start), segment.Format.SizePoints);
+
+                            _words.Add(new LinePiece(index, start, end - start, width));
+                        }
+
+                        start = end;
                     }
                 }
+            }
+
+            /// <summary>Whether a piece is nothing but spaces.</summary>
+            private static bool IsAllSpaces(string text, LinePiece piece)
+            {
+                for (var i = piece.Start; i < piece.Start + piece.Length; i++)
+                {
+                    if (text[i] != ' ')
+                    {
+                        return false;
+                    }
+                }
+
+                return true;
             }
 
             /// <summary>Whether every word has been placed.</summary>
@@ -867,44 +890,43 @@ public static class WordToPdf
 
                 while (_index < _words.Count)
                 {
-                    var (word, format, font, width) = _words[_index];
+                    var word = _words[_index];
+                    var segment = _segments[word.Segment];
+                    var format = segment.Format;
 
-                    if (line.Count == 0)
+                    if (line.Count == 0 && IsAllSpaces(segment.Text, word))
                     {
-                        // A line never starts with a space — it would print as an indent nobody asked
-                        // for, and a different one on every line.
-                        var trimmed = word.TrimStart();
-
-                        if (trimmed.Length == 0)
-                        {
-                            _index++;
-                            continue;
-                        }
-
-                        if (trimmed.Length != word.Length)
-                        {
-                            word = trimmed;
-                            width = StandardFonts.MeasurePoints(font, trimmed, format.SizePoints);
-                        }
-                    }
-                    else if (format.Superscript)
-                    {
-                        // A footnote marker belongs to the word before it. Letting it wrap on its own
-                        // leaves a bare superscript digit at the start of a line, which reads as a
-                        // typesetting error rather than as a reference.
-                        line.Add(new LinePiece(word, format, width));
-                        used += width;
+                        // A line never starts with a space — it would print as an indent nobody
+                        // asked for, and a different one on every line.
+                        //
+                        // Dropping the whole piece is enough, and that is not a shortcut. Words are
+                        // split so that a space is only ever the last character of a piece, so a
+                        // piece that begins with one holds nothing else: two spaces in a row make a
+                        // piece of exactly one space, never a word with a space in front of it.
+                        // Trimming part of a piece would need its width recomputed, and this is why
+                        // that case does not arise.
                         _index++;
                         continue;
                     }
 
-                    if (used + width > available && line.Count > 0)
+                    if (line.Count > 0 && format.Superscript)
+                    {
+                        // A footnote marker belongs to the word before it. Letting it wrap on its
+                        // own leaves a bare superscript digit at the start of a line, which reads as
+                        // a typesetting error rather than as a reference.
+                        line.Add(word);
+                        used += word.Width;
+                        _index++;
+                        continue;
+                    }
+
+                    if (used + word.Width > available && line.Count > 0)
                     {
                         return line;
                     }
 
-                    line.Add(new LinePiece(word, format, width));
-                    used += width;
+                    line.Add(word);
+                    used += word.Width;
                     _index++;
                 }
 
@@ -912,31 +934,9 @@ public static class WordToPdf
             }
         }
 
-        private static IEnumerable<string> SplitWords(string text)
-        {
-            var start = 0;
-
-            for (var i = 0; i < text.Length; i++)
-            {
-                if (text[i] != ' ')
-                {
-                    continue;
-                }
-
-                // Include the space so widths add up and a run boundary mid-space is harmless.
-                yield return text[start..(i + 1)];
-                start = i + 1;
-            }
-
-            if (start < text.Length)
-            {
-                yield return text[start..];
-            }
-        }
-
-        private void DrawLine(List<LinePiece> pieces, double x, double width, double lineHeight,
-            ParagraphAlignment alignment) =>
-            DrawLineOn(_canvas!, pieces, x, width, _cursor, lineHeight, alignment);
+        private void DrawLine(List<Segment> segments, List<LinePiece> pieces, double x, double width,
+            double lineHeight, ParagraphAlignment alignment) =>
+            DrawLineOn(_canvas!, segments, pieces, x, width, _cursor, lineHeight, alignment);
 
         /// <summary>
         /// Sets one line on a given canvas at a given top.
@@ -946,8 +946,9 @@ public static class WordToPdf
         /// inside its own box rather than at the page cursor, and duplicating the baseline and
         /// justification arithmetic to say so is how the two quietly drift apart.
         /// </remarks>
-        private static void DrawLineOn(PdfCanvas canvas, List<LinePiece> pieces, double x,
-            double width, double top, double lineHeight, ParagraphAlignment alignment)
+        private static void DrawLineOn(PdfCanvas canvas, List<Segment> segments,
+            List<LinePiece> pieces, double x, double width, double top, double lineHeight,
+            ParagraphAlignment alignment)
         {
             // One pass with plain loops rather than three LINQ passes. Each of those allocated a
             // closure and an enumerator per line, and the innermost — counting spaces with
@@ -959,12 +960,14 @@ public static class WordToPdf
 
             foreach (var piece in pieces)
             {
-                totalWidth += piece.Width;
-                spaces += CountSpaces(piece.Text);
+                var format = segments[piece.Segment].Format;
 
-                if (piece.Format.SizePoints > maxSize)
+                totalWidth += piece.Width;
+                spaces += CountSpaces(TextOf(segments, piece));
+
+                if (format.SizePoints > maxSize)
                 {
-                    maxSize = piece.Format.SizePoints;
+                    maxSize = format.SizePoints;
                 }
             }
 
@@ -992,26 +995,32 @@ public static class WordToPdf
             // at 713 bytes allocated per word, against 147 when twelve words go out in one call. So
             // consecutive pieces that would be drawn identically are drawn as one.
             //
-            // This is exact rather than approximate. SplitWords keeps each word's trailing space
-            // attached, so concatenating consecutive pieces reproduces the text character for
-            // character; and a piece's width is the sum of its glyph advances, so the merged run
-            // puts every glyph exactly where the per-piece loop put it. The decorations follow:
-            // abutting highlight rectangles are one rectangle, abutting underlines one line.
+            // This is exact rather than approximate. Words keep the space that followed them, so
+            // neighbouring pieces of one segment are one unbroken range of its text and cutting that
+            // range out reproduces it character for character; and a piece's width is the sum of its
+            // glyph advances, so the merged run puts every glyph exactly where the per-piece loop
+            // put it. The decorations follow: abutting highlight rectangles are one rectangle, and
+            // abutting underlines one line.
             var index = 0;
 
             while (index < pieces.Count)
             {
-                var format = pieces[index].Format;
+                var piece = pieces[index];
+                var format = segments[piece.Segment].Format;
                 var font = StandardFonts.Match(format.FontFamily, format.Bold, format.Italic);
 
                 var runEnd = index + 1;
-                var runWidth = pieces[index].Width + (extraPerSpace * CountSpaces(pieces[index].Text));
+                var runLength = piece.Length;
+                var runWidth = piece.Width + (extraPerSpace * CountSpaces(TextOf(segments, piece)));
 
                 // Justified text positions every word itself, so there is nothing to merge into.
                 if (extraPerSpace <= 0)
                 {
-                    while (runEnd < pieces.Count && pieces[runEnd].Format == format)
+                    while (runEnd < pieces.Count &&
+                           pieces[runEnd].Segment == piece.Segment &&
+                           pieces[runEnd].Start == piece.Start + runLength)
                     {
+                        runLength += pieces[runEnd].Length;
                         runWidth += pieces[runEnd].Width;
                         runEnd++;
                     }
@@ -1036,12 +1045,14 @@ public static class WordToPdf
 
                 if (extraPerSpace > 0)
                 {
-                    DrawWithExtraSpacing(canvas, pieces[index], font, cursor, pieceBaseline,
+                    DrawWithExtraSpacing(canvas, segments, piece, font, cursor, pieceBaseline,
                         extraPerSpace);
                 }
                 else
                 {
-                    canvas.DrawText(TextOf(pieces, index, runEnd), cursor, pieceBaseline);
+                    canvas.DrawText(
+                        segments[piece.Segment].Text.Substring(piece.Start, runLength),
+                        cursor, pieceBaseline);
                 }
 
                 if (format.Underline)
@@ -1065,52 +1076,69 @@ public static class WordToPdf
             }
         }
 
-        /// <summary>Joins a run of pieces back into the text they were split from.</summary>
+        /// <summary>The characters a piece names, without cutting them out of the segment.</summary>
+        private static ReadOnlySpan<char> TextOf(List<Segment> segments, LinePiece piece) =>
+            segments[piece.Segment].Text.AsSpan(piece.Start, piece.Length);
+
+        /// <summary>Counts spaces without allocating an enumerator.</summary>
         /// <remarks>
-        /// A run of one — the common case for a line of mixed formatting, and every case under
-        /// justification — hands back the piece's own string rather than copying it.
+        /// <c>text.Count(c => c == ' ')</c> reads better and boxes the string's char enumerator every
+        /// time it is called, which is once per word on every line of the document.
         /// </remarks>
-        private static string TextOf(List<LinePiece> pieces, int start, int end)
+        private static int CountSpaces(ReadOnlySpan<char> text)
         {
-            if (end - start == 1)
+            var count = 0;
+
+            foreach (var c in text)
             {
-                return pieces[start].Text;
-            }
-
-            var length = 0;
-
-            for (var i = start; i < end; i++)
-            {
-                length += pieces[i].Text.Length;
-            }
-
-            return string.Create(length, (pieces, start, end), static (span, state) =>
-            {
-                var (source, from, to) = state;
-                var at = 0;
-
-                for (var i = from; i < to; i++)
+                if (c == ' ')
                 {
-                    source[i].Text.CopyTo(span[at..]);
-                    at += source[i].Text.Length;
+                    count++;
                 }
-            });
+            }
+
+            return count;
         }
 
-        private static void DrawWithExtraSpacing(PdfCanvas canvas, LinePiece piece, StandardFont font,
-            double x, double baseline, double extraPerSpace)
+        /// <summary>
+        /// Draws one piece with its spaces stretched, for a justified line.
+        /// </summary>
+        /// <remarks>
+        /// A piece is a word and the space that followed it, so this is nearly always one word and
+        /// one gap. It still has to be a loop, because a run boundary can fall inside a space.
+        /// </remarks>
+        private static void DrawWithExtraSpacing(PdfCanvas canvas, List<Segment> segments,
+            LinePiece piece, StandardFont font, double x, double baseline, double extraPerSpace)
         {
+            var format = segments[piece.Segment].Format;
+            var text = segments[piece.Segment].Text;
             var cursor = x;
+            var from = piece.Start;
+            var end = piece.Start + piece.Length;
 
-            foreach (var word in piece.Text.Split(' '))
+            while (from <= end)
             {
-                if (word.Length > 0)
+                var to = from;
+
+                while (to < end && text[to] != ' ')
                 {
-                    canvas.DrawText(word, cursor, baseline);
-                    cursor += StandardFonts.MeasurePoints(font, word, piece.Format.SizePoints);
+                    to++;
                 }
 
-                cursor += StandardFonts.MeasurePoints(font, " ", piece.Format.SizePoints) + extraPerSpace;
+                if (to > from)
+                {
+                    canvas.DrawText(text.Substring(from, to - from), cursor, baseline);
+                    cursor += StandardFonts.MeasurePoints(font, text.AsSpan(from, to - from),
+                        format.SizePoints);
+                }
+
+                if (to >= end)
+                {
+                    break;
+                }
+
+                cursor += StandardFonts.MeasurePoints(font, " ", format.SizePoints) + extraPerSpace;
+                from = to + 1;
             }
         }
 
@@ -1581,7 +1609,9 @@ public static class WordToPdf
 
                 cursor += before;
 
-                foreach (var line in WrapSegments(BuildSegments(runs, paragraph), textWidth, 0, 0))
+                var segments = BuildSegments(runs, paragraph);
+
+                foreach (var line in WrapSegments(segments, textWidth, 0, 0))
                 {
                     // Text past the bottom of the box is clipped by Word too — it simply stops being
                     // visible. Drawing it anyway would spill words across the page.
@@ -1590,7 +1620,8 @@ public static class WordToPdf
                         return;
                     }
 
-                    DrawLineOn(canvas, line, textLeft, textWidth, cursor, lineHeight, alignment);
+                    DrawLineOn(canvas, segments, line, textLeft, textWidth, cursor, lineHeight,
+                        alignment);
                     cursor += lineHeight;
                 }
 
@@ -1778,7 +1809,7 @@ public static class WordToPdf
             // drawn without a page-break check that would split a cell across pages.
             foreach (var line in WrapSegments(segments, Math.Max(10, width), 0, 0))
             {
-                DrawLine(line, x, width, lineHeight,
+                DrawLine(segments, line, x, width, lineHeight,
                     alignment == ParagraphAlignment.Justify ? ParagraphAlignment.Left : alignment);
                 _cursor += lineHeight;
             }

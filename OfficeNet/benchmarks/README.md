@@ -21,7 +21,7 @@ the file system.
 
 ## What running them found
 
-Benchmarks earn their keep by finding things, and these found two quadratic paths and five wasteful
+Benchmarks earn their keep by finding things, and these found two quadratic paths and six wasteful
 ones that no test could see — a test asserts a result, and every one of these produced perfectly
 correct output.
 
@@ -187,6 +187,43 @@ many builder chunks must survive every seam, and Latin-1 characters must be narr
 encoded as UTF-8. Writing every chunk at the same offset fails the first; swapping the encoder
 fails the second.
 
+### Laying out a line copied the text it was laying out
+
+Line breaking works word by word, so the filler held a list of words. Each entry was the word cut
+out as its own string, plus a copy of the resolved formatting, plus the font and the width — about
+2.8 KB per paragraph, and the largest single item left in the export.
+
+A piece now names a range: which segment, where it starts, how long it is, and how wide. The text
+is fetched only when it is drawn, and by then neighbouring pieces have usually been merged, so one
+substring comes out per run instead of one per word.
+
+| Paragraphs | Allocated before | After |
+|---|---:|---:|
+| 100 | 1.23 MB | 1.01 MB |
+| 1 000 | 10.45 MB | 8.26 MB |
+| 10 000 | 104 MB | 82 MB |
+
+Merging got simpler as well as cheaper. Neighbouring words of one segment are one unbroken range by
+construction, so the test for "can these be drawn together" is `same segment && contiguous` — no
+comparison of fonts, colours and decorations, and no possibility of that comparison being
+incomplete.
+
+**Byte-identical output, checked by hashing.** Every page's decoded content stream was hashed before
+and after, across all four alignments with bold, italic, underline, strike, colour, highlight and
+superscript changing mid-line. All six pages matched.
+
+**A branch that could not run.** Trimming a leading space off a piece looked necessary, and it had
+been there since the string version. It is unreachable: words are split so a space is only ever the
+*last* character of a piece, so a piece beginning with a space holds nothing else and is dropped
+whole. Putting a `throw` in the branch and running the suite proved it rather than argued it, and
+the invariant is now stated where the code relies on it.
+
+**Two guards that guarded nothing.** The first version of `LinePieceRangeTests` asserted that no
+line starts with a space, using text with doubled spaces — but a single space almost always fits at
+the end of the line before it, so nothing ever landed at a line start and deleting the check that
+prevents it still passed. Sixty consecutive spaces cannot fit on one line, and with those the test
+fails as it should. Mutation testing is what surfaced this; the tests read fine.
+
 ### Appending a paragraph was O(number of blocks)
 
 `InsertBlock` kept the body's final `w:sectPr` last by finding it and calling `AddBeforeSelf`. LINQ
@@ -235,14 +272,16 @@ speed, and this is a laptop CPU that throttles.
 | Create + save | 1.2 ms | 9.0 ms | 99 ms |
 | Open | 0.3 ms | 2.3 ms | 23 ms |
 | Extract text | 0.4 ms | 2.7 ms | 26 ms |
-| Export to PDF | 2.3 ms | 14 ms | 181 ms |
+| Export to PDF | 2.2 ms | 15 ms | 190 ms |
 
 PDF export is still the expensive one, and reasonably so: it resolves style inheritance, measures
-every run against the font metrics, breaks lines and paginates. It allocates 104 MB for the
-10 000-paragraph case, and no longer reaches generation 2 at all — that column was 1 000 to 2 000
-collections per thousand operations when this started. The largest piece left is building the line
-filler, at 2.8 KB per paragraph: it stores a copy of the resolved formatting and a fresh substring
-for every word, where an index into the segment would do.
+every run against the font metrics, breaks lines and paginates. It allocates 82 MB for the
+10 000-paragraph case, down from 241, and no longer reaches generation 2 at all — that column was
+1 000 to 2 000 collections per thousand operations when this started.
+
+Timings at this point are dominated by the machine rather than by the code: the short job reports
+190 ms with an error of 374 ms on the same measurement that reported 181 ms before. Allocation is
+the number to read here.
 
 | Table, 4 columns | 50 rows | 500 rows |
 |---|---:|---:|

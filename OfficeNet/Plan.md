@@ -265,9 +265,41 @@ mengukur adalah cara membuang waktu pada jalur yang tidak panas.
   dan rantai yang menunjuk balik ke dirinya berhenti alih-alih menggantung. Menghapus pembalikannya
   menggagalkan yang pertama; mengunci kunci cache ke satu konstanta menggagalkan yang kedua.
 
-  **Total v1.2 untuk ekspor Word→PDF 10.000 paragraf: 449 ms → 181 ms, 241 MB → 104 MB, berkas
-  1.161.639 → 634.591 byte** — dan kolom Gen2 benchmark yang semula 1.000–2.000 koleksi per seribu
-  operasi kini kosong sama sekali.
+  **Total v1.2 untuk ekspor Word→PDF 10.000 paragraf: 241 MB → 82 MB, berkas 1.161.639 → 634.591
+  byte** — dan kolom Gen2 benchmark yang semula 1.000–2.000 koleksi per seribu operasi kini kosong
+  sama sekali. Waktunya turun dari 449 ms ke kisaran 180–210 ms, tapi pada tahap ini ragamnya sudah
+  lebih besar daripada selisih antar-perbaikan, jadi angka alokasi yang layak dibaca.
+- [x] **Melayout satu baris menyalin teks yang sedang dilayout — selesai.** Pemenggalan baris bekerja
+  per kata, jadi filler-nya menyimpan daftar kata. Setiap entrinya adalah kata itu yang dipotong jadi
+  string sendiri, ditambah salinan format yang sudah diresolusi, fontnya, dan lebarnya — sekitar
+  **2,8 KB per paragraf**, dan butir tunggal terbesar yang tersisa.
+
+  Sekarang sepotong baris hanya menyebut rentang: segmen mana, mulai di mana, sepanjang apa, selebar
+  berapa. Teksnya baru diambil saat digambar, dan saat itu potongan bertetangga biasanya sudah
+  digabung — jadi satu substring per run, bukan satu per kata.
+
+  | Paragraf | Alokasi sebelum | Sesudah |
+  |---|---|---|
+  | 100 | 1,23 MB | 1,01 MB |
+  | 1.000 | 10,45 MB | 8,26 MB |
+  | 10.000 | 104 MB | 82 MB |
+
+  Penggabungannya sekalian jadi lebih sederhana: kata bertetangga dalam satu segmen memang satu
+  rentang utuh, jadi syaratnya cukup **segmen sama dan bersambung** — tidak perlu membandingkan font,
+  warna, dan dekorasi satu per satu, dan tidak ada kemungkinan perbandingan itu kurang lengkap.
+  Keluarannya identik byte demi byte, dibuktikan dengan hash setiap content stream halaman.
+
+  **Sebuah cabang yang tidak bisa dijalankan.** Memangkas spasi di depan sepotong baris tampak perlu,
+  dan sudah ada sejak versi string. Ternyata tak terjangkau: kata dipecah sehingga spasi hanya pernah
+  menjadi karakter **terakhir** sebuah potongan, jadi potongan yang diawali spasi tidak berisi apa pun
+  selain spasi dan dibuang utuh. Dibuktikan dengan menaruh `throw` di cabang itu lalu menjalankan
+  seluruh tes — bukan dengan berargumen — dan invariannya kini ditulis di tempat kodenya bersandar.
+
+  **Dua penjaga yang tidak menjaga apa pun.** Versi pertama `LinePieceRangeTests` memakai teks
+  berspasi ganda, padahal satu spasi hampir selalu masih muat di ujung baris sebelumnya, jadi tak ada
+  yang pernah mendarat di awal baris dan menghapus pengamannya pun tetap lulus. Dengan enam puluh
+  spasi berurutan barulah ia gagal sebagaimana mestinya. Yang menemukan ini adalah uji mutasi;
+  tesnya sendiri terbaca meyakinkan.
 - **Rust untuk kernel level rendah.** Spesifikasi mengizinkannya. Kandidat paling masuk akal:
   inflate/deflate dan predictor PNG. Benchmark saat ini **tidak** menunjukkan keduanya sebagai
   hambatan — ekspor PDF Word (181 ms untuk 10.000 paragraf) didominasi layout, bukan kompresi —
