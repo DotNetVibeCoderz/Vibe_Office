@@ -117,9 +117,11 @@ seberapa sering ketiadaannya menghentikan pekerjaan nyata.
 
 ### PdfNet
 
-- **PDF → Word / PDF → Excel.** Ekstraksi teks sudah ada; yang kurang adalah rekonstruksi
-  struktur — mengenali paragraf, tabel, dan kolom dari posisi glyph. Ini masalah riset kecil, bukan
-  sekadar penulisan kode, dan hasilnya akan selalu perkiraan.
+- [x] **PDF → Word / PDF → Excel.** Selesai, dan hasilnya memang perkiraan seperti yang diduga.
+  `PdfNet.Text.PageStructure` menyimpulkan baris dari baseline, paragraf dari jarak vertikal, tabel
+  dari kolom yang sejajar, dan level heading dari ukuran huruf relatif terhadap badan teks.
+  Kegagalannya dibuat terlihat: struktur yang luput kembali sebagai paragraf, dan tidak ada teks
+  yang hilang. Angka yang ambigu (`1.234`) dibiarkan teks alih-alih ditebak.
 - **Penyematan font TrueType.** Sekarang teks dipetakan ke 14 font baku. Dokumen berbahasa yang
   tidak tercakup Latin-1 butuh font sungguhan disematkan.
 - **Tanda tangan digital.** Verifikasi lebih dulu, penandatanganan kemudian.

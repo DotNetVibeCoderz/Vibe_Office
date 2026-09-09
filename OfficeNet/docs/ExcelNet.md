@@ -484,6 +484,61 @@ SqlIo.Export(sheet, connection, "penjualan");
 `CsvOptions.Indonesian` matters more than it looks: a locale that uses `,` as the decimal separator
 must use `;` as the field separator, and getting that wrong turns every number into two columns.
 
+## PDF → Excel
+
+```csharp
+using ExcelNet.Io;
+
+PdfToExcel.Convert("laporan.pdf", "tabel.xlsx");
+
+// Or just the grids, to check before keeping them:
+using var pdf = PdfDocument.Open("laporan.pdf");
+var tables = PdfToExcel.FindTables(pdf);
+```
+
+Each table found becomes its own sheet — `Tabel 1`, `Tabel 2` — or `SheetPerTable = false` puts them
+all on one, separated by a blank row.
+
+```csharp
+PdfToExcel.Convert("laporan.pdf", "tabel.xlsx", new PdfTableOptions
+{
+    Pages = 0..3,
+    ParseNumbers = false,       // keep "001" as text, leading zeros and all
+    DecimalSeparator = ',',     // say which, instead of leaving it to be inferred
+});
+```
+
+### Numbers, and the one that cannot be read
+
+A cell that can only be a number becomes one, because a column of numbers stored as text will not
+sum and Excel's green triangles are the only clue why. But a PDF carries no locale, and `1.234` is
+one thousand two hundred and thirty-four in Indonesia and one-point-two-three-four elsewhere.
+Guessing wrong changes a value by a factor of a thousand while looking perfectly reasonable, so the
+rule is to answer only when the string can mean one thing:
+
+| Text | Read as | Why |
+| --- | --- | --- |
+| `1500`, `-42` | 1500, -42 | no separator |
+| `15.5`, `15,5` | 15.5 | one separator, not three digits after it |
+| `1.234.567` | 1234567 | repeated, so it groups |
+| `1.234,56`, `1,234.56` | 1234.56 | both present; the rightmost is the decimal point |
+| `Rp 15000`, `$1500`, `12%` | 15000, 1500, 0.12 | currency and percent are formatting |
+| `(250)` | -250 | an accountant's minus sign |
+| **`1.234`** | **left as text** | **ambiguous, and nothing in the file says which** |
+
+`DecimalSeparator` removes the guess when you know. `TryParseNumber` is public, for cleaning up data
+that came from somewhere else.
+
+### What it will miss
+
+A table whose columns are ragged, one whose cells wrap onto several lines, one separated only by
+ruling lines with generous spacing inside the cells, and any table on a scanned page. What it will
+not do is invent a table that is not there: three consecutive lines have to agree on where the
+columns start before anything is emitted.
+
+Check what comes back. That is not a disclaimer — it is the operating instruction for every tool in
+this category.
+
 ## DataFrames
 
 ExcelNet does not reimplement pandas. It bridges to `GraviFrame` from

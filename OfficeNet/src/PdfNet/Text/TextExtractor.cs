@@ -411,61 +411,42 @@ public static class TextExtractor
     {
         ArgumentNullException.ThrowIfNull(fragments);
 
-        if (fragments.Count == 0)
-        {
-            return string.Empty;
-        }
+        return string.Join('\n', PageStructure.Lines(fragments).Select(l => l.Text));
+    }
 
-        // Group by baseline. A tolerance proportional to the font size is what handles a line that
-        // mixes 10 pt body text with an 8 pt footnote marker without splitting it in two.
-        var lines = new List<List<TextFragment>>();
-
-        foreach (var fragment in fragments.OrderByDescending(f => f.Y).ThenBy(f => f.X))
-        {
-            var tolerance = Math.Max(1.5, fragment.FontSize * 0.35);
-            var line = lines.FirstOrDefault(l => Math.Abs(l[0].Y - fragment.Y) <= tolerance);
-
-            if (line is null)
-            {
-                lines.Add([fragment]);
-            }
-            else
-            {
-                line.Add(fragment);
-            }
-        }
+    /// <summary>
+    /// Joins one line's fragments, putting back the spaces the producer never wrote.
+    /// </summary>
+    /// <remarks>
+    /// A producer that positions each word with its own <c>Td</c> writes no space characters at all,
+    /// so the gaps have to be read as spaces. The threshold is a fraction of the font's own size
+    /// rather than a fixed number of points, which is what makes it work at 8 pt and at 40 pt.
+    /// </remarks>
+    public static string JoinLine(IReadOnlyList<TextFragment> fragments)
+    {
+        ArgumentNullException.ThrowIfNull(fragments);
 
         var builder = new StringBuilder();
 
-        foreach (var line in lines)
+        for (var i = 0; i < fragments.Count; i++)
         {
-            line.Sort((a, b) => a.X.CompareTo(b.X));
-
-            if (builder.Length > 0)
+            if (i > 0)
             {
-                builder.Append('\n');
-            }
+                var gap = fragments[i].X - fragments[i - 1].Right;
 
-            for (var i = 0; i < line.Count; i++)
-            {
-                if (i > 0)
+                // A gap wider than a quarter of the font size is a space. Smaller gaps are kerning,
+                // and a negative gap means overlapping runs — which is how bold-by-overprinting is
+                // done, and must not become a space.
+                var threshold = Math.Max(1.0, fragments[i].FontSize * 0.25);
+
+                if (gap > threshold && !fragments[i - 1].Text.EndsWith(' ') &&
+                    !fragments[i].Text.StartsWith(' '))
                 {
-                    var gap = line[i].X - line[i - 1].Right;
-
-                    // A gap wider than a quarter of the font size is a space the producer never
-                    // wrote. Smaller gaps are kerning. A negative gap means overlapping runs, which
-                    // is how bold-by-overprinting is done and must not become a space.
-                    var threshold = Math.Max(1.0, line[i].FontSize * 0.25);
-
-                    if (gap > threshold && !line[i - 1].Text.EndsWith(' ') &&
-                        !line[i].Text.StartsWith(' '))
-                    {
-                        builder.Append(' ');
-                    }
+                    builder.Append(' ');
                 }
-
-                builder.Append(line[i].Text);
             }
+
+            builder.Append(fragments[i].Text);
         }
 
         return builder.ToString();

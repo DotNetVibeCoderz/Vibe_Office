@@ -2,6 +2,7 @@
 
 using ExcelNet.DataFrames;
 using ExcelNet.Io;
+using WordNet.Import;
 using ExcelNet.Streaming;
 using ExcelNet.Styles;
 using ExcelNet.Validation;
@@ -164,6 +165,63 @@ public class DocSamples : IDisposable
         document.AddSection(SectionStart.NextPage);
 
         Assert.Equal(2, document.Sections.Count);
+    }
+
+    [Fact]
+    public void PdfImport_BackToWordAndExcel()
+    {
+        // A report, out to PDF, and back again. Building the source here rather than shipping a
+        // sample PDF keeps the doc example runnable and shows what actually survives.
+        using var source = WordDocument.Create();
+
+        source.AddParagraph("Laporan Kuartal Pertama", "Heading1");
+        source.AddParagraph(
+            "Pendapatan naik tiga puluh dua persen dibanding kuartal sebelumnya, dengan " +
+            "pertumbuhan terbesar datang dari wilayah Jakarta dan Bandung.");
+
+        source.AddParagraph("Rincian per Wilayah", "Heading2");
+
+        var source_table = source.AddTable(4, 3);
+        string[][] rows =
+        [
+            ["Wilayah", "2025", "2026"],
+            ["Jakarta", "1120", "1480"],
+            ["Bandung", "860", "1150"],
+            ["Surabaya", "740", "905"],
+        ];
+
+        for (var row = 0; row < rows.Length; row++)
+        {
+            for (var column = 0; column < 3; column++)
+            {
+                source_table[row, column].Text = rows[row][column];
+            }
+        }
+
+        using var pdf = WordNet.Export.WordToPdf.Convert(source);
+
+        // ---- Back to Word ------------------------------------------------------------------
+        using var document = PdfToWord.Convert(pdf);
+
+        Assert.Equal("Heading1",
+            document.Paragraphs.First(p => p.Text.Trim().Length > 0).StyleId);
+
+        var recovered = Assert.Single(document.Tables);
+        Assert.Equal("Bandung", recovered[2, 0].Text.Trim());
+
+        // ---- And to Excel ------------------------------------------------------------------
+        using var workbook = PdfToExcel.Convert(pdf);
+        var sheet = workbook.Worksheets[0];
+
+        Assert.Equal("Wilayah", sheet["A1"].Text);
+
+        // A cell that can only be a number becomes one.
+        Assert.Equal(1480d, sheet["C2"].Number);
+
+        // And one that could mean two things does not.
+        Assert.False(PdfToExcel.TryParseNumber("1.234", null, out _));
+        Assert.True(PdfToExcel.TryParseNumber("1.234", ',', out var thousands));
+        Assert.Equal(1234, thousands);
     }
 
     [Fact]

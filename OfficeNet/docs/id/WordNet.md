@@ -345,6 +345,48 @@ luar — mirip, tapi tidak persis. Dan satu baris dipecah mengelilingi satu obje
 sehingga teks di antara dua objek mengambang pergi ke sisi yang lebih lebar alih-alih mengisi kedua
 celah.
 
+## PDF → Word
+
+```csharp
+using WordNet.Import;
+
+PdfToWord.Convert("laporan.pdf", "laporan.docx");
+
+// Atau simpan dokumennya untuk diolah lagi:
+using var document = PdfToWord.Convert("laporan.pdf");
+```
+
+Yang kembali: paragraf, heading pada level yang benar, dan tabel. Baris yang membungkus disatukan
+lagi — pemisah baris di PDF adalah tempat teksnya kehabisan kolom, bukan tempat penulisnya menekan
+enter — dan level heading ditentukan dari ukuran hurufnya, yang terbesar jadi `Heading1` dan ukuran
+di bawahnya jadi `Heading2`.
+
+```csharp
+PdfToWord.Convert("laporan.pdf", "laporan.docx", new PdfImportOptions
+{
+    Pages = 1..5,               // berbasis nol; null mengambil semuanya
+    KeepPageBreaks = false,     // satu aliran menerus sebagai gantinya
+    ConvertTables = false,      // tabel jadi paragraf, kalau yang dicari hanya teksnya
+    Structure = new StructureOptions { MinimumTableRows = 4 },
+});
+```
+
+### Ini rekonstruksi, bukan konversi
+
+PDF tidak punya paragraf dan tidak punya tabel. Yang ada hanyalah instruksi menaruh glyph pada
+koordinat, dan semua di atas adalah kesimpulan dari tempat glyph itu mendarat: baris dari baseline
+yang sama, paragraf dari jarak vertikal, tabel dari kolom yang sejajar, heading dari huruf yang lebih
+besar daripada badan teksnya.
+
+Kegagalannya disengaja agar terlihat, bukan tersembunyi. Struktur yang luput dari heuristiknya
+kembali sebagai paragraf; **tidak ada teks yang pernah hilang**. Yang benar-benar hilang: warna, font
+selain tebal, gambar, posisi persis, urutan baca multi-kolom, dan apa pun yang digambar sebagai jalur
+alih-alih ditulis sebagai teks. Halaman hasil pindaian tidak punya lapisan teks sama sekali, jadi
+hasilnya dokumen kosong — membacanya butuh OCR, dan itu alat yang berbeda.
+
+Gunanya adalah mengembalikan teks ke bentuk yang bisa diedit. Ini bukan round trip, dan dokumen yang
+awalnya berasal dari Word tidak akan kembali seperti aslinya.
+
 ## Membaca dokumen
 
 ```csharp

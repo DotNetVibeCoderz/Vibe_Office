@@ -495,6 +495,60 @@ SqlIo.Export(sheet, connection, "penjualan");
 desimal harus memakai `;` sebagai pemisah kolom, dan salah di sini mengubah setiap angka menjadi dua
 kolom.
 
+## PDF → Excel
+
+```csharp
+using ExcelNet.Io;
+
+PdfToExcel.Convert("laporan.pdf", "tabel.xlsx");
+
+// Atau ambil grid-nya saja, untuk diperiksa sebelum disimpan:
+using var pdf = PdfDocument.Open("laporan.pdf");
+var tables = PdfToExcel.FindTables(pdf);
+```
+
+Setiap tabel yang ditemukan menjadi sheet-nya sendiri — `Tabel 1`, `Tabel 2` — atau
+`SheetPerTable = false` menaruh semuanya di satu sheet, dipisahkan satu baris kosong.
+
+```csharp
+PdfToExcel.Convert("laporan.pdf", "tabel.xlsx", new PdfTableOptions
+{
+    Pages = 0..3,
+    ParseNumbers = false,       // biarkan "001" tetap teks, lengkap dengan nol di depan
+    DecimalSeparator = ',',     // sebutkan sendiri, alih-alih dibiarkan ditebak
+});
+```
+
+### Angka, dan satu yang tidak bisa dibaca
+
+Sel yang hanya bisa berarti angka dijadikan angka, karena kolom angka yang tersimpan sebagai teks
+tidak bisa dijumlahkan dan segitiga hijau Excel adalah satu-satunya petunjuknya. Tetapi PDF tidak
+membawa locale, dan `1.234` berarti seribu dua ratus tiga puluh empat di Indonesia dan satu koma dua
+tiga empat di tempat lain. Salah tebak mengubah nilainya seribu kali lipat sambil tetap terlihat
+wajar, jadi aturannya: hanya menjawab bila string itu cuma bisa berarti satu hal.
+
+| Teks | Dibaca sebagai | Alasannya |
+| --- | --- | --- |
+| `1500`, `-42` | 1500, -42 | tidak ada pemisah |
+| `15.5`, `15,5` | 15,5 | satu pemisah, dan bukan tiga digit setelahnya |
+| `1.234.567` | 1234567 | berulang, jadi mengelompokkan ribuan |
+| `1.234,56`, `1,234.56` | 1234,56 | keduanya hadir; yang paling kanan adalah koma desimal |
+| `Rp 15000`, `$1500`, `12%` | 15000, 1500, 0,12 | mata uang dan persen adalah format |
+| `(250)` | -250 | tanda minus ala akuntan |
+| **`1.234`** | **dibiarkan teks** | **ambigu, dan tidak ada di berkas yang menyebutkan mana** |
+
+`DecimalSeparator` menghilangkan tebakan itu bila Anda tahu. `TryParseNumber` bersifat publik, untuk
+membersihkan data yang datang dari tempat lain.
+
+### Yang akan terlewat
+
+Tabel yang kolomnya tidak rata, yang selnya membungkus ke beberapa baris, yang hanya dipisahkan garis
+dengan spasi longgar di dalam selnya, dan tabel apa pun di halaman hasil pindaian. Yang tidak akan
+dilakukannya adalah mengarang tabel yang tidak ada: tiga baris berturut-turut harus sepakat soal di
+mana kolomnya dimulai sebelum ada yang dikeluarkan.
+
+Periksa hasilnya. Itu bukan penafian — itu petunjuk pemakaian untuk setiap alat di kategori ini.
+
 ## DataFrame
 
 ExcelNet tidak menulis ulang pandas. Ia menjembatani ke `GraviFrame` dari

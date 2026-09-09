@@ -72,6 +72,7 @@ Dibuat oleh Gravicode Studios, dipimpin oleh Kang Fadhil.
 - [x] `ReplaceText`, `ReplaceTextAcrossRuns`, `MailMerge`
 - [x] Ekspor PDF — layout mengalir, style chain, wrapping, justifikasi, tabel, header/footer
 - [x] Smoke test + **validasi struktur .docx oleh pembaca independen (python)**
+- [x] Impor PDF → Word — paragraf, heading berjenjang, dan tabel dari posisi glyph
 - [x] Footnote / endnote — id 0 dan 1 dicadangkan; ikut digambar di ekspor PDF
 - [x] Komentar (`comments.xml`) — termasuk mengomentari satu run saja
 - [x] Shape / text box — `wps:wsp`, sebelas geometri preset, inline dan mengambang
@@ -100,6 +101,7 @@ Dibuat oleh Gravicode Studios, dipimpin oleh Kang Fadhil.
 - [x] Proteksi sheet dan workbook — tulis dan baca; flag dibalik tepat sekali
 - [x] Streaming writer — sejuta baris, memori rata; hanya menulis dan hanya maju
 - [x] Lookup — `VLOOKUP`, `HLOOKUP`, `INDEX`, `MATCH`, `XLOOKUP`; argumen range membawa bentuknya
+- [x] Impor PDF → Excel — tabel dari kolom yang sejajar; angka ambigu dibiarkan teks
 
 ## PowerPointNet — `Gravicode.OfficeNet.PowerPointNet` (rewrite python-pptx)
 

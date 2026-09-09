@@ -343,6 +343,46 @@ Two limits worth knowing. `Tight` and `Through` wrap around the bounding box rat
 outline — visibly close, not identical. And a line is broken around one object rather than several,
 so text between two floats goes to the wider side instead of filling both gaps.
 
+## PDF → Word
+
+```csharp
+using WordNet.Import;
+
+PdfToWord.Convert("laporan.pdf", "laporan.docx");
+
+// Or keep the document to work on:
+using var document = PdfToWord.Convert("laporan.pdf");
+```
+
+What comes back: paragraphs, headings at the right level, and tables. Wrapped lines are rejoined —
+a PDF line break is where the text ran out of column, not where the author put one — and headings are
+levelled by their type size, largest to `Heading1` and the next size down to `Heading2`.
+
+```csharp
+PdfToWord.Convert("laporan.pdf", "laporan.docx", new PdfImportOptions
+{
+    Pages = 1..5,               // zero-based; null takes them all
+    KeepPageBreaks = false,     // one continuous flow instead
+    ConvertTables = false,      // tables as paragraphs, if you only wanted the words
+    Structure = new StructureOptions { MinimumTableRows = 4 },
+});
+```
+
+### It is a reconstruction, not a conversion
+
+A PDF has no paragraphs and no tables. It has instructions to put glyphs at coordinates, and
+everything above is inference from where they landed: lines from shared baselines, paragraphs from
+vertical gaps, tables from columns that line up, headings from type larger than the body.
+
+The failure is deliberate rather than invisible. Structure the heuristics miss comes back as
+paragraphs; **no text is ever dropped**. What is genuinely lost: colours, fonts beyond bold, images,
+exact positions, multi-column reading order, and anything drawn as a path rather than written as
+text. A scanned page has no text layer, so it produces an empty document — reading that needs OCR,
+which is a different tool.
+
+This is for getting text back into an editable shape. It is not a round trip, and a document that
+came from Word originally will not come back looking like the original.
+
 ## Reading a document
 
 ```csharp
