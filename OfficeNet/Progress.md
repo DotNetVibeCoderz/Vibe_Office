@@ -291,7 +291,29 @@ Tes tidak bisa melihat keduanya: keluarannya benar, hanya lambat.
 
 ## Rilis
 
-**v1.1.0 siap, belum diterbitkan.** Versi paketnya sudah dinaikkan; penerbitannya menunggu perintah.
+### v1.1.0 — terbit di NuGet
+
+Ketujuh paket beserta symbol package, dipublikasikan 9 September 2026. Isi rilisnya adalah seluruh
+bagian v1.1 [Plan.md](Plan.md), yang kini selesai:
+
+| Pustaka | Yang bertambah di 1.1.0 |
+|---|---|
+| WordNet | Footnote & endnote, komentar, text box & shape, objek mengambang di ekspor PDF, impor PDF |
+| ExcelNet | Data validation, proteksi sheet & workbook, streaming writer, `HLOOKUP`/`INDEX`/`MATCH`/`XLOOKUP`, impor tabel PDF |
+| PowerPointNet | SmartArt (5 jenis), animasi penuh (entrance/emphasis/exit/motion path, pemicu klik-bentuk) |
+| PdfNet | Penyematan font TrueType, tanda tangan digital, `PageStructure` |
+| Rendering | `RenderSlide`, rentang halaman, `RenderToFiles` untuk dokumen hidup |
+
+- [x] Dependensi antar-paket diperiksa dulu: ketujuhnya menunjuk 1.1.0, bukan 1.0.0 yang lama
+- [x] Diunggah menurut urutan dependensi, sehingga tidak pernah ada paket yang merujuk
+      dependensi yang belum terbit
+- [x] `Gravicode.OfficeNet.PdfNet` kini membawa satu dependensi baru,
+      `System.Security.Cryptography.Pkcs` — dipakai untuk CMS tanda tangan digital
+- [x] **Diverifikasi dengan mengonsumsinya dari proyek baru** lewat nuget.org: sebelas pemeriksaan
+      atas fitur yang baru di 1.1.0 — text box mengambang, footnote & komentar, impor PDF→Word,
+      dropdown & proteksi, streaming 50.000 baris, `XLOOKUP` dan `INDEX`/`MATCH`, SmartArt lima
+      part, animasi dengan pemicu bentuk, penyematan font dengan teks yang bisa dibaca kembali,
+      tanda tangan yang utuh dan yang rusak terdeteksi, serta render satu slide
 
 ### v1.0.0 — terbit di NuGet
 
