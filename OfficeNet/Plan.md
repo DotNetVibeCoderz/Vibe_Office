@@ -84,9 +84,11 @@ seberapa sering ketiadaannya menghentikan pekerjaan nyata.
   flag ditulis eksplisit: default skemanya tidak seragam, jadi menghilangkan atribut berarti hal
   yang berbeda tergantung atributnya. Keduanya juga dibaca kembali, agar membuka lalu menyimpan
   template tidak menghapusnya.
-- **Streaming writer.** Model sekarang menaruh seluruh workbook di memori. Ekspor sejuta baris
-  butuh penulis yang tidak pernah memegang lebih dari satu baris. API-nya akan berbeda dan itu
-  wajar: kasusnya juga berbeda.
+- [x] **Streaming writer.** Selesai. `StreamingWorkbook` menulis langsung ke entri ZIP: sejuta
+  baris dalam ~4 detik dengan working set 34 MB, berapa pun jumlah barisnya. API-nya memang berbeda
+  — hanya menulis dan hanya maju — karena kasusnya berbeda. Nama sheet ditetapkan di muka
+  (`[Content_Types].xml` harus jadi entri pertama) dan string ditulis inline (tabel shared string
+  harus lengkap sebelum ditulis, dan itu justru yang dihindari).
 - **Formula: fungsi lookup penuh** (`INDEX`/`MATCH`, `XLOOKUP`). `VLOOKUP` sekarang mengasumsikan
   bentuk tabel dua kolom karena range tiba dalam bentuk datar; memperbaikinya butuh range
   mempertahankan bentuknya sampai ke fungsi.

@@ -388,6 +388,55 @@ membalik masing-masing tepat satu kali, baik saat menulis maupun saat membaca ke
 `Unprotect()` menghapus elemennya. `workbook.Protection` melakukan hal yang sama untuk struktur
 workbook — sheet mana yang boleh ditambah, dihapus, diganti nama, atau diurutkan ulang.
 
+## Streaming ekspor besar
+
+`Workbook` mengurai berkas menjadi model lalu menulis modelnya kembali. Itulah yang membuat membaca
+sebuah sel menjadi O(1), dan yang membuat ekspor sejuta baris mustahil. `StreamingWorkbook` menulis
+langsung ke dalam paket — satu baris diserialisasi lalu dilupakan:
+
+```csharp
+using ExcelNet.Streaming;
+
+using var workbook = StreamingWorkbook.Create("besar.xlsx", "Data");
+var sheet = workbook.Sheet("Data");
+
+sheet.WriteHeader("Id", "Nama", "Wilayah", "Jumlah", "Tanggal");
+
+foreach (var record in source)
+{
+    sheet.WriteRow(record.Id, record.Name, record.Region, record.Amount, record.Date);
+}
+```
+
+Sejuta baris memakan sekitar empat detik dan 34 MB working set, berapa pun jumlah barisnya — yang
+memakai memori adalah buffer-nya, bukan datanya.
+
+Konsekuensinya: penulis ini **hanya menulis dan hanya maju**. Tidak bisa membaca sel kembali, tidak
+bisa kembali ke baris sebelumnya, dan tidak mendukung apa pun yang perlu tahu keseluruhan sheet:
+tidak ada evaluasi formula, chart, pivot, format bersyarat, atau autofit. Pakai `Workbook` bila
+salah satunya dibutuhkan. Keduanya alat yang berbeda karena pekerjaannya memang berbeda.
+
+Dua hal yang perlu diketahui sebelum mulai:
+
+**Nama sheet ditetapkan saat pembuatan.** `[Content_Types].xml` harus menjadi entri pertama di dalam
+ZIP dan menyebut setiap part di dalam berkas, jadi daftar sheet-nya harus sudah diketahui sebelum
+byte pertama dari sheet pertama ditulis. `Sheet(name)` membukanya; membuka yang kedua menutup yang
+pertama, dan sebuah sheet tidak bisa dibuka ulang.
+
+**String ditulis inline, bukan dibagi.** Tabel shared string harus lengkap sebelum bisa ditulis,
+artinya menahan setiap string unik di memori — persis hal yang dihindari kelas ini. Gantinya, string
+inline membuat berkasnya lebih besar, dan terasa pada data yang banyak berulang. Excel membaca
+keduanya.
+
+Nilai ditentukan dari objeknya: `string`, `bool`, tipe-tipe numerik, `DateTime`, `DateOnly`, dan
+`DateTimeOffset` masing-masing menulis tipe sel yang tepat, dan `null` menulis sel *kosong*, bukan
+string kosong — bedanya antara lubang di data dan nilai yang memang kosong, serta antara `COUNT` dan
+`COUNTA` sepakat dengan sumbernya atau tidak. Selain itu ditulis sebagai `ToString()`-nya.
+
+Tersedia empat indeks style, dan `WriteRow(values, styles)` menerapkannya per sel:
+`StreamingSheet.GeneralStyle`, `.HeaderStyle` (tebal), `.DateStyle`, dan `.DateTimeStyle`.
+`SkipRows(n)` meninggalkan celah.
+
 ## CSV, JSON, dan SQL
 
 ```csharp

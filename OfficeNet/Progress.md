@@ -98,6 +98,7 @@ Dibuat oleh Gravicode Studios, dipimpin oleh Kang Fadhil.
 - [x] Pivot table — 4 part, `refreshOnLoad`; grid hasil sengaja tidak ditulis
 - [x] Data validation (dropdown) — tulis dan baca; batas 255 karakter ditegakkan
 - [x] Proteksi sheet dan workbook — tulis dan baca; flag dibalik tepat sekali
+- [x] Streaming writer — sejuta baris, memori rata; hanya menulis dan hanya maju
 
 ## PowerPointNet — `Gravicode.OfficeNet.PowerPointNet` (rewrite python-pptx)
 

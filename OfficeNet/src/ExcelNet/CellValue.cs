@@ -166,11 +166,19 @@ public readonly struct CellValue : IEquatable<CellValue>
         // and February 1900 correct rather than a day early.
         if (serial is > 0 and < 61)
         {
-            return Epoch.AddDays(serial + 1);
+            serial += 1;
         }
 
-        return Epoch.AddDays(serial);
+        // Rounded to the millisecond rather than passed to AddDays, which accumulates enough
+        // floating-point error to turn 09:30:00 into 09:29:59.999997 on a round trip. Nothing is
+        // lost by it: a serial around 46,000 has about a microsecond of resolution left in a double,
+        // so a sub-millisecond date could not have survived being written in the first place.
+        var milliseconds = Math.Round(serial * MillisecondsPerDay);
+
+        return Epoch.AddTicks((long)milliseconds * TimeSpan.TicksPerMillisecond);
     }
+
+    private const double MillisecondsPerDay = 24 * 60 * 60 * 1000;
 
     public bool Equals(CellValue other) =>
         ValueType == other.ValueType &&

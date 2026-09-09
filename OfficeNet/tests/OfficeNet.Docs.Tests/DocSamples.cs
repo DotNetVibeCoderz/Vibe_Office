@@ -2,6 +2,7 @@
 
 using ExcelNet.DataFrames;
 using ExcelNet.Io;
+using ExcelNet.Streaming;
 using ExcelNet.Styles;
 using ExcelNet.Validation;
 using ExcelNet;
@@ -487,6 +488,40 @@ public class DocSamples : IDisposable
 
         Assert.Empty(sheet.Validations);
         Assert.Null(sheet.Protection);
+    }
+
+    [Fact]
+    public void ExcelNet_StreamingALargeExport()
+    {
+        using var file = new OfficeNet.TestKit.TempFile(".xlsx");
+
+        using (var workbook = StreamingWorkbook.Create(file.Path, "Data"))
+        {
+            var sheet = workbook.Sheet("Data");
+
+            sheet.WriteHeader("Id", "Nama", "Wilayah", "Jumlah", "Tanggal");
+
+            var regions = new[] { "Jakarta", "Bandung", "Surabaya", "Medan" };
+
+            for (var i = 0; i < 5_000; i++)
+            {
+                sheet.WriteRow(i, $"Pelanggan {i}", regions[i % 4], i * 1.25,
+                    new DateTime(2026, 1, 1).AddDays(i % 365));
+            }
+
+            // A null is an empty cell, not an empty string.
+            sheet.WriteRow(5_000, null, "Jakarta", 0, null);
+
+            Assert.Equal(5_002, sheet.RowCount);
+        }
+
+        // The file it wrote is an ordinary workbook, readable by the ordinary reader.
+        using var reopened = Workbook.Open(file.Path);
+        var data = reopened["Data"];
+
+        Assert.Equal("Pelanggan 0", data["B2"].Text);
+        Assert.Equal(new DateTime(2026, 1, 1), data["E2"].DateTime);
+        Assert.True(data["B5002"].IsEmpty);
     }
 
     [Fact]

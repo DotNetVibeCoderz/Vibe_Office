@@ -382,6 +382,54 @@ each exactly once, on the way out and on the way back in.
 `Unprotect()` removes the element. `workbook.Protection` does the same job for the workbook's
 structure — which sheets can be added, removed, renamed or reordered.
 
+## Streaming a large export
+
+`Workbook` parses a file into a model and writes the model back. That is what makes reading a cell
+an O(1) lookup, and what makes a million-row export impossible. `StreamingWorkbook` writes straight
+into the package instead — a row is serialised and forgotten:
+
+```csharp
+using ExcelNet.Streaming;
+
+using var workbook = StreamingWorkbook.Create("besar.xlsx", "Data");
+var sheet = workbook.Sheet("Data");
+
+sheet.WriteHeader("Id", "Nama", "Wilayah", "Jumlah", "Tanggal");
+
+foreach (var record in source)
+{
+    sheet.WriteRow(record.Id, record.Name, record.Region, record.Amount, record.Date);
+}
+```
+
+A million rows takes about four seconds and 34 MB of working set, whatever the row count — the
+memory is the buffers, not the data.
+
+The trade is that it is **write-only and forward-only**. No reading a cell back, no returning to an
+earlier row, and nothing that needs to know the whole sheet: no formula evaluation, no charts, no
+pivots, no conditional formatting, no autofit. Use `Workbook` when any of those matter. They are
+different tools because the jobs are different.
+
+Two consequences worth knowing before you start:
+
+**The sheet names are fixed at creation.** `[Content_Types].xml` has to be the first entry in the
+ZIP and it names every part in the file, so the sheets must be known before the first byte of the
+first one is written. `Sheet(name)` opens one; opening a second closes the first, and a sheet cannot
+be reopened.
+
+**Strings are written inline, not shared.** A shared-string table has to be complete before it can
+be written, which means holding every distinct string in memory — the thing this class exists to
+avoid. Inline strings cost file size instead, noticeably so on repetitive data. Excel reads both.
+
+Values are typed from the object: `string`, `bool`, the numeric types, `DateTime`, `DateOnly` and
+`DateTimeOffset` each write the right cell type, and `null` writes an *empty* cell rather than an
+empty string — the difference between a gap in the data and a blank value, and between `COUNT` and
+`COUNTA` agreeing with the source and not. Anything else is written as its `ToString()`.
+
+Four style indices are available, and `WriteRow(values, styles)` applies them per cell:
+`StreamingSheet.GeneralStyle`, `.HeaderStyle` (bold), `.DateStyle` and `.DateTimeStyle`.
+`SkipRows(n)` leaves a gap.
+
 ## CSV, JSON and SQL
 
 ```csharp
