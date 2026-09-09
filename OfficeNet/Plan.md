@@ -175,9 +175,33 @@ mengukur adalah cara membuang waktu pada jalur yang tidak panas.
   Perbaikannya satu baris — jangan ikuti `/Parent` saat mengimpor halaman; parent lamanya tidak ada
   artinya di dokumen baru karena `PdfPageCollection.Flush` menuliskannya ulang. Dijaga
   `PdfNet.Tests.SplitScalingTests`, yang menegaskan jumlah objek dan ukuran, bukan waktu.
+- [x] **Ekspor Word→PDF menggambar satu kata sekaligus — selesai.** Pemenggalan baris memang
+  bekerja per kata, tapi *menggambarnya* per kata membuat setiap kata membawa operator font, warna,
+  dan posisi teksnya sendiri. Diukur dengan probe kanvas terpisah: **713 byte per kata** ketika
+  setiap kata satu `DrawText`, lawan **147 byte** ketika dua belas kata keluar dalam satu panggilan.
+
+  Sekarang potongan yang berurutan dan formatnya sama digambar sebagai satu. Ini eksak, bukan
+  hampiran: `SplitWords` menyimpan spasi di ekor setiap kata sehingga penyambungannya mengembalikan
+  teks aslinya karakter demi karakter, dan lebar sebuah potongan adalah jumlah lebar majunya
+  masing-masing glyph sehingga posisinya identik. Baris rata kanan-kiri tetap menempatkan setiap
+  kata sendiri, karena spasinya diregangkan.
+
+  | Paragraf | Waktu sebelum | Sesudah | Alokasi sebelum | Sesudah | PDF sebelum | Sesudah |
+  |---|---|---|---|---|---|---|
+  | 100 | 4,4 ms | 2,6 ms | 2,61 MB | 1,78 MB | 12.636 B | 7.298 B |
+  | 1.000 | 47 ms | 20 ms | 24,1 MB | 16,0 MB | 116.750 B | 64.038 B |
+  | 10.000 | 449 ms | 253 ms | 241 MB | 159 MB | 1.161.639 B | 634.591 B |
+
+  Berkasnya **45% lebih kecil** dengan tampilan yang sama persis — dibuktikan dengan membandingkan
+  posisi dan isi setiap baris terhadap kode lama pada keempat perataan dan seluruh format, dan
+  hasilnya identik. Dijaga `WordNet.Tests.RunMergingTests`.
+
+  Dua hipotesis lain di jalur yang sama **ditolak oleh pengukuran**: alokasi ekstraksi teks PdfNet
+  ternyata datar di 331 KB per halaman (angka 167 MB di benchmark adalah artefak harness), dan
+  pencarian `Styles[styleId]` bukan jalur panas — paragraf bergaya dan polos hanya beda 6%.
 - **Rust untuk kernel level rendah.** Spesifikasi mengizinkannya. Kandidat paling masuk akal:
   inflate/deflate dan predictor PNG. Benchmark saat ini **tidak** menunjukkan keduanya sebagai
-  hambatan — ekspor PDF Word (477 ms untuk 10.000 paragraf) didominasi layout, bukan kompresi —
+  hambatan — ekspor PDF Word (253 ms untuk 10.000 paragraf) didominasi layout, bukan kompresi —
   jadi butir ini turun peringkat sampai ada pengukuran yang membenarkan dua toolchain build.
 
 ---

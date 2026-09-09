@@ -21,8 +21,9 @@ the file system.
 
 ## What running them found
 
-Benchmarks earn their keep by finding things, and these found two quadratic paths that no test could
-see — a test asserts a result, and both of these produced perfectly correct output.
+Benchmarks earn their keep by finding things, and these found two quadratic paths and two wasteful
+ones that no test could see — a test asserts a result, and every one of these produced perfectly
+correct output.
 
 ### Splitting copied the whole document into every part
 
@@ -50,6 +51,46 @@ the new document anyway — `PdfPageCollection.Flush` sets `/Parent` to the new 
 document built in memory and never saved has no parent link to follow, and the bug is invisible.
 The first version of the regression test built its document in memory and passed against the broken
 code. It now round-trips through bytes first, which is what a caller does before splitting anything.
+
+### Word to PDF drew one word at a time
+
+Line breaking works word by word, so the exporter had a list of words and drew each one. Every word
+therefore carried its own font, colour and text-positioning operators.
+
+A probe that isolated the canvas — same document, same words, only the number of `DrawText` calls
+changed — put a number on it:
+
+| 24 000 words | Allocated | Per word |
+|---|---:|---:|
+| One `DrawText` each | 16.3 MB | 713 B |
+| One `DrawText` per twelve | 3.4 MB | 147 B |
+
+So the canvas was 713 of the ~1 350 bytes the export spent per word. Consecutive pieces that would
+be drawn identically are now drawn as one:
+
+| Paragraphs | Time before | After | Allocated before | After | PDF before | After |
+|---|---:|---:|---:|---:|---:|---:|
+| 100 | 4.4 ms | 2.6 ms | 2.61 MB | 1.78 MB | 12,636 B | 7,298 B |
+| 1 000 | 47 ms | 20 ms | 24.1 MB | 16.0 MB | 116,750 B | 64,038 B |
+| 10 000 | 449 ms | 253 ms | 241 MB | 159 MB | 1,161,639 B | 634,591 B |
+
+The file is 45% smaller, which the caller sees whether or not they care about the export's speed.
+
+**Why it is exact rather than close enough.** `SplitWords` keeps each word's trailing space
+attached, so concatenating consecutive pieces reproduces the text character for character; and a
+piece's width is the sum of its glyphs' advances, so a merged run puts every glyph where the
+per-word loop put it. Abutting highlight rectangles are one rectangle and abutting underlines one
+line, for the same reason. Justified lines are the exception and are left alone — their spacing is
+stretched, so their words are not contiguous.
+
+That claim was checked rather than argued: the same document was exported by both versions across
+all four alignments with bold, italic, underline, strike, colour, highlight and superscript
+changing mid-line, and every line's start, end and text came back identical.
+
+**A measurement that lied.** One `--job short` run reported the new code allocating 578 MB against
+the old code's 241 MB — the opposite of the truth. A direct `GC.GetAllocatedBytesForCurrentThread`
+probe said 158 MB, and re-running the benchmark said 159 MB. The first run was an artefact, and the
+only reason it was caught is that two tools were asked the same question.
 
 ### Appending a paragraph was O(number of blocks)
 
@@ -99,10 +140,11 @@ speed, and this is a laptop CPU that throttles.
 | Create + save | 1.2 ms | 9.0 ms | 99 ms |
 | Open | 0.3 ms | 2.3 ms | 23 ms |
 | Extract text | 0.4 ms | 2.7 ms | 26 ms |
-| Export to PDF | 3.9 ms | 35 ms | 477 ms |
+| Export to PDF | 2.6 ms | 20 ms | 253 ms |
 
-PDF export is the expensive one, and reasonably so: it resolves style inheritance, measures every
-run against the font metrics, breaks lines and paginates.
+PDF export is still the expensive one, and reasonably so: it resolves style inheritance, measures
+every run against the font metrics, breaks lines and paginates. It allocates 159 MB for the
+10 000-paragraph case, which is where the next look should go.
 
 | Table, 4 columns | 50 rows | 500 rows |
 |---|---:|---:|

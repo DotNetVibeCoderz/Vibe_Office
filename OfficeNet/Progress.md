@@ -415,9 +415,43 @@ dotnet build OfficeNet.sln -c Release --no-restore -warnaserror
 dotnet test OfficeNet.sln -c Release --no-build
 ```
 
+## v1.2 — dua jalur boros ditemukan, dua hipotesis ditolak
+
+Aturannya dipegang: mengukur dulu, baru mengoptimalkan.
+
+**`PdfDocument.Split` menyalin seluruh dokumen ke setiap bagian.** Kamus halaman membawa `/Parent`,
+dan `/Kids` milik parent itu menyebut setiap halaman di sumbernya. Keluarannya benar — setiap bagian
+memuat halaman yang tepat — tapi juga memuat semua halaman lain sebagai objek yatim. 100 halaman:
+**39.759 us → 1.129 us**, alokasi **29,9 MB → 1,3 MB**.
+
+Yang paling berharga dari butir ini bukan perbaikannya, melainkan jebakannya: **halaman baru
+mendapat `/Parent` ketika pohon halaman ditulis**, jadi dokumen yang dibangun di memori dan tidak
+pernah disimpan tidak punya tautan parent untuk diikuti, dan bugnya tidak kelihatan. Tes regresi
+versi pertama lulus melawan kode yang rusak. Sekarang ia bolak-balik lewat byte lebih dulu.
+
+**Ekspor Word→PDF menggambar satu kata sekaligus.** Pemenggalan baris bekerja per kata, tapi
+menggambarnya per kata membuat setiap kata membawa operator font, warna, dan posisinya sendiri —
+terukur 713 byte per kata, lawan 147 byte kalau dua belas kata keluar sekali panggil. 10.000
+paragraf: **449 ms → 253 ms**, alokasi **241 MB → 159 MB**, dan berkasnya **45% lebih kecil**.
+
+Penggabungannya eksak, dan itu dibuktikan bukan didalilkan: dokumen yang sama diekspor oleh kedua
+versi pada keempat perataan dengan tebal, miring, garis bawah, coret, warna, sorot, dan superskrip
+berganti di tengah baris — awal, akhir, dan isi setiap baris kembali identik.
+
+**Satu pengukuran berbohong.** Sekali jalan, benchmark melaporkan kode baru mengalokasikan 578 MB
+melawan 241 MB kode lama — kebalikan dari kenyataannya. Probe langsung menjawab 158 MB dan benchmark
+yang diulang menjawab 159 MB. Yang menyelamatkan bukan kecurigaan, melainkan kebiasaan menanyakan
+hal yang sama kepada dua alat.
+
+**Dua hipotesis ditolak oleh pengukuran**, dan itu juga hasil: alokasi ekstraksi teks PdfNet ternyata
+datar di 331 KB per halaman (angka 167 MB pada benchmark adalah artefak harness-nya sendiri), dan
+`Styles[styleId]` bukan jalur panas — paragraf bergaya dan polos hanya berbeda 6%.
+
 ## Yang masih tersisa
 
 **v1.1 selesai seluruhnya.** Setiap butir di bagian v1.1 [Plan.md](Plan.md) sudah dikerjakan, kecuali
 ekspor video yang sengaja tidak dikerjakan dan alasannya dicatat di sana.
 
-Sisanya adalah v1.2 (performa), v1.3 (renderer memakai font tersemat), dan v2.0.
+v1.2 masih berjalan. Yang tersisa di sana semuanya masih hipotesis: parser XML pull untuk WordNet
+hanya-baca, `Span<T>` di lexer dan filter PdfNet, serta buffer pooling saat menulis paket. Setelah
+itu v1.3 (renderer memakai font tersemat) dan v2.0.
