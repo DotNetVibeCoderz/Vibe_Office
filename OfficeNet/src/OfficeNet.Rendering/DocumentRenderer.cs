@@ -165,9 +165,10 @@ public static class DocumentRenderer
     /// </para>
     /// <para>
     /// What it does not draw: gradients, patterns, soft masks, transparency groups, blend modes and
-    /// clipping paths. Text is drawn with a substituted system face rather than the file's embedded
-    /// font, so glyph shapes and line lengths are close but not exact. That is a real limit and the
-    /// reason this is a renderer for thumbnails and previews rather than a viewer.
+    /// clipping paths. Text uses the file's own embedded font when that font is a TrueType program,
+    /// which is what makes a page of a script the machine has no font for render as text rather than
+    /// as empty boxes; a CFF or Type 1 program, or a font the file does not embed at all, still
+    /// falls back to a substituted system face and its glyph shapes are then close but not exact.
     /// </para>
     /// </remarks>
     private static void DrawPageContent(SKCanvas canvas, PdfPage page, double scale)
@@ -330,12 +331,17 @@ public static class DocumentRenderer
     private static void DrawText(
         SKCanvas canvas, TextFragment fragment, SKColor color, PdfRectangle box, double scale)
     {
-        if (fragment.Text.Trim().Length == 0)
+        // A fragment with glyphs but no decodable text is still ink on the page — a subset font
+        // with no /ToUnicode decodes to nothing at all, and skipping it would erase the line.
+        var embedded = EmbeddedTypeface(fragment);
+        var glyphs = embedded is null ? null : fragment.Glyphs;
+
+        if (glyphs is null && fragment.Text.Trim().Length == 0)
         {
             return;
         }
 
-        var typeface = ResolveTypeface(fragment.FontName);
+        var typeface = embedded ?? ResolveTypeface(fragment.FontName);
         var size = (float)Math.Max(1, fragment.FontSize * scale);
 
         using var font = new SKFont(typeface, size);
@@ -345,19 +351,124 @@ public static class DocumentRenderer
         var x = (float)((fragment.X - box.Left) * scale);
         var y = (float)((box.Top - fragment.Y) * scale);
 
-        if (fragment.Rotation == 0)
+        if (fragment.Rotation != 0)
+        {
+            // The baseline is turned, so the canvas turns with it, about the fragment's own origin.
+            // The angle is negated because PDF measures anticlockwise from a y axis that points up
+            // and Skia clockwise from one that points down.
+            canvas.Save();
+            canvas.RotateDegrees((float)-fragment.Rotation, x, y);
+        }
+
+        if (glyphs is not null)
+        {
+            DrawGlyphs(canvas, glyphs, fragment.GlyphOffsets ?? [], scale, font, paint, x, y);
+        }
+        else
         {
             canvas.DrawText(fragment.Text, x, y, SKTextAlign.Left, font, paint);
+        }
+
+        if (fragment.Rotation != 0)
+        {
+            canvas.Restore();
+        }
+    }
+
+    /// <summary>
+    /// Draws a run by glyph id rather than by character.
+    /// </summary>
+    /// <remarks>
+    /// The ids index the embedded program directly, which is the only way to draw a subset: it
+    /// carries no <c>cmap</c>, so asking the font what glyph a character has returns nothing.
+    /// Positions come from the file's own widths rather than from the font's metrics: those are
+    /// what the producer laid the line out with, and re-measuring puts the glyphs somewhere the
+    /// file never said.
+    /// </remarks>
+    private static void DrawGlyphs(SKCanvas canvas, ushort[] glyphs, float[] offsets, double scale,
+        SKFont font, SKPaint paint, float x, float y)
+    {
+        if (glyphs.Length == 0)
+        {
             return;
         }
 
-        // The baseline is turned, so the canvas turns with it, about the fragment's own origin. The
-        // angle is negated because PDF measures anticlockwise from a y axis that points up and Skia
-        // clockwise from one that points down.
-        canvas.Save();
-        canvas.RotateDegrees((float)-fragment.Rotation, x, y);
-        canvas.DrawText(fragment.Text, x, y, SKTextAlign.Left, font, paint);
-        canvas.Restore();
+        using var builder = new SKTextBlobBuilder();
+
+        var run = builder.AllocateHorizontalRun(font, glyphs.Length, y);
+        var positions = new float[glyphs.Length];
+
+        for (var i = 0; i < glyphs.Length; i++)
+        {
+            positions[i] = x + (i < offsets.Length ? offsets[i] * (float)scale : 0);
+        }
+
+        run.SetGlyphs(glyphs);
+        run.SetPositions(positions);
+
+        using var blob = builder.Build();
+
+        if (blob is not null)
+        {
+            canvas.DrawText(blob, 0, 0, paint);
+        }
+    }
+
+    private static readonly Dictionary<byte[], SKTypeface?> EmbeddedCache =
+        new(ReferenceEqualityComparer.Instance as IEqualityComparer<byte[]>);
+
+    private static readonly Lock EmbeddedLock = new();
+
+    /// <summary>
+    /// Loads the font the file itself carries, when it carries one that can be loaded.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// This is what makes a page of Devanagari, Thai or Han render as text rather than as a row of
+    /// empty boxes. Substituting a system face by name works only while the substitute happens to
+    /// cover the script, which for anything outside Latin, Greek and Cyrillic it usually does not.
+    /// </para>
+    /// <para>
+    /// Only a <c>FontFile2</c> is loaded: it is a bare TrueType file, which is what a font engine
+    /// takes. CFF and Type 1 programs need wrapping first, and until that is done they fall back to
+    /// substitution rather than failing.
+    /// </para>
+    /// <para>
+    /// A font that will not load is cached as a null so a broken program is not re-parsed once per
+    /// fragment on a page that uses it throughout.
+    /// </para>
+    /// </remarks>
+    private static SKTypeface? EmbeddedTypeface(TextFragment fragment)
+    {
+        if (fragment.Glyphs is not { Length: > 0 } ||
+            fragment.Font is not { HasLoadableProgram: true } info ||
+            info.EmbeddedProgram is not { } program)
+        {
+            return null;
+        }
+
+        lock (EmbeddedLock)
+        {
+            if (EmbeddedCache.TryGetValue(program, out var cached))
+            {
+                return cached;
+            }
+
+            SKTypeface? typeface = null;
+
+            try
+            {
+                using var data = SKData.CreateCopy(program);
+                typeface = SKTypeface.FromData(data);
+            }
+            catch (Exception e) when (e is InvalidOperationException or ArgumentException)
+            {
+                typeface = null;
+            }
+
+            EmbeddedCache[program] = typeface;
+            return typeface;
+        }
     }
 
     private static readonly Dictionary<string, SKTypeface> TypefaceCache = new(StringComparer.Ordinal);

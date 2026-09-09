@@ -32,6 +32,7 @@ public sealed class PdfFontInfo
     private readonly Dictionary<int, double> _widths = [];
     private readonly CMap? _cmap;
     private readonly double _defaultWidth;
+    private byte[]? _cidToGid;
 
     private PdfFontInfo(string subtype, bool isComposite, char[]? simpleEncoding,
         Dictionary<int, string>? toUnicode, CMap? cmap, double defaultWidth)
@@ -52,6 +53,66 @@ public sealed class PdfFontInfo
 
     /// <summary>The base font name, when the font declares one.</summary>
     public string? BaseFont { get; private init; }
+
+    /// <summary>
+    /// The embedded font program, when the file carries one.
+    /// </summary>
+    /// <remarks>
+    /// This is what a renderer needs in order to draw the file's own glyphs rather than a system
+    /// face that happens to share the name. Substitution is fine for Latin text and produces empty
+    /// boxes the moment a script the substitute does not cover appears — which is every subset this
+    /// library writes for non-Latin text.
+    /// </remarks>
+    public byte[]? EmbeddedProgram { get; private init; }
+
+    /// <summary>
+    /// Which key the program came from: <c>FontFile2</c>, <c>FontFile3</c> or <c>FontFile</c>.
+    /// </summary>
+    /// <remarks>
+    /// Only <c>FontFile2</c> is a bare TrueType file that a font engine can load as-is.
+    /// <c>FontFile3</c> is CFF and <c>FontFile</c> is Type 1, and both need wrapping first, so a
+    /// consumer has to know which it was handed.
+    /// </remarks>
+    public string? EmbeddedProgramKind { get; private init; }
+
+    /// <summary>
+    /// Maps a character code to a glyph id in <see cref="EmbeddedProgram"/>, or -1 when unknown.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// For a composite font the code is the CID, and <c>/CIDToGIDMap</c> translates it. That table
+    /// exists because a subset renumbers its glyphs densely: the CIDs in the content stream are the
+    /// original font's ids, and the subset's are not the same numbers.
+    /// </para>
+    /// <para>
+    /// For a simple font this returns -1. The mapping there runs through the font program's own
+    /// <c>cmap</c>, which a subset is entitled to omit, so the answer is genuinely not available
+    /// from the PDF alone.
+    /// </para>
+    /// </remarks>
+    public int GlyphOf(int code)
+    {
+        if (!IsComposite)
+        {
+            return -1;
+        }
+
+        if (_cidToGid is null)
+        {
+            // /Identity, or absent: the CID is the glyph id.
+            return code;
+        }
+
+        var at = code * 2;
+
+        return at + 1 < _cidToGid.Length
+            ? (_cidToGid[at] << 8) | _cidToGid[at + 1]
+            : 0;
+    }
+
+    /// <summary>True when the file carries a font program a renderer can load directly.</summary>
+    public bool HasLoadableProgram =>
+        EmbeddedProgram is { Length: > 0 } && EmbeddedProgramKind == "FontFile2";
 
     /// <summary>A fallback used when a font dictionary cannot be read at all.</summary>
     public static PdfFontInfo Fallback { get; } =
@@ -86,10 +147,14 @@ public sealed class PdfFontInfo
 
         var encoding = BuildSimpleEncoding(font, baseFont, isSymbolic);
 
+        var (program, kind) = ReadProgram(descriptor, document);
+
         var info = new PdfFontInfo(subtype, false, encoding, toUnicode, null,
             descriptor?.GetDouble(PdfName.Get("MissingWidth")) ?? 0)
         {
             BaseFont = baseFont,
+            EmbeddedProgram = program,
+            EmbeddedProgramKind = kind,
         };
 
         // /Widths is indexed from /FirstChar and is in glyph-space units (1/1000 em).
@@ -143,10 +208,22 @@ public sealed class PdfFontInfo
 
         var defaultWidth = descendant?.GetDouble(PdfName.Get("DW"), 1000) ?? 1000;
 
+        var descriptor = descendant?.Get<PdfDictionary>(PdfName.Get("FontDescriptor"));
+        var (program, kind) = ReadProgram(descriptor, document);
+
         var info = new PdfFontInfo(subtype, true, null, toUnicode, cmap, defaultWidth)
         {
             BaseFont = baseFont,
+            EmbeddedProgram = program,
+            EmbeddedProgramKind = kind,
         };
+
+        // /CIDToGIDMap is either the name Identity or a stream of two-byte glyph ids indexed by CID.
+        if (descendant?.Get(PdfName.Get("CIDToGIDMap")) is { } mapEntry &&
+            document.Follow(mapEntry) is PdfStream mapStream)
+        {
+            info._cidToGid = mapStream.Decoded;
+        }
 
         if (descendant?.Get(PdfName.Get("W")) is PdfArray widthArray)
         {
@@ -295,6 +372,47 @@ public sealed class PdfFontInfo
             // most Latin text out.
             return null;
         }
+    }
+
+    /// <summary>
+    /// Pulls the embedded font program out of a descriptor, whichever key holds it.
+    /// </summary>
+    /// <remarks>
+    /// The three keys are not interchangeable and the descriptor does not say which to expect, so
+    /// which one it came from is reported alongside the bytes.
+    /// </remarks>
+    private static (byte[]? Program, string? Kind) ReadProgram(PdfDictionary? descriptor,
+        PdfDocument document)
+    {
+        if (descriptor is null)
+        {
+            return (null, null);
+        }
+
+        foreach (var key in new[] { "FontFile2", "FontFile3", "FontFile" })
+        {
+            if (descriptor.Get(PdfName.Get(key)) is { } entry &&
+                document.Follow(entry) is PdfStream stream)
+            {
+                try
+                {
+                    var bytes = stream.Decoded;
+
+                    if (bytes.Length > 0)
+                    {
+                        return (bytes, key);
+                    }
+                }
+                catch (OfficeNet.Core.OfficeNetException)
+                {
+                    // A font program that will not decode is a broken file, not a reason to fail
+                    // extraction: the text is still recoverable and a renderer can still substitute.
+                    return (null, null);
+                }
+            }
+        }
+
+        return (null, null);
     }
 
     /// <summary>

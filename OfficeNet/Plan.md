@@ -348,9 +348,38 @@ awal dan sudah didokumentasikan — tapi sejak PdfNet bisa menyematkan font, aki
 terasa: PDF yang dibuat pustaka ini sendiri dengan aksara non-Latin dirender sebagai kotak kosong,
 karena font penggantinya tidak punya glyph-nya.
 
-- **Pakai font yang tersemat.** `TextFragment` perlu membawa id glyph-nya, bukan hanya teks hasil
-  dekode, karena subset yang ditulis PdfNet sengaja tidak membawa `cmap` — pemetaan karakternya ada
-  di PDF-nya, bukan di fontnya. Setelah itu SkiaSharp bisa memuat `FontFile2`-nya langsung.
+- [x] **Pakai font yang tersemat — selesai.** `TextFragment` kini membawa id glyph dan posisinya di
+  sepanjang baseline, bukan hanya teks hasil dekode. Itu memang harus: subset yang ditulis PdfNet
+  sengaja tidak membawa `cmap`, jadi tidak ada jalan dari karakter kembali ke bentuk glyph-nya —
+  pemetaannya ada di PDF (`/CIDToGIDMap`), bukan di fontnya.
+
+  `PdfFontInfo` sekarang mengekspos program font yang tersemat (`FontFile2`) beserta `GlyphOf`, dan
+  renderer memuatnya langsung ke SkiaSharp lalu menggambar per id glyph. Posisinya diambil dari lebar
+  di berkasnya sendiri, bukan dari metrik fontnya, karena itulah yang dipakai produsernya saat
+  menyusun baris.
+
+  Dibuktikan dengan gambar: baris Devanagari yang sebelumnya keluar sebagai kotak kosong kini
+  tergambar sebagai aksara sungguhan, dan huruf Latinnya berubah bentuk dari font pengganti sistem
+  ke font di dalam berkasnya. Satu keuntungan lain menyusul: run yang tak punya `/ToUnicode` sama
+  sekali dulu tidak menghasilkan fragment apa pun sehingga hilang dari hasil render — sekarang ia
+  tetap tergambar.
+
+  **Font uji ternyata bukan font sungguhan.** `SyntheticFont` di TestKit menulis `maxp` versi 1.0
+  dengan `maxPoints` dan `maxContours` bernilai nol. fontTools membaca setiap glyph-nya dengan
+  sempurna; rasteriser mana pun menggambar **nol piksel**, karena buffer titiknya dialokasikan dari
+  angka itu. Ini kegagalan yang lebih buruk daripada font rusak: semua tes struktural lulus dan hanya
+  piksel yang tidak setuju. Ditemukan hanya karena ada tes yang benar-benar melihat pikselnya.
+
+  Dijaga `OfficeNet.Rendering.Tests.EmbeddedFontRenderingTests`. Penjaganya sendiri sempat salah:
+  versi pertama hanya membandingkan "dua gambar ini berbeda", padahal mengganti font sintetis dan
+  mengganti Helvetica juga menghasilkan dua gambar berbeda — jadi ia tetap lulus dengan penyematan
+  dimatikan total. Yang membedakan adalah **bentuk**: glyph `SyntheticFont` adalah persegi pejal
+  sehingga mengisi ~67% kotak batasnya, sedangkan huruf sungguhan hanya ~27%.
+
+  Yang **belum** ditangani: penataan aksara kompleks. PDF menyimpan glyph yang sudah tertata, dan
+  penulis font di PdfNet memetakan karakter ke glyph tanpa menerapkan GSUB/GPOS, jadi matra
+  Devanagari berdiri sendiri alih-alih menyatu. Itu batasan penulisnya, bukan renderernya — renderer
+  menggambar persis apa yang tertulis di berkasnya.
 - **Gradien, pattern, dan clipping.** Ketiganya diabaikan sekarang.
 
 Sampai itu ada, renderer ini tetap untuk thumbnail dan pratinjau, bukan penampil dokumen.

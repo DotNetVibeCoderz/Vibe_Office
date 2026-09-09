@@ -17,6 +17,21 @@ namespace PdfNet.Text;
 /// The baseline's angle in degrees, anticlockwise from horizontal. Zero for the overwhelming
 /// majority of text; non-zero for a rotated stamp, a sideways table header, or a watermark.
 /// </param>
+/// <param name="Font">The resolved font, which carries the embedded program when there is one.</param>
+/// <param name="GlyphOffsets">
+/// Where each glyph sits along the baseline, in points from <paramref name="X"/>. Taken from the
+/// file's own widths rather than from the font's, because those are what the producer laid the line
+/// out with — a renderer that re-measures puts the glyphs somewhere the file never said.
+/// </param>
+/// <param name="Glyphs">
+/// The glyph ids this fragment draws, when the file embeds a program that can draw them.
+/// <see cref="Text"/> answers "what does this say"; this answers "what shapes were on the page".
+/// They are different questions, and a subset font can answer only the second: the ids in the
+/// content stream index the embedded program, and a subset is entitled to carry no <c>cmap</c>, so
+/// there is no route from a character back to a shape. Null when the font is simple or the file
+/// embeds nothing, and a renderer must then substitute a system face — which is what puts empty
+/// boxes on the page the moment the text leaves that substitute's coverage.
+/// </param>
 public readonly record struct TextFragment(
     string Text,
     double X,
@@ -24,7 +39,10 @@ public readonly record struct TextFragment(
     double Width,
     double FontSize,
     string? FontName,
-    double Rotation = 0)
+    double Rotation = 0,
+    PdfFontInfo? Font = null,
+    ushort[]? Glyphs = null,
+    float[]? GlyphOffsets = null)
 {
     /// <summary>The right edge of the fragment, for horizontal text.</summary>
     /// <remarks>
@@ -331,10 +349,22 @@ public static class TextExtractor
         var startMatrix = (double[])state.TextMatrix.Clone();
         double totalAdvance = 0;
 
+        // Collected only when there is a program to index into, so the ordinary case — a standard
+        // font, substituted anyway — allocates nothing extra.
+        var glyphs = font.HasLoadableProgram ? new List<ushort>(bytes.Length) : null;
+        var offsets = glyphs is null ? null : new List<double>(bytes.Length);
+
         foreach (var code in font.DecodeCodes(bytes))
         {
             var text = font.CodeToText(code);
             builder.Append(text);
+
+            if (glyphs is not null)
+            {
+                var glyph = font.GlyphOf(code);
+                glyphs.Add(glyph >= 0 && glyph <= ushort.MaxValue ? (ushort)glyph : (ushort)0);
+                offsets!.Add(totalAdvance);
+            }
 
             var glyphWidth = font.WidthOf(code) / 1000.0 * state.FontSize;
             var advance = (glyphWidth + state.CharSpacing) * state.HorizontalScale;
@@ -349,7 +379,9 @@ public static class TextExtractor
             totalAdvance += advance;
         }
 
-        if (builder.Length > 0)
+        // Glyphs with no decodable text are still ink. A subset font with no /ToUnicode decodes to
+        // nothing at all, and dropping the run here is why such a page used to render blank.
+        if (builder.Length > 0 || glyphs is { Count: > 0 })
         {
             var (x, y) = Transform(startMatrix, state.Ctm, 0, state.Rise);
             var (x2, y2) = Transform(startMatrix, state.Ctm, totalAdvance, state.Rise);
@@ -371,6 +403,22 @@ public static class TextExtractor
                 ? Math.Atan2(y2 - y, x2 - x) * 180 / Math.PI
                 : 0;
 
+            // The offsets were accumulated in text space; the fragment reports page points. One
+            // ratio converts them, and it is the same one that turned the total advance into the
+            // run's width, so the last glyph lands exactly at the right edge.
+            float[]? glyphOffsets = null;
+
+            if (offsets is { Count: > 0 })
+            {
+                var factor = totalAdvance > 0 ? runWidth / totalAdvance : scale;
+                glyphOffsets = new float[offsets.Count];
+
+                for (var i = 0; i < offsets.Count; i++)
+                {
+                    glyphOffsets[i] = (float)(offsets[i] * factor);
+                }
+            }
+
             fragments.Add(new TextFragment(
                 builder.ToString(),
                 x,
@@ -380,7 +428,10 @@ public static class TextExtractor
                 font.BaseFont,
                 // Rounded, because floating-point drift makes upright text report angles like 1e-15
                 // and every consumer then treats it as rotated.
-                Math.Abs(rotation) < 0.01 ? 0 : rotation));
+                Math.Abs(rotation) < 0.01 ? 0 : rotation,
+                font,
+                glyphs?.ToArray(),
+                glyphOffsets));
         }
 
         state.TextMatrix = Multiply([1, 0, 0, 1, totalAdvance, 0], state.TextMatrix);

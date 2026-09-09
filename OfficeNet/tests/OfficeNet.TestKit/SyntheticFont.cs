@@ -193,12 +193,34 @@ public static class SyntheticFont
         return hhea;
     }
 
+    /// <summary>
+    /// The glyph-count table, and the buffer sizes a rasteriser allocates from.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>maxPoints</c> and <c>maxContours</c> are not documentation. A rasteriser sizes its point
+    /// buffer from them, so a font that leaves them zero parses perfectly — fontTools reads every
+    /// glyph out of one — and draws absolutely nothing. That is a worse failure than a malformed
+    /// font, because every structural test passes and only pixels disagree.
+    /// </para>
+    /// <para>
+    /// The values match what <see cref="Box"/> and <see cref="Composite"/> actually produce: one
+    /// contour of four points, and a composite of two of those.
+    /// </para>
+    /// </remarks>
     private static byte[] Maxp(int glyphCount)
     {
         var maxp = new byte[32];
 
         BinaryPrimitives.WriteUInt32BigEndian(maxp.AsSpan(0), 0x00010000);
         BinaryPrimitives.WriteUInt16BigEndian(maxp.AsSpan(4), (ushort)glyphCount);
+        BinaryPrimitives.WriteUInt16BigEndian(maxp.AsSpan(6), 4);    // maxPoints
+        BinaryPrimitives.WriteUInt16BigEndian(maxp.AsSpan(8), 1);    // maxContours
+        BinaryPrimitives.WriteUInt16BigEndian(maxp.AsSpan(10), 8);   // maxCompositePoints
+        BinaryPrimitives.WriteUInt16BigEndian(maxp.AsSpan(12), 2);   // maxCompositeContours
+        BinaryPrimitives.WriteUInt16BigEndian(maxp.AsSpan(14), 2);   // maxZones
+        BinaryPrimitives.WriteUInt16BigEndian(maxp.AsSpan(28), 2);   // maxComponentElements
+        BinaryPrimitives.WriteUInt16BigEndian(maxp.AsSpan(30), 1);   // maxComponentDepth
 
         return maxp;
     }
