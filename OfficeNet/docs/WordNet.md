@@ -383,6 +383,72 @@ which is a different tool.
 This is for getting text back into an editable shape. It is not a round trip, and a document that
 came from Word originally will not come back looking like the original.
 
+## HTML → Word
+
+```csharp
+using WordNet.Import;
+
+using var document = HtmlToWord.CreateDocument("""
+    <h1>Laporan Tahunan</h1>
+    <p>Pendapatan naik <b>32%</b>, <a href="https://example.com/rincian">rinciannya di sini</a>.</p>
+    <ol><li>Jakarta</li><li>Bandung</li></ol>
+    """);
+
+document.Save("laporan.docx");
+
+// From a file, resolving relative image paths beside it:
+using var fromFile = HtmlToWord.CreateDocumentFromFile("laporan.html");
+
+// Or append to a document you already have:
+HtmlToWord.Convert(existing, html);
+```
+
+What maps, and to what:
+
+| HTML | Word |
+|---|---|
+| `h1`–`h6` | `Heading1`–`Heading6` |
+| `p`, `blockquote`, loose text | paragraphs |
+| `ul`, `ol` | real Word lists, nesting kept; each list numbered from one |
+| `table` | a table, header row included |
+| `img` | a picture, scaled down to `MaxImageWidth` if it would overflow |
+| `pre` | one monospace paragraph that keeps its line breaks |
+| `hr` | an empty paragraph with a bottom border, which is what Word itself writes for a rule |
+| `b`, `i`, `u`, `s`, `a`, colour, font, size | the same, run for run |
+
+A CSS `background-color` on text becomes the nearest of Word's fixed highlight colours, because
+`w:highlight` takes a name from a list of about a dozen rather than a value.
+
+```csharp
+HtmlToWord.CreateDocument(html, new HtmlWordOptions
+{
+    IncludeImages = true,
+    BaseDirectory = @"C:\laporan",                 // where relative src paths are resolved
+    ImageResolver = url => httpClient.GetByteArrayAsync(url).Result,
+    MaxImageWidth = Length.FromCentimeters(15),
+    MonospaceFont = "Consolas",
+});
+```
+
+**Conversion never makes a network request on its own.** A `data:` URI and a local file are read
+directly; a remote URL is fetched only through `ImageResolver`, and without one the image is skipped.
+A document conversion quietly becoming an outbound HTTP call is not something a caller should find
+out about from a firewall log.
+
+### Structure, not layout
+
+A document reflows the way HTML does, so more survives here than in the slide converter: headings keep
+their level, lists keep their nesting, tables keep their shape. What does not survive is layout —
+floats, columns, absolute positioning and the box model have no counterpart in WordprocessingML and
+are ignored rather than approximated.
+
+A heading's size and face come from the document's heading styles, not from the page's CSS. Taking
+them from CSS would replace the document's typography with the web page's, and would make restyling
+`Heading1` afterwards do nothing to the headings that came from HTML.
+
+The reading is shared with [`HtmlToSlides`](PowerPointNet.md): both go through `HtmlFlattener` in
+`OfficeNet.Core`, so a page converted to a document and to a deck agree about what the page says.
+
 ## Reading a document
 
 ```csharp

@@ -2,7 +2,7 @@
 
 using System.Text;
 
-namespace PowerPointNet.Html;
+namespace OfficeNet.Core.Html;
 
 /// <summary>A node in a parsed HTML fragment: either an element or a run of text.</summary>
 public sealed class HtmlNode

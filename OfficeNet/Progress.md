@@ -560,6 +560,23 @@ Yang berubah bagi pemakainya:
 | PdfNet | tipe publik baru `PdfFunction` dan `PdfShading` |
 | `TextFragment` | membawa `Font`, `Glyphs`, dan `GlyphOffsets` — parameter opsional, jadi kode lama tetap terkompilasi |
 
+## v2.0 — berjalan
+
+**Mesin HTML dipindah ke Core, dan HTML → DOCX selesai.** `HtmlToWord` memakai `HtmlFlattener`
+yang sama dengan `HtmlToSlides`, jadi halaman yang dikonversi ke dokumen dan ke deck sepakat tentang
+isinya. Keluarannya diperiksa dengan python-docx: gaya heading, tingkat daftar, tiga definisi
+penomoran terpisah, tabel dengan header, relasi hyperlink eksternal, dan perataan.
+
+Satu bug ditemukan sebelum terbit: dua `<ol>` bersebelahan berbagi satu definisi penomoran, jadi
+daftar kedua melanjutkan yang pertama. `HtmlBlock.ListId` memperbaikinya, dan dua mutasi di kedua
+ujungnya digagalkan tes yang tepat.
+
+Satu tes waktu, `AppendingParagraphsScalesLinearly`, gagal lagi di 61,5 lawan ambang 60 saat tujuh
+assembly tes berjalan bersamaan. Diukur dulu sebelum disentuh: dalam isolasi biaya per paragraf datar
+di 1,45–1,74 us dari 4.000 sampai 128.000 — algoritmanya linear, yang bising adalah pengukurannya,
+karena kasus besar membengkak dari 98 ms ke 705 ms di bawah beban. Ambangnya dinaikkan ke 120, masih
+separuh dari ~256 yang dihasilkan regresi kuadratik, dengan buktinya ditulis di komentar tesnya.
+
 ## Yang masih tersisa
 
 **v1.1 selesai seluruhnya.** Setiap butir di bagian v1.1 [Plan.md](Plan.md) sudah dikerjakan, kecuali

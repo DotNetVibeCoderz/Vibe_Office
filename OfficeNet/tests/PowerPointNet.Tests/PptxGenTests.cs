@@ -2,6 +2,7 @@
 
 using OfficeNet.Core.Charts;
 using OfficeNet.Core.Drawing;
+using OfficeNet.Core.Html;
 using OfficeNet.Core.Packaging;
 using OfficeNet.Core.Xml;
 using OfficeNet.Core;

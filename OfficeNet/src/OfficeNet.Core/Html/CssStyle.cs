@@ -1,11 +1,31 @@
 // OfficeNet - Dibuat oleh Gravicode Studios, dipimpin oleh Kang Fadhil.
 
 using System.Globalization;
-using OfficeNet.Core;
 using OfficeNet.Core.Drawing;
-using PowerPointNet.Shapes;
 
-namespace PowerPointNet.Html;
+namespace OfficeNet.Core.Html;
+
+/// <summary>How a run of text sits in the space it is given.</summary>
+/// <remarks>
+/// Every library models alignment in its own terms — WordNet has <c>ParagraphAlignment</c>,
+/// PowerPointNet <c>TextAlignment</c>, ExcelNet <c>HorizontalAlignment</c>, PdfNet its own — because
+/// each format's set differs. CSS has a fifth vocabulary again, so the parser needs somewhere
+/// neutral to put the answer, and each consumer maps it to what its own format calls the same idea.
+/// </remarks>
+public enum TextAlign
+{
+    /// <summary>Flush left.</summary>
+    Left,
+
+    /// <summary>Centred.</summary>
+    Center,
+
+    /// <summary>Flush right.</summary>
+    Right,
+
+    /// <summary>Flush on both edges.</summary>
+    Justify,
+}
 
 /// <summary>
 /// The subset of CSS that maps onto DrawingML text and shape formatting.
@@ -50,7 +70,7 @@ public readonly record struct CssStyle
     public bool? Strike { get; init; }
 
     /// <summary>Horizontal alignment.</summary>
-    public TextAlignment? Alignment { get; init; }
+    public TextAlign? Alignment { get; init; }
 
     /// <summary>True when nothing is set.</summary>
     public bool IsEmpty =>
@@ -158,10 +178,10 @@ public readonly record struct CssStyle
         {
             Alignment = value switch
             {
-                "left" or "start" => TextAlignment.Left,
-                "center" or "centre" => TextAlignment.Center,
-                "right" or "end" => TextAlignment.Right,
-                "justify" => TextAlignment.Justify,
+                "left" or "start" => TextAlign.Left,
+                "center" or "centre" => TextAlign.Center,
+                "right" or "end" => TextAlign.Right,
+                "justify" => TextAlign.Justify,
                 _ => null,
             },
         },
@@ -329,10 +349,10 @@ public readonly record struct CssStyle
         {
             style = align.ToLowerInvariant() switch
             {
-                "left" => style with { Alignment = TextAlignment.Left },
-                "center" => style with { Alignment = TextAlignment.Center },
-                "right" => style with { Alignment = TextAlignment.Right },
-                "justify" => style with { Alignment = TextAlignment.Justify },
+                "left" => style with { Alignment = TextAlign.Left },
+                "center" => style with { Alignment = TextAlign.Center },
+                "right" => style with { Alignment = TextAlign.Right },
+                "justify" => style with { Alignment = TextAlign.Justify },
                 _ => style,
             };
         }

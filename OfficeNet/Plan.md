@@ -429,6 +429,31 @@ sekarang jauh lebih sempit daripada saat v1.3 dimulai.
 - **Konversi dua arah HTML.** Sekarang HTML→PPTX. Arah sebaliknya, dan HTML→DOCX, memakai mesin
   yang sama.
 
+  - [x] **Mesinnya dipindah ke Core.** `HtmlParser`, `HtmlNode`, dan `CssStyle` pindah dari
+    `PowerPointNet.Html` ke `OfficeNet.Core.Html`, ditambah `HtmlFlattener` — langkah yang mengubah
+    HTML menjadi daftar blok berformat, yang tadinya tertanam privat di `HtmlToSlides`. Tanpa itu
+    WordNet tidak bisa membaca HTML tanpa bergantung pada saudaranya, dan dua pembaca terpisah akan
+    berbeda pendapat tentang halaman yang sama. Ini **perubahan yang memutus kompatibilitas** bagi
+    siapa pun yang memakai ketiga tipe itu langsung dari `PowerPointNet.Html`; `HtmlToSlides`
+    sendiri tidak berubah. Pantas untuk sebuah versi mayor. Keselarasan perataan antar-pustaka lewat
+    `TextAlign` baru di Core, dipetakan eksplisit — bukan cast — ke enum tiap format.
+  - [x] **HTML → DOCX — selesai.** `WordNet.Import.HtmlToWord`: heading ke gaya heading, daftar ke
+    daftar Word sungguhan dengan tingkatnya, tabel, gambar, `pre` dengan pemisah barisnya, `hr`
+    sebagai garis bawah paragraf, format inline run demi run. Diperiksa dengan pembaca independen
+    (python-docx), bukan hanya dengan pustaka ini sendiri.
+
+    **Bug yang ditemukan di jalan:** dua `<ol>` bersebelahan dinomori sebagai satu daftar — "1, 2"
+    lalu "3". Word menomori per definisi, bukan per posisi, dan daftar datar dari flattener tidak
+    bisa bilang di mana satu daftar berakhir bila tak ada blok di antaranya. `HtmlBlock.ListId` kini
+    membawa daftar asal setiap butir. Komentar di kodenya sudah mengklaim ini dicegah sebelum benar-
+    benar dicegah. Dua mutasi — importer mengabaikan `ListId`, flattener memberi semua daftar id yang
+    sama — masing-masing digagalkan tes yang ditulis untuk itu.
+
+    **Konverter slide punya masalah serupa dalam bentuk lain, dan belum ditangani:** `buAutoNum`
+    meneruskan penomoran lintas paragraf bernomor yang berurutan dan tidak punya atribut "mulai
+    ulang". Ini menurut model DrawingML-nya; belum diperiksa di PowerPoint sendiri.
+  - [ ] **DOCX → HTML dan PPTX → HTML.** Arah sebaliknya.
+
 ---
 
 ## Yang sengaja tidak akan dikerjakan

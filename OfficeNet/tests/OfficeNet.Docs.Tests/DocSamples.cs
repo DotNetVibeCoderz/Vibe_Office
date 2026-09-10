@@ -170,6 +170,55 @@ public class DocSamples : IDisposable
     }
 
     [Fact]
+    public void WordNet_HtmlToWord()
+    {
+        using var document = HtmlToWord.CreateDocument("""
+            <h1>Laporan Tahunan</h1>
+            <p>Pendapatan naik <b>32%</b>, <a href="https://example.com/rincian">rinciannya di sini</a>.</p>
+            <ol><li>Jakarta</li><li>Bandung</li></ol>
+            """);
+
+        Assert.Equal("Heading1", document.Paragraphs[0].StyleId);
+        Assert.Contains("rinciannya di sini", document.ExtractText(), StringComparison.Ordinal);
+
+        // From a file, resolving relative image paths beside it.
+        var file = Path.Combine(Path.GetTempPath(), $"officenet-{Guid.NewGuid():N}.html");
+        File.WriteAllText(file, "<h2>Dari berkas</h2>");
+
+        try
+        {
+            using var fromFile = HtmlToWord.CreateDocumentFromFile(file);
+            Assert.Equal("Heading2", fromFile.Paragraphs[0].StyleId);
+        }
+        finally
+        {
+            File.Delete(file);
+        }
+
+        // Appending to a document that already exists.
+        using var existing = WordDocument.Create();
+        existing.AddParagraph("Pembuka.");
+
+        var html = "<ul><li>Satu</li><li>Dua</li></ul>";
+        HtmlToWord.Convert(existing, html);
+
+        Assert.Equal(3, existing.Paragraphs.Count);
+
+        // The options the page documents. The resolver here fetches nothing: conversion never
+        // makes a network request on its own, and a test should not either.
+        using var configured = HtmlToWord.CreateDocument(html, new HtmlWordOptions
+        {
+            IncludeImages = true,
+            BaseDirectory = Path.GetTempPath(),
+            ImageResolver = url => null,
+            MaxImageWidth = Length.FromCentimeters(15),
+            MonospaceFont = "Consolas",
+        });
+
+        Assert.Equal(2, configured.Paragraphs.Count);
+    }
+
+    [Fact]
     public void PdfImport_BackToWordAndExcel()
     {
         // A report, out to PDF, and back again. Building the source here rather than shipping a

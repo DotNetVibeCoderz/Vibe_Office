@@ -4,6 +4,7 @@ using System.Text;
 using System.Xml.Linq;
 using OfficeNet.Core;
 using OfficeNet.Core.Drawing;
+using OfficeNet.Core.Html;
 using PowerPointNet.Shapes;
 
 namespace PowerPointNet.Html;
@@ -60,56 +61,13 @@ public sealed class HtmlSlideOptions
 
     /// <summary>The layout index used for slides that hold only a table or picture.</summary>
     public int BlankLayoutIndex { get; set; } = 2;
-}
 
-/// <summary>What kind of content a parsed block holds.</summary>
-internal enum HtmlBlockKind
-{
-    Heading,
-    Paragraph,
-    ListItem,
-    Table,
-    Image,
-    Code,
-    Rule,
-}
-
-/// <summary>One formatted span of a block's text.</summary>
-internal readonly record struct HtmlSpan(string Text, CssStyle Style, string? Hyperlink);
-
-/// <summary>A block-level piece of the source document.</summary>
-internal sealed class HtmlBlock
-{
-    internal HtmlBlockKind Kind { get; init; }
-
-    internal int HeadingLevel { get; init; }
-
-    internal int ListLevel { get; init; }
-
-    internal bool Numbered { get; init; }
-
-    internal List<HtmlSpan> Spans { get; init; } = [];
-
-    internal List<List<string>>? TableRows { get; init; }
-
-    internal bool TableHasHeader { get; init; }
-
-    internal byte[]? Image { get; init; }
-
-    internal string? AltText { get; init; }
-
-    internal CssStyle Style { get; init; }
-
-    internal string PlainText => string.Concat(Spans.Select(s => s.Text));
-
-    /// <summary>Roughly how many rendered lines the block occupies, for pagination.</summary>
-    internal int LineCost => Kind switch
+    /// <summary>The subset of these settings the shared HTML reader needs.</summary>
+    internal HtmlFlattenOptions ForFlattening() => new()
     {
-        HtmlBlockKind.Image => 6,
-        HtmlBlockKind.Rule => 1,
-        HtmlBlockKind.Table => (TableRows?.Count ?? 0) + 1,
-        // A long paragraph wraps; 90 characters is about one line at 18 pt across a 16:9 slide.
-        _ => Math.Max(1, (PlainText.Length + 89) / 90),
+        IncludeImages = IncludeImages,
+        BaseDirectory = BaseDirectory,
+        ImageResolver = ImageResolver,
     };
 }
 
@@ -171,9 +129,7 @@ public static class HtmlToSlides
 
         options ??= new HtmlSlideOptions();
 
-        var root = HtmlParser.Parse(html);
-        var blocks = new List<HtmlBlock>();
-        Walk(root, default, 0, false, blocks, options);
+        var blocks = HtmlFlattener.Flatten(html, options.ForFlattening());
 
         var added = new List<Slide>();
 
@@ -197,383 +153,18 @@ public static class HtmlToSlides
         return added;
     }
 
-    // ---- Walking the tree ----------------------------------------------------------------------
-
-    private static readonly HashSet<string> Skipped = new(StringComparer.Ordinal)
+    /// <summary>Roughly how many rendered lines a block occupies, for pagination.</summary>
+    /// <remarks>
+    /// Slide-specific, which is why it did not travel with the block model: ninety characters is
+    /// about one line at 18 pt across a 16:9 slide, and a page of A4 answers differently.
+    /// </remarks>
+    private static int LineCost(HtmlBlock block) => block.Kind switch
     {
-        "script", "style", "head", "meta", "link", "noscript", "template", "svg", "iframe",
+        HtmlBlockKind.Image => 6,
+        HtmlBlockKind.Rule => 1,
+        HtmlBlockKind.Table => (block.TableRows?.Count ?? 0) + 1,
+        _ => Math.Max(1, (block.PlainText.Length + 89) / 90),
     };
-
-    private static void Walk(HtmlNode node, CssStyle inherited, int listLevel, bool numbered,
-        List<HtmlBlock> blocks, HtmlSlideOptions options)
-    {
-        foreach (var child in node.Children)
-        {
-            if (child.IsText)
-            {
-                // Loose text directly under a container becomes its own paragraph; ignoring it
-                // silently drops content from fragments that are not fully marked up.
-                var text = Collapse(child.Text ?? string.Empty);
-
-                if (text.Trim().Length > 0)
-                {
-                    blocks.Add(new HtmlBlock
-                    {
-                        Kind = HtmlBlockKind.Paragraph,
-                        Spans = [new HtmlSpan(text, inherited, null)],
-                        Style = inherited,
-                    });
-                }
-
-                continue;
-            }
-
-            if (Skipped.Contains(child.Name))
-            {
-                continue;
-            }
-
-            var style = inherited.Merge(CssStyle.Of(child));
-
-            switch (child.Name)
-            {
-                case "h1" or "h2" or "h3" or "h4" or "h5" or "h6":
-                    blocks.Add(new HtmlBlock
-                    {
-                        Kind = HtmlBlockKind.Heading,
-                        HeadingLevel = child.Name[1] - '0',
-                        Spans = ReadSpans(child, style, null),
-                        Style = style,
-                    });
-                    break;
-
-                case "p" or "blockquote" or "figcaption" or "dd" or "dt":
-                    AddParagraph(child, style, blocks);
-                    break;
-
-                case "ul" or "ol":
-                    Walk(child, style, listLevel + 1, child.Name == "ol", blocks, options);
-                    break;
-
-                case "li":
-                    blocks.Add(new HtmlBlock
-                    {
-                        Kind = HtmlBlockKind.ListItem,
-                        // A list at depth 1 is level 0 in DrawingML, which counts from zero.
-                        ListLevel = Math.Max(0, Math.Min(listLevel - 1, 8)),
-                        Numbered = numbered,
-                        Spans = ReadSpans(child, style, null),
-                        Style = style,
-                    });
-
-                    // A nested list inside the item continues at the next level.
-                    foreach (var nested in child.Elements().Where(e => e.Name is "ul" or "ol"))
-                    {
-                        Walk(nested, style, listLevel + 1, nested.Name == "ol", blocks, options);
-                    }
-
-                    break;
-
-                case "table":
-                    blocks.Add(ReadTable(child, style));
-                    break;
-
-                case "img":
-                    if (options.IncludeImages && ResolveImage(child, options) is { } image)
-                    {
-                        blocks.Add(new HtmlBlock
-                        {
-                            Kind = HtmlBlockKind.Image,
-                            Image = image,
-                            AltText = child.Attribute("alt"),
-                            Style = style,
-                        });
-                    }
-
-                    break;
-
-                case "pre":
-                    blocks.Add(new HtmlBlock
-                    {
-                        Kind = HtmlBlockKind.Code,
-                        Spans = [new HtmlSpan(child.InnerText.TrimEnd(), style, null)],
-                        Style = style,
-                    });
-                    break;
-
-                case "hr":
-                    blocks.Add(new HtmlBlock { Kind = HtmlBlockKind.Rule, Style = style });
-                    break;
-
-                case "br":
-                    break;
-
-                default:
-                    // A container (div, section, article, span at block level) contributes its
-                    // children, not itself.
-                    Walk(child, style, listLevel, numbered, blocks, options);
-                    break;
-            }
-        }
-    }
-
-    private static void AddParagraph(HtmlNode node, CssStyle style, List<HtmlBlock> blocks)
-    {
-        var spans = ReadSpans(node, style, null);
-
-        if (spans.Count == 0 || spans.All(s => s.Text.Trim().Length == 0))
-        {
-            return;
-        }
-
-        blocks.Add(new HtmlBlock
-        {
-            Kind = HtmlBlockKind.Paragraph,
-            Spans = spans,
-            Style = style,
-        });
-    }
-
-    /// <summary>
-    /// Flattens an element's inline content into formatted spans.
-    /// </summary>
-    /// <remarks>
-    /// Nested lists and tables are skipped here: they are block content and are walked separately,
-    /// so including their text would duplicate it into the parent paragraph as well.
-    /// </remarks>
-    private static List<HtmlSpan> ReadSpans(HtmlNode node, CssStyle inherited, string? hyperlink)
-    {
-        var spans = new List<HtmlSpan>();
-        Collect(node, inherited, hyperlink, spans);
-        return Coalesce(spans);
-
-        static void Collect(HtmlNode node, CssStyle style, string? link, List<HtmlSpan> spans)
-        {
-            foreach (var child in node.Children)
-            {
-                if (child.IsText)
-                {
-                    var text = Collapse(child.Text ?? string.Empty);
-
-                    if (text.Length > 0)
-                    {
-                        spans.Add(new HtmlSpan(text, style, link));
-                    }
-
-                    continue;
-                }
-
-                if (Skipped.Contains(child.Name) || child.Name is "ul" or "ol" or "table")
-                {
-                    continue;
-                }
-
-                if (child.Name == "br")
-                {
-                    spans.Add(new HtmlSpan("\n", style, link));
-                    continue;
-                }
-
-                var childLink = child.Name == "a" ? child.Attribute("href") ?? link : link;
-                Collect(child, style.Merge(CssStyle.Of(child)), childLink, spans);
-            }
-        }
-    }
-
-    /// <summary>
-    /// Merges adjacent spans that share formatting.
-    /// </summary>
-    /// <remarks>
-    /// A fragment like <c>&lt;span&gt;a&lt;/span&gt;&lt;span&gt;b&lt;/span&gt;</c> produces two
-    /// spans with identical formatting. Writing them as two DrawingML runs is legal and doubles the
-    /// run count of a text-heavy deck for no benefit.
-    /// </remarks>
-    private static List<HtmlSpan> Coalesce(List<HtmlSpan> spans)
-    {
-        var result = new List<HtmlSpan>(spans.Count);
-
-        foreach (var span in spans)
-        {
-            if (result.Count > 0)
-            {
-                var previous = result[^1];
-
-                if (previous.Style == span.Style && previous.Hyperlink == span.Hyperlink)
-                {
-                    result[^1] = previous with { Text = previous.Text + span.Text };
-                    continue;
-                }
-            }
-
-            result.Add(span);
-        }
-
-        // Leading and trailing whitespace on a block is layout, not content.
-        if (result.Count > 0)
-        {
-            result[0] = result[0] with { Text = result[0].Text.TrimStart() };
-            result[^1] = result[^1] with { Text = result[^1].Text.TrimEnd() };
-        }
-
-        return [.. result.Where(s => s.Text.Length > 0)];
-    }
-
-    /// <summary>
-    /// Collapses runs of whitespace the way HTML rendering does.
-    /// </summary>
-    /// <remarks>
-    /// Source HTML is indented, so its text nodes are full of newlines and runs of spaces that a
-    /// browser collapses to one space. Copying them verbatim into a slide produces text riddled
-    /// with gaps and line breaks that were never in the document.
-    /// </remarks>
-    private static string Collapse(string text)
-    {
-        var builder = new StringBuilder(text.Length);
-        var inWhitespace = false;
-
-        foreach (var c in text)
-        {
-            if (char.IsWhiteSpace(c))
-            {
-                if (!inWhitespace)
-                {
-                    builder.Append(' ');
-                    inWhitespace = true;
-                }
-
-                continue;
-            }
-
-            builder.Append(c);
-            inWhitespace = false;
-        }
-
-        return builder.ToString();
-    }
-
-    private static HtmlBlock ReadTable(HtmlNode table, CssStyle style)
-    {
-        var rows = new List<List<string>>();
-        var hasHeader = false;
-
-        // thead/tbody/tfoot are optional in the source and often absent; collecting every tr in
-        // document order gets the same result whether they are there or not.
-        foreach (var row in table.Descendants("tr"))
-        {
-            var cells = new List<string>();
-            var isHeaderRow = true;
-
-            foreach (var cell in row.Elements().Where(e => e.Name is "td" or "th"))
-            {
-                cells.Add(Collapse(cell.InnerText).Trim());
-
-                if (cell.Name != "th")
-                {
-                    isHeaderRow = false;
-                }
-            }
-
-            if (cells.Count == 0)
-            {
-                continue;
-            }
-
-            if (rows.Count == 0 && isHeaderRow)
-            {
-                hasHeader = true;
-            }
-
-            rows.Add(cells);
-        }
-
-        // A ragged table (a row with a colspan, or simply fewer cells) must still be rectangular
-        // on the slide, or the columns after the gap shift left.
-        var width = rows.Count == 0 ? 0 : rows.Max(r => r.Count);
-
-        foreach (var row in rows)
-        {
-            while (row.Count < width)
-            {
-                row.Add(string.Empty);
-            }
-        }
-
-        return new HtmlBlock
-        {
-            Kind = HtmlBlockKind.Table,
-            TableRows = rows,
-            TableHasHeader = hasHeader,
-            Style = style,
-            Spans = [new HtmlSpan(table.Attribute("summary") ?? string.Empty, style, null)],
-        };
-    }
-
-    /// <summary>
-    /// Resolves an <c>&lt;img&gt;</c> to bytes: a data URI, a local file, or the caller's resolver.
-    /// </summary>
-    private static byte[]? ResolveImage(HtmlNode image, HtmlSlideOptions options)
-    {
-        var source = image.Attribute("src");
-
-        if (string.IsNullOrWhiteSpace(source))
-        {
-            return null;
-        }
-
-        if (source.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
-        {
-            var comma = source.IndexOf(',');
-
-            if (comma < 0)
-            {
-                return null;
-            }
-
-            var header = source[..comma];
-
-            if (!header.Contains(";base64", StringComparison.OrdinalIgnoreCase))
-            {
-                return null;
-            }
-
-            try
-            {
-                return System.Convert.FromBase64String(source[(comma + 1)..].Trim());
-            }
-            catch (FormatException)
-            {
-                return null;
-            }
-        }
-
-        // A remote URL is only fetched through the caller's resolver; conversion never makes a
-        // network request on its own.
-        if (source.StartsWith("http:", StringComparison.OrdinalIgnoreCase) ||
-            source.StartsWith("https:", StringComparison.OrdinalIgnoreCase) ||
-            source.StartsWith("//", StringComparison.Ordinal))
-        {
-            return options.ImageResolver?.Invoke(source);
-        }
-
-        var path = source.StartsWith("file:", StringComparison.OrdinalIgnoreCase)
-            ? new Uri(source).LocalPath
-            : source;
-
-        if (!Path.IsPathRooted(path) && options.BaseDirectory is { Length: > 0 } baseDirectory)
-        {
-            path = Path.Combine(baseDirectory, path);
-        }
-
-        try
-        {
-            return File.Exists(path) ? File.ReadAllBytes(path) : options.ImageResolver?.Invoke(source);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or
-                                       ArgumentException or NotSupportedException)
-        {
-            return options.ImageResolver?.Invoke(source);
-        }
-    }
 
     // ---- Grouping into slides --------------------------------------------------------------------
 
@@ -640,7 +231,7 @@ public static class HtmlToSlides
                 // A heading below the split level becomes a bold line in the body rather than a
                 // new slide, so the document's structure survives without exploding the deck.
                 current.Body.Add(block);
-                cost += block.LineCost;
+                cost += LineCost(block);
                 continue;
             }
 
@@ -656,7 +247,7 @@ public static class HtmlToSlides
                 current.SourcePath = source;
             }
 
-            if (cost + block.LineCost > options.MaxLinesPerSlide && current.Body.Count > 0)
+            if (cost + LineCost(block) > options.MaxLinesPerSlide && current.Body.Count > 0)
             {
                 var heading = current.Heading;
                 var source = current.SourcePath;
@@ -668,7 +259,7 @@ public static class HtmlToSlides
             }
 
             current.Body.Add(block);
-            cost += block.LineCost;
+            cost += LineCost(block);
 
             if (block.Kind is HtmlBlockKind.Table or HtmlBlockKind.Image)
             {
@@ -775,7 +366,7 @@ public static class HtmlToSlides
 
         if (block.Style.Alignment is { } alignment)
         {
-            paragraph.Alignment = alignment;
+            paragraph.Alignment = ToSlideAlignment(alignment);
         }
 
         if (block.Spans.Count == 0)
@@ -1009,7 +600,7 @@ public static class HtmlToSlides
         var element = root.Descendants("table").FirstOrDefault()
             ?? throw new OfficeNetException("The HTML contains no <table> element.");
 
-        var block = ReadTable(element, default);
+        var block = HtmlFlattener.FlattenTable(element);
 
         var group = new SlideGroup
         {
@@ -1025,4 +616,17 @@ public static class HtmlToSlides
 
         return [.. RenderTable(presentation, group, block, options)];
     }
+    /// <summary>Maps the CSS engine's alignment onto PresentationML's.</summary>
+    /// <remarks>
+    /// Written out rather than cast. The two enums happen to agree member for member today, and a
+    /// cast would keep compiling — and start silently mis-aligning text — the moment either of them
+    /// gains a value the other does not have.
+    /// </remarks>
+    private static TextAlignment ToSlideAlignment(TextAlign align) => align switch
+    {
+        TextAlign.Center => TextAlignment.Center,
+        TextAlign.Right => TextAlignment.Right,
+        TextAlign.Justify => TextAlignment.Justify,
+        _ => TextAlignment.Left,
+    };
 }

@@ -768,6 +768,26 @@ public sealed class ParagraphFormat
             : XmlUtil.ValElement(Ns.W + "outlineLvl", XmlUtil.Num(value.Value)));
     }
 
+    /// <summary>
+    /// Sets a border along the bottom edge only.
+    /// </summary>
+    /// <remarks>
+    /// This is what a horizontal rule is in WordprocessingML. There is no <c>hr</c> element; Word
+    /// itself writes an empty paragraph with a bottom border, and a converter that reaches for
+    /// <see cref="SetBorder"/> instead draws a box around nothing.
+    /// </remarks>
+    public void SetBottomBorder(BorderStyle style, OfficeColor? color = null, Length? width = null)
+    {
+        if (style == BorderStyle.None)
+        {
+            Set(Ns.W + "pBdr", null);
+            return;
+        }
+
+        Set(Ns.W + "pBdr", new XElement(Ns.W + "pBdr",
+            BorderElement(Ns.W + "bottom", style, color, width)));
+    }
+
     /// <summary>Sets a border on every edge of the paragraph.</summary>
     public void SetBorder(BorderStyle style, OfficeColor? color = null, Length? width = null)
     {

@@ -387,6 +387,73 @@ hasilnya dokumen kosong — membacanya butuh OCR, dan itu alat yang berbeda.
 Gunanya adalah mengembalikan teks ke bentuk yang bisa diedit. Ini bukan round trip, dan dokumen yang
 awalnya berasal dari Word tidak akan kembali seperti aslinya.
 
+## HTML → Word
+
+```csharp
+using WordNet.Import;
+
+using var document = HtmlToWord.CreateDocument("""
+    <h1>Laporan Tahunan</h1>
+    <p>Pendapatan naik <b>32%</b>, <a href="https://example.com/rincian">rinciannya di sini</a>.</p>
+    <ol><li>Jakarta</li><li>Bandung</li></ol>
+    """);
+
+document.Save("laporan.docx");
+
+// Dari berkas, dengan path gambar relatif diselesaikan dari folder berkasnya:
+using var fromFile = HtmlToWord.CreateDocumentFromFile("laporan.html");
+
+// Atau tambahkan ke dokumen yang sudah ada:
+HtmlToWord.Convert(existing, html);
+```
+
+Apa dipetakan ke apa:
+
+| HTML | Word |
+|---|---|
+| `h1`–`h6` | `Heading1`–`Heading6` |
+| `p`, `blockquote`, teks lepas | paragraf |
+| `ul`, `ol` | daftar Word sungguhan, tingkat bersarangnya dipertahankan; setiap daftar mulai dari satu |
+| `table` | tabel, termasuk baris header |
+| `img` | gambar, diperkecil ke `MaxImageWidth` bila akan melebihi halaman |
+| `pre` | satu paragraf monospace yang mempertahankan pemisah barisnya |
+| `hr` | paragraf kosong dengan garis bawah, yang memang ditulis Word sendiri untuk sebuah garis |
+| `b`, `i`, `u`, `s`, `a`, warna, font, ukuran | sama, run demi run |
+
+`background-color` CSS pada teks menjadi warna sorot Word yang paling dekat, karena `w:highlight`
+menerima nama dari daftar sekitar selusin warna, bukan nilai bebas.
+
+```csharp
+HtmlToWord.CreateDocument(html, new HtmlWordOptions
+{
+    IncludeImages = true,
+    BaseDirectory = @"C:\laporan",                 // tempat path src relatif diselesaikan
+    ImageResolver = url => httpClient.GetByteArrayAsync(url).Result,
+    MaxImageWidth = Length.FromCentimeters(15),
+    MonospaceFont = "Consolas",
+});
+```
+
+**Konversi tidak pernah membuat permintaan jaringan sendiri.** URI `data:` dan berkas lokal dibaca
+langsung; URL jarak jauh hanya diambil lewat `ImageResolver`, dan tanpanya gambar itu dilewati.
+Konversi dokumen yang diam-diam berubah menjadi panggilan HTTP keluar bukan hal yang pantas diketahui
+pemanggilnya dari log firewall.
+
+### Struktur, bukan tata letak
+
+Dokumen mengalir ulang seperti HTML, jadi lebih banyak yang bertahan di sini daripada di konverter
+slide: heading mempertahankan levelnya, daftar mempertahankan tingkatnya, tabel mempertahankan
+bentuknya. Yang tidak bertahan adalah tata letak — float, kolom, posisi absolut, dan box model tidak
+punya padanan di WordprocessingML, jadi diabaikan alih-alih dikira-kira.
+
+Ukuran dan jenis huruf heading diambil dari gaya heading dokumennya, bukan dari CSS halamannya.
+Mengambilnya dari CSS berarti mengganti tipografi dokumen dengan tipografi halaman web, dan membuat
+perubahan gaya `Heading1` sesudahnya tidak berpengaruh apa pun pada heading yang berasal dari HTML.
+
+Pembacaannya dipakai bersama dengan [`HtmlToSlides`](PowerPointNet.md): keduanya melewati
+`HtmlFlattener` di `OfficeNet.Core`, jadi halaman yang dikonversi menjadi dokumen dan menjadi deck
+sepakat tentang apa isi halaman itu.
+
 ## Membaca dokumen
 
 ```csharp
