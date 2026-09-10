@@ -27,6 +27,19 @@ public enum TextAlign
     Justify,
 }
 
+/// <summary>Whether text sits on the baseline, above it or below it.</summary>
+public enum TextPosition
+{
+    /// <summary>On the baseline.</summary>
+    Baseline,
+
+    /// <summary>Raised: a footnote mark, an exponent.</summary>
+    Superscript,
+
+    /// <summary>Lowered: the 2 in H2O.</summary>
+    Subscript,
+}
+
 /// <summary>
 /// The subset of CSS that maps onto DrawingML text and shape formatting.
 /// </summary>
@@ -72,10 +85,14 @@ public readonly record struct CssStyle
     /// <summary>Horizontal alignment.</summary>
     public TextAlign? Alignment { get; init; }
 
+    /// <summary>Raised or lowered from the baseline: <c>sup</c>, <c>sub</c>, or <c>vertical-align</c>.</summary>
+    public TextPosition? Position { get; init; }
+
     /// <summary>True when nothing is set.</summary>
     public bool IsEmpty =>
         Color is null && BackgroundColor is null && FontSize is null && FontFamily is null &&
-        Bold is null && Italic is null && Underline is null && Strike is null && Alignment is null;
+        Bold is null && Italic is null && Underline is null && Strike is null && Alignment is null &&
+        Position is null;
 
     /// <summary>
     /// Layers another style over this one; the other style's set properties win.
@@ -96,6 +113,7 @@ public readonly record struct CssStyle
         Underline = other.Underline ?? Underline,
         Strike = other.Strike ?? Strike,
         Alignment = other.Alignment ?? Alignment,
+        Position = other.Position ?? Position,
     };
 
     /// <summary>Parses an inline <c>style</c> attribute.</summary>
@@ -172,6 +190,17 @@ public readonly record struct CssStyle
             Strike = value.Contains("line-through", StringComparison.OrdinalIgnoreCase)
                 ? true
                 : value.Contains("none", StringComparison.OrdinalIgnoreCase) ? false : null,
+        },
+
+        "vertical-align" => style with
+        {
+            Position = value switch
+            {
+                "super" => TextPosition.Superscript,
+                "sub" => TextPosition.Subscript,
+                "baseline" => TextPosition.Baseline,
+                _ => style.Position,
+            },
         },
 
         "text-align" => style with
@@ -308,6 +337,8 @@ public readonly record struct CssStyle
         "i" or "em" or "cite" or "var" or "dfn" => new CssStyle { Italic = true },
         "u" or "ins" => new CssStyle { Underline = true },
         "s" or "strike" or "del" => new CssStyle { Strike = true },
+        "sup" => new CssStyle { Position = TextPosition.Superscript },
+        "sub" => new CssStyle { Position = TextPosition.Subscript },
         "mark" => new CssStyle { BackgroundColor = OfficeColor.FromRgb(0xFF, 0xF0, 0x00) },
         "code" or "kbd" or "samp" or "tt" or "pre" => new CssStyle { FontFamily = "Consolas" },
         "small" => new CssStyle { FontSize = Length.FromPoints(10) },

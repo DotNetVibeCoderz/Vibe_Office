@@ -449,6 +449,48 @@ them from CSS would replace the document's typography with the web page's, and w
 The reading is shared with [`HtmlToSlides`](PowerPointNet.md): both go through `HtmlFlattener` in
 `OfficeNet.Core`, so a page converted to a document and to a deck agree about what the page says.
 
+## Word → HTML
+
+```csharp
+using WordNet.Export;
+
+var html = WordToHtml.Convert(document);                 // a complete page
+WordToHtml.Convert("laporan.docx", "laporan.html");      // file to file
+
+var fragment = WordToHtml.Convert(document, new WordHtmlOptions
+{
+    FullDocument = false,   // only the body's content, for a page that has its own head
+    EmbedImages = false,    // alt text instead of data: URIs
+    Stylesheet = "",        // no default stylesheet
+});
+```
+
+Headings become `h1`–`h6` from their styles (`Title` is `h1`; Word's levels 7–9 become `h6`). Lists
+become `ul` and `ol` from their numbering definitions, nested inside the item they hang from, and a
+numbered list interrupted by a paragraph resumes at the right number with `start` rather than
+restarting at one. Tables keep their header row. Pictures are embedded as `data:` URIs, so the page is
+a single file; a format a browser cannot show — EMF, WMF, TIFF — becomes its alt text rather than a
+broken image. Bold, italic, underline, strike, superscript, subscript, colour, font, size and links
+come through run by run.
+
+**Links are filtered.** A `javascript:` link is harmless inside Word and an injection vector in a
+browser, and HTML written from a document may well be served. Anything other than `http`, `https`,
+`mailto`, `tel`, `ftp` or a relative link keeps its text and loses its link.
+
+### What does not come through
+
+- **Formatting from a style other than a heading.** A run's own formatting is written; text that is
+  red because its character or paragraph style says so comes out in the page's default colour.
+- **Structure inside table cells.** A cell is written as its text: formatting inside it, merged
+  cells and nested tables are flattened.
+- **Where a picture sits within its paragraph.** It follows the paragraph's text.
+- **`pre` as `pre`.** HTML → Word writes a code block as a monospace paragraph with line breaks, and
+  that is what comes back out: the text and its breaks survive the round trip, the element does not.
+
+Both directions go through the same block model in `OfficeNet.Core.Html` — `HtmlFlattener` on the
+way in, `HtmlWriter` on the way out — so a page taken into Word and back out has passed through one
+description of what a heading, a list and a link are, not two that happen to agree.
+
 ## Reading a document
 
 ```csharp

@@ -571,6 +571,12 @@ Satu bug ditemukan sebelum terbit: dua `<ol>` bersebelahan berbagi satu definisi
 daftar kedua melanjutkan yang pertama. `HtmlBlock.ListId` memperbaikinya, dan dua mutasi di kedua
 ujungnya digagalkan tes yang tepat.
 
+**DOCX → HTML selesai**, lewat `HtmlWriter` baru di Core, jadi kedua arah memakai model blok yang
+sama. Round trip HTML → Word → HTML ternyata alat uji terbaiknya: ia menemukan dua cacat di
+importer — bold tersirat dari `<h1>` dan gaya bawaan `<a>` ditulis sebagai format langsung — dan satu
+di eksporter, daftar bersarang beda jenis yang lepas dari butirnya. Enam mutasi dicoba; lima
+tertangkap, yang keenam lolos sampai tesnya ditambah.
+
 Satu tes waktu, `AppendingParagraphsScalesLinearly`, gagal lagi di 61,5 lawan ambang 60 saat tujuh
 assembly tes berjalan bersamaan. Diukur dulu sebelum disentuh: dalam isolasi biaya per paragraf datar
 di 1,45–1,74 us dari 4.000 sampai 128.000 — algoritmanya linear, yang bising adalah pengukurannya,

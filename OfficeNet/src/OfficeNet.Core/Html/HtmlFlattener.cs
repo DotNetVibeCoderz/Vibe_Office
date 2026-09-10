@@ -62,6 +62,17 @@ public sealed class HtmlBlock
     /// </remarks>
     public int ListId { get; init; }
 
+    /// <summary>
+    /// The item's number within its list, or zero when nobody counted.
+    /// </summary>
+    /// <remarks>
+    /// A numbered list interrupted by a paragraph is still one list, and its next item is 3, not 1.
+    /// HTML cannot say that without <c>start</c>, and a writer cannot know the count unless whoever
+    /// produced the blocks, which knows its own numbering, passes it on. Reading HTML never needs
+    /// it; writing HTML from Word does.
+    /// </remarks>
+    public int ListNumber { get; init; }
+
     public List<HtmlSpan> Spans { get; init; } = [];
 
     public List<List<string>>? TableRows { get; init; }

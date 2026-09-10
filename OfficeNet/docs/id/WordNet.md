@@ -454,6 +454,50 @@ Pembacaannya dipakai bersama dengan [`HtmlToSlides`](PowerPointNet.md): keduanya
 `HtmlFlattener` di `OfficeNet.Core`, jadi halaman yang dikonversi menjadi dokumen dan menjadi deck
 sepakat tentang apa isi halaman itu.
 
+## Word → HTML
+
+```csharp
+using WordNet.Export;
+
+var html = WordToHtml.Convert(document);                 // halaman lengkap
+WordToHtml.Convert("laporan.docx", "laporan.html");      // berkas ke berkas
+
+var fragment = WordToHtml.Convert(document, new WordHtmlOptions
+{
+    FullDocument = false,   // isi body saja, untuk halaman yang sudah punya head sendiri
+    EmbedImages = false,    // teks alt alih-alih URI data:
+    Stylesheet = "",        // tanpa stylesheet bawaan
+});
+```
+
+Heading menjadi `h1`–`h6` dari gayanya (`Title` menjadi `h1`; level 7–9 Word menjadi `h6`). Daftar
+menjadi `ul` dan `ol` dari definisi penomorannya, bersarang di dalam butir tempatnya bergantung, dan
+daftar bernomor yang disela sebuah paragraf melanjutkan nomornya dengan `start` alih-alih mulai lagi
+dari satu. Tabel mempertahankan baris header-nya. Gambar disematkan sebagai URI `data:`, jadi
+halamannya satu berkas saja; format yang tidak bisa ditampilkan peramban — EMF, WMF, TIFF — menjadi
+teks alt-nya alih-alih gambar rusak. Tebal, miring, garis bawah, coret, superskrip, subskrip, warna,
+font, ukuran, dan tautan terbawa run demi run.
+
+**Tautan disaring.** Tautan `javascript:` tidak berbahaya di dalam Word tapi menjadi celah injeksi di
+peramban, dan HTML yang ditulis dari sebuah dokumen bisa saja disajikan ke publik. Apa pun selain
+`http`, `https`, `mailto`, `tel`, `ftp`, atau tautan relatif tetap mempertahankan teksnya tapi
+kehilangan tautannya.
+
+### Yang tidak ikut terbawa
+
+- **Format yang berasal dari gaya selain heading.** Format run itu sendiri ditulis; teks yang merah
+  karena gaya karakter atau paragrafnya berkata begitu keluar dengan warna bawaan halaman.
+- **Struktur di dalam sel tabel.** Sel ditulis sebagai teksnya: format di dalamnya, sel gabungan, dan
+  tabel bersarang diratakan.
+- **Posisi gambar di dalam paragrafnya.** Gambar ditulis setelah teks paragrafnya.
+- **`pre` sebagai `pre`.** HTML → Word menulis blok kode sebagai paragraf monospace dengan pemisah
+  baris, dan itulah yang keluar lagi: teks dan pemisah barisnya bertahan dalam round trip, elemennya
+  tidak.
+
+Kedua arah melewati model blok yang sama di `OfficeNet.Core.Html` — `HtmlFlattener` saat masuk,
+`HtmlWriter` saat keluar — jadi halaman yang dibawa ke Word lalu dikeluarkan lagi melewati satu
+deskripsi tentang apa itu heading, daftar, dan tautan, bukan dua deskripsi yang kebetulan sepakat.
+
 ## Membaca dokumen
 
 ```csharp

@@ -257,6 +257,71 @@ public sealed class NumberingDefinitions
     }
 
     /// <summary>
+    /// Whether a list is bulleted rather than numbered at a given level.
+    /// </summary>
+    /// <remarks>
+    /// The answer sits three references away from the paragraph: the paragraph names a
+    /// <c>w:num</c>, the <c>w:num</c> names a <c>w:abstractNum</c>, and the level inside that says
+    /// <c>bullet</c> or a number format. A <c>w:lvlOverride</c> on the <c>w:num</c> can replace the
+    /// level outright, so it is consulted first. A reference that resolves to nothing is treated as
+    /// bulleted: an unordered list is the least wrong reading of a list whose numbering is gone.
+    /// </remarks>
+    internal bool IsBulleted(int numberingId, int level)
+    {
+        var format = LevelDefinition(numberingId, level)
+            ?.Element(Ns.W + "numFmt")?.Attribute(Ns.W + "val")?.Value;
+
+        return format is null or "bullet" or "none";
+    }
+
+    /// <summary>The number a list level counts from; one when the definition does not say.</summary>
+    /// <remarks>
+    /// A <c>w:startOverride</c> on the <c>w:num</c> wins over the level's own <c>w:start</c>. It is how
+    /// Word restarts a list without copying its whole definition, so ignoring it makes a restarted
+    /// list continue.
+    /// </remarks>
+    internal int StartAt(int numberingId, int level)
+    {
+        var startOverride = (int?)NumElement(numberingId)?.Elements(Ns.W + "lvlOverride")
+            .FirstOrDefault(o => (int?)o.Attribute(Ns.W + "ilvl") == level)
+            ?.Element(Ns.W + "startOverride")?.Attribute(Ns.W + "val");
+
+        return startOverride
+               ?? (int?)LevelDefinition(numberingId, level)?.Element(Ns.W + "start")?.Attribute(Ns.W + "val")
+               ?? 1;
+    }
+
+    private XElement? NumElement(int numberingId) =>
+        _root.Elements(Ns.W + "num").FirstOrDefault(n => (int?)n.Attribute(Ns.W + "numId") == numberingId);
+
+    /// <summary>The <c>w:lvl</c> in force for a list level, override first.</summary>
+    private XElement? LevelDefinition(int numberingId, int level)
+    {
+        var num = NumElement(numberingId);
+
+        if (num is null)
+        {
+            return null;
+        }
+
+        var overridden = num.Elements(Ns.W + "lvlOverride")
+            .FirstOrDefault(o => (int?)o.Attribute(Ns.W + "ilvl") == level)
+            ?.Element(Ns.W + "lvl");
+
+        if (overridden is not null)
+        {
+            return overridden;
+        }
+
+        var abstractId = (int?)num.Element(Ns.W + "abstractNumId")?.Attribute(Ns.W + "val");
+
+        return _root.Elements(Ns.W + "abstractNum")
+            .FirstOrDefault(x => (int?)x.Attribute(Ns.W + "abstractNumId") == abstractId)
+            ?.Elements(Ns.W + "lvl")
+            .FirstOrDefault(l => (int?)l.Attribute(Ns.W + "ilvl") == level);
+    }
+
+    /// <summary>
     /// Creates a second list that shares an existing list's appearance but numbers independently.
     /// </summary>
     public int Restart(int existingNumberingId)

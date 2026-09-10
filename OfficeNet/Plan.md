@@ -452,7 +452,30 @@ sekarang jauh lebih sempit daripada saat v1.3 dimulai.
     **Konverter slide punya masalah serupa dalam bentuk lain, dan belum ditangani:** `buAutoNum`
     meneruskan penomoran lintas paragraf bernomor yang berurutan dan tidak punya atribut "mulai
     ulang". Ini menurut model DrawingML-nya; belum diperiksa di PowerPoint sendiri.
-  - [ ] **DOCX → HTML dan PPTX → HTML.** Arah sebaliknya.
+  - [x] **DOCX → HTML — selesai.** `WordNet.Export.WordToHtml`, lewat `HtmlWriter` baru di Core,
+    jadi kedua arah memakai model blok yang sama: `HtmlFlattener` masuk, `HtmlWriter` keluar.
+    Heading dari gayanya, daftar dari definisi penomorannya dan bersarang di dalam butirnya, daftar
+    bernomor yang disela melanjutkan nomornya lewat `start`, tabel dengan header, gambar sebagai URI
+    `data:`, format inline run demi run. Tautan disaring: skema di luar daftar izin — `javascript:`
+    misalnya — kehilangan tautannya, karena HTML yang ditulis dari dokumen bisa saja disajikan.
+    Keluarannya diperiksa dengan `html.parser` Python untuk keseimbangan tag dan sarang daftar yang
+    sah, bukan dengan penulisnya sendiri.
+
+    **Round trip menemukan dua cacat di importer, bukan di eksporter.** Bold yang tersirat dari
+    `<h1>` dan biru-bergaris-bawah bawaan `<a>` ditulis sebagai format langsung, jadi setiap heading
+    dan tautan membawa format yang tidak bisa diubah lewat gayanya, lalu keluar lagi sebagai
+    `<strong>` dan `<span>` yang menyasar. Keduanya pernah terlihat di keluaran python-docx lebih
+    awal dan sempat dianggap tidak berbahaya; ternyata berbahaya. Satu cacat di eksporter: daftar
+    dikunci per id penomoran, sehingga bullet yang bersarang di bawah nomor — yang punya definisinya
+    sendiri — menutup daftar luarnya alih-alih bersarang di dalam butirnya.
+
+    Setiap perilaku baru diuji mutasi, dan lima dari enam langsung digagalkan tes yang tepat. Yang
+    keenam — warna tautan bocor ke format langsung — lolos, jadi ditambah tes yang memeriksa run
+    tautan di XML-nya, beserta tes kebalikannya agar tautan yang sengaja diwarnai tetap berwarna.
+
+    Yang tidak ikut terbawa: format dari gaya selain heading, struktur di dalam sel tabel, posisi
+    gambar di dalam paragrafnya, dan `pre` yang kembali sebagai paragraf monospace, bukan `pre`.
+  - [ ] **PPTX → HTML.** Tinggal memetakan slide ke blok; penulisnya sudah ada.
 
 ---
 

@@ -268,14 +268,22 @@ public static class HtmlToWord
                 ? paragraph.AddHyperlink(span.Text, url)
                 : paragraph.AddRun(span.Text);
 
-            ApplyStyle(run, span.Style, options, applyStyleFont);
+            ApplyStyle(run, span.Style, options, applyStyleFont,
+                isLink: span.Hyperlink is { Length: > 0 });
         }
     }
 
+    /// <summary>The blue every browser gives a link, which the Hyperlink style already supplies.</summary>
+    private static readonly OfficeColor? LinkColor = CssStyle.ForTag("a").Color;
+
     private static void ApplyStyle(Run run, CssStyle style, HtmlWordOptions options,
-        bool applyStyleFont)
+        bool applyStyleFont, bool isLink)
     {
-        if (style.Bold is { } bold)
+        // A heading's weight, like its size and face, comes from its style. The flattener cannot tell
+        // the bold an h1 implies from a strong inside it, so only an explicit "not bold" is written.
+        // Writing the implied one puts direct bold on every heading: it survives a change to the
+        // heading style, and it comes back out as a stray strong when the page is exported again.
+        if (style.Bold is { } bold && (applyStyleFont || !bold))
         {
             run.Format.Bold = bold;
         }
@@ -285,7 +293,10 @@ public static class HtmlToWord
             run.Format.Italic = italic;
         }
 
-        if (style.Underline == true)
+        // A link's underline and blue are what the Hyperlink character style is for. Writing them as
+        // direct formatting as well makes them impossible to restyle, and on the way back out every
+        // link would carry a span repeating the browser's own default.
+        if (style.Underline == true && !isLink)
         {
             run.Format.Underline = UnderlineStyle.Single;
         }
@@ -295,7 +306,7 @@ public static class HtmlToWord
             run.Format.Strike = strike;
         }
 
-        if (style.Color is { } color)
+        if (style.Color is { } color && !(isLink && LinkColor is { } link && link.Equals(color)))
         {
             run.Format.Color = color;
         }
@@ -303,6 +314,16 @@ public static class HtmlToWord
         if (style.BackgroundColor is { } background)
         {
             run.Format.Highlight = NearestHighlight(background);
+        }
+
+        if (style.Position is { } position)
+        {
+            run.Format.VerticalAlignment = position switch
+            {
+                TextPosition.Superscript => VerticalAlignment.Superscript,
+                TextPosition.Subscript => VerticalAlignment.Subscript,
+                _ => VerticalAlignment.Baseline,
+            };
         }
 
         // A heading's size and face come from its style; overriding them from CSS would replace

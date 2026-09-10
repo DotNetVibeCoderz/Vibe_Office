@@ -219,6 +219,49 @@ public class DocSamples : IDisposable
     }
 
     [Fact]
+    public void WordNet_WordToHtml()
+    {
+        using var document = WordDocument.Create();
+        document.AddHeading("Laporan Tahunan", 1);
+        document.AddParagraph("Pendapatan naik ").AddRun("32%").Format.Bold = true;
+
+        var html = WordNet.Export.WordToHtml.Convert(document);
+
+        Assert.StartsWith("<!DOCTYPE html>", html, StringComparison.Ordinal);
+        Assert.Contains("<h1>Laporan Tahunan</h1>", html, StringComparison.Ordinal);
+        Assert.Contains("<strong>32%</strong>", html, StringComparison.Ordinal);
+
+        // File to file.
+        var docx = Path.Combine(Path.GetTempPath(), $"officenet-{Guid.NewGuid():N}.docx");
+        var page = Path.ChangeExtension(docx, ".html");
+
+        try
+        {
+            using (var file = File.Create(docx))
+            {
+                document.Save(file);
+            }
+
+            WordNet.Export.WordToHtml.Convert(docx, page);
+            Assert.Contains("Laporan Tahunan", File.ReadAllText(page), StringComparison.Ordinal);
+        }
+        finally
+        {
+            File.Delete(docx);
+            File.Delete(page);
+        }
+
+        var fragment = WordNet.Export.WordToHtml.Convert(document, new WordNet.Export.WordHtmlOptions
+        {
+            FullDocument = false,
+            EmbedImages = false,
+            Stylesheet = "",
+        });
+
+        Assert.DoesNotContain("<html>", fragment, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void PdfImport_BackToWordAndExcel()
     {
         // A report, out to PDF, and back again. Building the source here rather than shipping a

@@ -226,6 +226,35 @@ public class HtmlToWordTests
     }
 
     [Fact]
+    public void ALinkTakesItsLookFromTheHyperlinkStyleNotFromDirectFormatting()
+    {
+        // Every browser draws a link blue and underlined, and the flattener records that as the a
+        // tag's default. Writing it onto the run as well as applying the Hyperlink style makes the
+        // link impossible to restyle, and exporting the document again wraps every link in a span
+        // repeating the browser's own default.
+        var docx = Convert("<p>Lihat <a href=\"https://example.com\">laporan</a>.</p>");
+
+        var run = Part(docx, "word/document.xml").Descendants(W + "hyperlink").Single().Element(W + "r")!;
+        var properties = run.Element(W + "rPr");
+
+        Assert.Equal("Hyperlink", properties?.Element(W + "rStyle")?.Attribute(W + "val")?.Value);
+        Assert.Null(properties?.Element(W + "color"));
+        Assert.Null(properties?.Element(W + "u"));
+    }
+
+    [Fact]
+    public void ALinkGivenAColourOfItsOwnKeepsIt()
+    {
+        // The other side of the same rule: only the browser's default is dropped. A link the page
+        // deliberately coloured says something, and removing that would be the opposite mistake.
+        var docx = Convert("<p><a href=\"https://example.com\" style=\"color:#C0392B\">merah</a></p>");
+
+        var run = Part(docx, "word/document.xml").Descendants(W + "hyperlink").Single().Element(W + "r")!;
+
+        Assert.Equal("C0392B", run.Element(W + "rPr")?.Element(W + "color")?.Attribute(W + "val")?.Value);
+    }
+
+    [Fact]
     public void TheDocumentReadsBackAfterSaving()
     {
         var docx = Convert("<h1>Judul</h1><p>Paragraf pertama.</p><ul><li>Butir</li></ul>");

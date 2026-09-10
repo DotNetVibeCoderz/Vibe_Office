@@ -6,9 +6,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **v1.1.0 is published to NuGet** (tag `officenet-v1.1.0`). **v1.2 (performance) and v1.3 (renderer)
 are both complete, and 1.3.0 is on NuGet**; v2.0 is in progress — the HTML engine now lives in
-`OfficeNet.Core.Html`, and `WordNet.Import.HtmlToWord` exists. All six libraries build clean with
-zero warnings: `OfficeNet.Core`, `PdfNet`, `WordNet`, `ExcelNet`, `PowerPointNet`, `OfficeNet`
-(meta) and `OfficeNet.Rendering`. **713 tests pass** across seven test projects.
+`OfficeNet.Core.Html`, and `WordNet.Import.HtmlToWord` and `WordNet.Export.WordToHtml` exist. All six
+libraries build clean with zero warnings: `OfficeNet.Core`, `PdfNet`, `WordNet`, `ExcelNet`,
+`PowerPointNet`, `OfficeNet` (meta) and `OfficeNet.Rendering`. **729 tests pass** across seven
+test projects.
 
 Everything the plan listed through v1.1 exists: the libraries, tests with independent structural
 validators, `docs/` and its `docs/id/` mirror, `notebooks/`, `benchmarks/`, the five `samples/`
