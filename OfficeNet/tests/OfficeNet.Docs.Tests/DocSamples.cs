@@ -1372,6 +1372,29 @@ public class DocSamples : IDisposable
     }
 
     [Fact]
+    public void PdfNet_CreatingFormFields()
+    {
+        using var document = PdfDocument.Create();
+        var page = document.Pages.Add();
+        var form = AcroForm.OpenOrCreate(document);
+        PdfRectangle Box(double x, double y, double w, double h) => PdfRectangle.FromSize(x, y, w, h);
+
+        form.AddTextField(page, "nama", Box(110, 700, 250, 22), required: true);
+        form.AddTextField(page, "catatan", Box(110, 610, 250, 70), multiline: true);
+        form.AddCheckBox(page, "setuju", Box(110, 580, 16, 16));
+        form.AddRadioGroup("ukuran",
+        [
+            (page, Box(110, 550, 16, 16), "S"),
+            (page, Box(140, 550, 16, 16), "M"),
+        ], selected: "M");
+        form.AddComboBox(page, "kota", Box(110, 515, 150, 22), ["Jakarta", "Bandung", "Medan"]);
+        form.AddListBox(page, "warna", Box(110, 440, 150, 60), ["Merah", "Hijau", "Biru"]);
+        form.AddPushButton(page, "situs", Box(110, 400, 110, 26), "Buka situs", "https://example.org/");
+
+        Assert.Equal(7, form.Count);
+    }
+
+    [Fact]
     public void PdfNet_ExtractEncryptAndAnnotate()
     {
         var path = Path_("source.pdf");

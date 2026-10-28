@@ -331,6 +331,35 @@ box over the right answer.
 
 `field.OnStates` lists what a checkbox will actually accept — it is rarely just `"Yes"`.
 
+### Creating fields
+
+```csharp
+var page = document.Pages.Add();
+var form = AcroForm.OpenOrCreate(document);
+PdfRectangle Box(double x, double y, double w, double h) => PdfRectangle.FromSize(x, y, w, h);
+
+form.AddTextField(page, "nama", Box(110, 700, 250, 22), required: true);
+form.AddTextField(page, "catatan", Box(110, 610, 250, 70), multiline: true);
+form.AddCheckBox(page, "setuju", Box(110, 580, 16, 16));
+form.AddRadioGroup("ukuran",
+[
+    (page, Box(110, 550, 16, 16), "S"),
+    (page, Box(140, 550, 16, 16), "M"),
+], selected: "M");
+form.AddComboBox(page, "kota", Box(110, 515, 150, 22), ["Jakarta", "Bandung", "Medan"]);
+form.AddListBox(page, "warna", Box(110, 440, 150, 60), ["Merah", "Hijau", "Biru"]);
+form.AddPushButton(page, "situs", Box(110, 400, 110, 26), "Buka situs", "https://example.org/");
+```
+
+Every field is given an **appearance** — its box, its value, a tick or a dot for the chosen state —
+because `/NeedAppearances` asks the viewer to draw fields itself and browser viewers, mobile readers
+and print pipelines ignore it. Ticks and dots are paths, so no symbol font is needed. A widget is
+listed both on its page (`/Annots`) and in the form (`/Fields`), and printed (`/F 4`); a field
+missing any of the three is invisible, not a field, or absent from the printout.
+
+Rectangles are in points from the page's bottom-left. Names must be unique and contain no dot, which
+separates a group from a field.
+
 ## Annotations
 
 ```csharp

@@ -633,7 +633,7 @@ memeriksa bagaimana pustaka memperlakukan `w:ins` sebelum menulis fitur track ch
 - [ ] PowerPointNet: garis, panah, konektor (`p:cxnSp`)
 - [ ] PowerPointNet: custom geometry (`a:custGeom`), ikut digambar di ekspor PDF
 - [ ] PowerPointNet: objek OLE tersemat dengan pratinjau
-- [ ] PdfNet: membuat field AcroForm (text, checkbox, radio, combo, list, button)
+- [x] PdfNet: membuat field AcroForm (text, checkbox, radio, combo, list, button) — dirender MuPDF
 - [ ] PdfNet: lampiran — ekstrak dan tambah (`/EmbeddedFiles`)
 - [ ] PdfNet: metadata XMP
 - [ ] PdfNet: PDF/A-2b dan PDF/A-3b, diverifikasi veraPDF

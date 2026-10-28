@@ -763,9 +763,16 @@ melengkapi.
 
 ### PdfNet
 
-- [ ] **Membuat field AcroForm.** `AcroForm` sekarang membaca, mengisi, dan meratakan field yang
-  sudah ada, tetapi tidak bisa **membuat** text field, checkbox, radio group, combo box, list box,
-  maupun push button. Appearance stream-nya sudah dibangkitkan untuk mengisi, jadi jalurnya ada.
+- [x] **Membuat field AcroForm — selesai.** `AddTextField` (multiline, maxLength, password,
+  required), `AddCheckBox`, `AddRadioGroup`, `AddComboBox` (bisa editable), `AddListBox`,
+  `AddPushButton` (dengan tautan). Setiap field diberi appearance — kotak, nilai, centang atau titik
+  berupa path tanpa font simbol — karena `/NeedAppearances` diabaikan penampil browser dan ponsel.
+  Widget dicantumkan di `/Annots` halaman dan `/Fields` formulir, dengan flag cetak.
+
+  Mengisi field yang sudah ada kini juga menggambar kotak `/MK`-nya (latar dan garis tepi), dan list
+  box menampilkan semua opsinya dengan yang terpilih disorot, bukan hanya nilai terpilih. Diperiksa
+  dengan **PyMuPDF** — MuPDF me-render keenam jenis field dan membaca jenis serta nilainya — dan
+  pypdf; delapan mutasi tertangkap.
 - [ ] **Lampiran (embedded files).** Ekstrak dan tambah lewat name tree `/EmbeddedFiles` dan
   anotasi `/FileAttachment`. Prasyarat PDF/A-3 (ZUGFeRD/Factur-X untuk e-invoice).
 - [ ] **PDF/A-2b dan PDF/A-3b.** Metadata XMP yang selaras dengan `/Info`, `/OutputIntent` dengan

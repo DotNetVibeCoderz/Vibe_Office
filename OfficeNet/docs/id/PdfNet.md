@@ -340,6 +340,35 @@ tampilan akan menunjukkan kotak kosong di atas jawaban yang benar.
 
 `field.OnStates` menyebutkan apa yang sebenarnya diterima sebuah checkbox — jarang sekadar `"Yes"`.
 
+### Membuat field
+
+```csharp
+var page = document.Pages.Add();
+var form = AcroForm.OpenOrCreate(document);
+PdfRectangle Box(double x, double y, double w, double h) => PdfRectangle.FromSize(x, y, w, h);
+
+form.AddTextField(page, "nama", Box(110, 700, 250, 22), required: true);
+form.AddTextField(page, "catatan", Box(110, 610, 250, 70), multiline: true);
+form.AddCheckBox(page, "setuju", Box(110, 580, 16, 16));
+form.AddRadioGroup("ukuran",
+[
+    (page, Box(110, 550, 16, 16), "S"),
+    (page, Box(140, 550, 16, 16), "M"),
+], selected: "M");
+form.AddComboBox(page, "kota", Box(110, 515, 150, 22), ["Jakarta", "Bandung", "Medan"]);
+form.AddListBox(page, "warna", Box(110, 440, 150, 60), ["Merah", "Hijau", "Biru"]);
+form.AddPushButton(page, "situs", Box(110, 400, 110, 26), "Buka situs", "https://example.org/");
+```
+
+Setiap field diberi **tampilan** — kotaknya, nilainya, centang atau titik untuk pilihan yang aktif —
+karena `/NeedAppearances` meminta penampil menggambar sendiri dan penampil browser, pembaca ponsel,
+serta jalur cetak mengabaikannya. Centang dan titik berupa path, jadi tidak butuh font simbol. Widget
+dicantumkan di halamannya (`/Annots`) dan di formulir (`/Fields`), serta dicetak (`/F 4`); field yang
+kehilangan salah satunya tidak terlihat, bukan field, atau hilang dari hasil cetak.
+
+Persegi panjang dalam point dari kiri bawah halaman. Nama harus unik dan tanpa titik, yang memisahkan
+grup dari field.
+
 ## Anotasi
 
 ```csharp

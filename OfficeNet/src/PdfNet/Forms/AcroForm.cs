@@ -331,6 +331,18 @@ public sealed class PdfFormField
 
             const double Padding = 2;
             var builder = new StringBuilder();
+
+            // The widget's own background and border (/MK). Without them an empty field is drawn
+            // as nothing at all, and a reader sees no box to type into.
+            AppendBox(builder, widget, rect);
+
+            if (FieldType == PdfFieldType.ListBox)
+            {
+                AppendListBox(builder, rect, value, size, color);
+                StoreAppearance(widget, rect, builder.ToString());
+                continue;
+            }
+
             builder.Append("/Tx BMC\nq\n");
             builder.Append(CultureInfo.InvariantCulture,
                 $"{Padding:0.##} {Padding:0.##} {rect.Width - Padding * 2:0.##} {rect.Height - Padding * 2:0.##} re\nW\nn\n");
@@ -367,23 +379,96 @@ public sealed class PdfFormField
             }
 
             builder.Append("ET\nQ\nEMC\n");
+            StoreAppearance(widget, rect, builder.ToString());
+        }
+    }
 
-            var appearance = new PdfStream();
-            appearance[PdfName.Type] = PdfName.XObject;
-            appearance.SetName(PdfName.Subtype, "Form");
-            appearance[PdfName.Get("BBox")] = new PdfArray(0, 0, rect.Width, rect.Height);
-            appearance[PdfName.Resources] = _form.AppearanceResources();
-            appearance.SetText(builder.ToString());
+    private void StoreAppearance(PdfDictionary widget, PdfRectangle rect, string content)
+    {
+        var appearance = new PdfStream();
+        appearance[PdfName.Type] = PdfName.XObject;
+        appearance.SetName(PdfName.Subtype, "Form");
+        appearance[PdfName.Get("BBox")] = new PdfArray(0, 0, rect.Width, rect.Height);
+        appearance[PdfName.Resources] = _form.AppearanceResources();
+        appearance.SetText(content);
 
-            var appearanceDictionary = _form.Document.Follow(widget[PdfName.Get("AP")]) as PdfDictionary;
-            if (appearanceDictionary is null)
+        var appearanceDictionary = _form.Document.Follow(widget[PdfName.Get("AP")]) as PdfDictionary;
+        if (appearanceDictionary is null)
+        {
+            appearanceDictionary = new PdfDictionary();
+            widget[PdfName.Get("AP")] = appearanceDictionary;
+        }
+
+        appearanceDictionary[PdfName.Get("N")] = _form.Document.AddObject(appearance);
+    }
+
+    /// <summary>Fills /MK's background and strokes its border, when the widget has them.</summary>
+    private void AppendBox(StringBuilder builder, PdfDictionary widget, PdfRectangle rect)
+    {
+        if (_form.Document.Follow(widget[PdfName.Get("MK")]) is not PdfDictionary characteristics)
+        {
+            return;
+        }
+
+        string? Color(PdfObject? value, bool isFill) => value switch
+        {
+            PdfArray { Count: 1 } g => $"{Num(g[0])} {(isFill ? "g" : "G")}",
+            PdfArray { Count: 3 } c => $"{Num(c[0])} {Num(c[1])} {Num(c[2])} {(isFill ? "rg" : "RG")}",
+            _ => null,
+        };
+
+        static string Num(PdfObject value) =>
+            (value is PdfNumber n ? n.DoubleValue : 0).ToString("0.###", CultureInfo.InvariantCulture);
+
+        builder.Append("q\n");
+
+        if (Color(_form.Document.Follow(characteristics[PdfName.Get("BG")]), true) is { } background)
+        {
+            builder.Append(background).Append('\n').Append(CultureInfo.InvariantCulture,
+                $"0 0 {rect.Width:0.##} {rect.Height:0.##} re\nf\n");
+        }
+
+        if (Color(_form.Document.Follow(characteristics[PdfName.Get("BC")]), false) is { } border)
+        {
+            builder.Append(border).Append('\n').Append(CultureInfo.InvariantCulture,
+                $"1 w\n0.5 0.5 {rect.Width - 1:0.##} {rect.Height - 1:0.##} re\nS\n");
+        }
+
+        builder.Append("Q\n");
+    }
+
+    /// <summary>A list box shows every option, the chosen one highlighted.</summary>
+    private void AppendListBox(StringBuilder builder, PdfRectangle rect, string value, double size,
+        OfficeColor color)
+    {
+        var lineHeight = size * 1.2;
+        var y = rect.Height - 2 - lineHeight;
+
+        builder.Append("/Tx BMC\nq\n");
+        builder.Append(CultureInfo.InvariantCulture,
+            $"1 1 {rect.Width - 2:0.##} {rect.Height - 2:0.##} re\nW\nn\n");
+
+        foreach (var option in Options)
+        {
+            if (option == value)
             {
-                appearanceDictionary = new PdfDictionary();
-                widget[PdfName.Get("AP")] = appearanceDictionary;
+                builder.Append(CultureInfo.InvariantCulture,
+                    $"0.6 0.75 0.95 rg\n1 {y:0.##} {rect.Width - 2:0.##} {lineHeight:0.##} re\nf\n");
             }
 
-            appearanceDictionary[PdfName.Get("N")] = _form.Document.AddObject(appearance);
+            builder.Append(CultureInfo.InvariantCulture,
+                $"BT\n{color.R / 255.0:0.###} {color.G / 255.0:0.###} {color.B / 255.0:0.###} rg\n/Helv {size:0.##} Tf\n" +
+                $"1 0 0 1 4 {y + lineHeight * 0.25:0.##} Tm\n{Escape(option)} Tj\nET\n");
+
+            y -= lineHeight;
+
+            if (y < 0)
+            {
+                break;
+            }
         }
+
+        builder.Append("Q\nEMC\n");
     }
 
     private (StandardFont Font, double Size, OfficeColor Color) ParseDefaultAppearance()
@@ -500,7 +585,7 @@ public sealed class PdfFormField
 /// <summary>
 /// A document's interactive form.
 /// </summary>
-public sealed class AcroForm : IReadOnlyCollection<PdfFormField>
+public sealed partial class AcroForm : IReadOnlyCollection<PdfFormField>
 {
     private readonly List<PdfFormField> _fields = [];
 
