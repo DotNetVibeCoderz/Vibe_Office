@@ -161,6 +161,8 @@ public sealed class Slide
                         ResolveChart(element),
                     "graphicFrame" when SmartArt.IsDiagram(element) =>
                         ResolveDiagram(element),
+                    "graphicFrame" when EmbeddedObject.IsEmbeddedObject(element) =>
+                        new EmbeddedObject(_presentation, element, Part),
                     _ => new Shape(_presentation, element),
                 });
             }
@@ -200,6 +202,9 @@ public sealed class Slide
 
     /// <summary>The pictures on the slide.</summary>
     public IEnumerable<Picture> Pictures => Shapes.OfType<Picture>();
+
+    /// <summary>The files embedded on the slide as OLE objects.</summary>
+    public IEnumerable<EmbeddedObject> EmbeddedObjects => Shapes.OfType<EmbeddedObject>();
 
     /// <summary>The charts on the slide.</summary>
     public IEnumerable<SlideChart> Charts => Shapes.OfType<SlideChart>();
@@ -558,6 +563,45 @@ public sealed class Slide
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         return AddPicture(File.ReadAllBytes(path), left, top, width, height);
+    }
+
+    /// <summary>
+    /// Embeds a file — a workbook, a document, a deck, a PDF, anything — as an object PowerPoint
+    /// opens on a double-click.
+    /// </summary>
+    /// <param name="data">The file.</param>
+    /// <param name="fileName">
+    /// Its name. The extension decides how it is stored: .xlsx, .docx and .pptx (and their
+    /// macro-enabled forms) as themselves, editable in place; anything else as an OLE Package that
+    /// Windows opens with the program for that extension.
+    /// </param>
+    /// <param name="left">Distance from the slide's left edge.</param>
+    /// <param name="top">Distance from the slide's top edge.</param>
+    /// <param name="width">The frame's width.</param>
+    /// <param name="height">The frame's height.</param>
+    /// <param name="previewImage">
+    /// The picture the slide shows (PNG or JPEG) — PowerPoint draws nothing else until the object
+    /// is opened, and neither does a printout or the PDF export. A first page rendered with
+    /// <c>OfficeNet.Rendering</c> is the natural choice; a plain tile is generated when omitted.
+    /// </param>
+    /// <param name="showAsIcon">Marks the object as shown as an icon, the way a packaged file usually is.</param>
+    public EmbeddedObject AddEmbeddedObject(byte[] data, string fileName, Length left, Length top,
+        Length width, Length height, byte[]? previewImage = null, bool showAsIcon = false)
+    {
+        ArgumentNullException.ThrowIfNull(data);
+        ArgumentException.ThrowIfNullOrWhiteSpace(fileName);
+
+        return EmbeddedObject.Create(_presentation, this, ShapeTree, NextShapeId(), data, fileName,
+            previewImage, showAsIcon, left, top, width, height);
+    }
+
+    /// <summary>Embeds a file from disk as an OLE object.</summary>
+    public EmbeddedObject AddEmbeddedObject(string path, Length left, Length top, Length width, Length height,
+        byte[]? previewImage = null, bool showAsIcon = false)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        return AddEmbeddedObject(File.ReadAllBytes(path), Path.GetFileName(path), left, top, width, height,
+            previewImage, showAsIcon);
     }
 
     /// <summary>Adds a table.</summary>

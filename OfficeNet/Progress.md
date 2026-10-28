@@ -633,7 +633,7 @@ memeriksa bagaimana pustaka memperlakukan `w:ins` sebelum menulis fitur track ch
 - [x] Core: enkripsi Agile ECMA-376 (CFB minimal) untuk .docx/.xlsx/.pptx — dibuka Excel, Word, PowerPoint asli
 - [x] PowerPointNet: garis, panah, konektor (`p:cxnSp`)
 - [x] PowerPointNet: custom geometry (`a:custGeom`), ikut digambar di ekspor PDF
-- [ ] PowerPointNet: objek OLE tersemat dengan pratinjau
+- [x] PowerPointNet: objek OLE tersemat dengan pratinjau — diaktifkan di PowerPoint asli
 - [x] PdfNet: membuat field AcroForm (text, checkbox, radio, combo, list, button) — dirender MuPDF
 - [x] PdfNet: lampiran — ekstrak dan tambah (`/EmbeddedFiles`, `/AF` untuk PDF/A-3)
 - [x] PdfNet: metadata XMP, sepakat dengan `/Info` sampai detik

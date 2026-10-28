@@ -331,7 +331,11 @@ public static class OpcValidator
                 type = defaults.GetValueOrDefault(extension);
             }
 
-            if (type is null || !type.Contains("xml", StringComparison.OrdinalIgnoreCase))
+            // An XML part's type ends in +xml or is plain XML. "Contains xml" also matched every
+            // vnd.openxmlformats type, so an embedded .xlsx or OLE .bin was parsed as XML.
+            if (type is null || !(type.EndsWith("+xml", StringComparison.OrdinalIgnoreCase) ||
+                                  type.EndsWith(".vmlDrawing", StringComparison.OrdinalIgnoreCase) ||
+                                  type is "application/xml" or "text/xml"))
             {
                 continue;
             }

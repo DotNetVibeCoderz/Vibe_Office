@@ -187,14 +187,15 @@ public static class PptToPdf
             return;
         }
 
-        if (shape is Picture picture)
+        if (shape is Picture or EmbeddedObject)
         {
             if (!options.IncludeImages)
             {
                 return;
             }
 
-            var bytes = picture.GetImageBytes();
+            // An embedded object is drawn as its preview, which is what PowerPoint shows too.
+            var bytes = shape is Picture picture ? picture.GetImageBytes() : ((EmbeddedObject)shape).GetPreviewImage();
 
             if (bytes is null)
             {

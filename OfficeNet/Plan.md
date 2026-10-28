@@ -798,8 +798,15 @@ melengkapi.
   beberapa path per shape, masing-masing diisi/digaris. `AddFreeform`, `Shape.FreeformPaths`
   (juga freeform buatan PowerPoint). Ekspor PDF menggambarnya; busur diuji pada elips pipih, tempat
   sudut visual dan parameter berbeda.
-- [ ] **Objek tersemat (OLE)** — sematkan .xlsx/.docx/.pdf sebagai `p:oleObj` dengan gambar
-  pratinjau. Paket tersemat adalah berkas OPC biasa, jadi tidak butuh CFB untuk format Office.
+- [x] **Objek tersemat (OLE) — selesai.** `Slide.AddEmbeddedObject`, `EmbeddedObjects`,
+  `EmbeddedObject` (`ProgId`, `FileName`, `GetData`, `GetPreviewImage`, `ShowAsIcon`). Berkas Office
+  disimpan apa adanya dengan ProgID aplikasinya (`Excel.Sheet.12`, dst.); selain itu sebagai OLE
+  Package (CFB dari `CompoundFile`, `\u0001CompObj` + `\u0001Ole10Native`) dengan tata letak yang dibongkar
+  dari PDF yang disematkan PowerPoint sendiri. Pratinjau: dari pemanggil (mis. `DocumentRenderer`) atau
+  ubin yang dibuat; ekspor PDF menggambarnya. Membaca juga markup `mc:AlternateContent` PowerPoint.
+  Diverifikasi di PowerPoint lewat COM (mengaktifkan workbook menjalankan Excel dan membaca selnya),
+  python-pptx, openpyxl, python-docx, olefile. Ikut diperbaiki: validator OPC tes menganggap setiap
+  content type `vnd.openxmlformats` sebagai XML.
 
 ### PdfNet
 

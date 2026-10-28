@@ -1422,6 +1422,45 @@ public class DocSamples : IDisposable
     }
 
     [Fact]
+    public void PowerPointNet_EmbeddedFiles()
+    {
+        var workbookPath = Path_("anggaran.xlsx");
+
+        using (var workbook = Workbook.Create("Anggaran"))
+        {
+            workbook.Worksheets[0]["A1"].Set("Pendapatan");
+            workbook.Save(workbookPath);
+        }
+
+        var pdfPath = Path_("laporan.pdf");
+
+        using (var document = WordDocument.Create())
+        {
+            document.AddParagraph("Laporan");
+            document.SaveAsPdf(pdfPath);
+        }
+
+        using var deck = Presentation.Create();
+        var slide = deck.AddSlide();
+
+        var preview = DocumentRenderer.Render(workbookPath, new RenderOptions { Dpi = 96 })[0];
+
+        slide.AddEmbeddedObject(workbookPath, Units.Inches(1), Units.Inches(1),
+            Units.Inches(5), Units.Inches(3), preview);
+
+        slide.AddEmbeddedObject(pdfPath, Units.Inches(7), Units.Inches(1),
+            Units.Inches(1), Units.Inches(1), showAsIcon: true);
+
+        foreach (var embedded in slide.EmbeddedObjects)
+        {
+            Console.WriteLine($"{embedded.ProgId}: {embedded.FileName}, {embedded.GetData()!.Length} bytes");
+        }
+
+        Assert.Equal(["Excel.Sheet.12", "Package"], slide.EmbeddedObjects.Select(o => o.ProgId));
+        Assert.Equal(File.ReadAllBytes(pdfPath), slide.EmbeddedObjects.Last().GetData());
+    }
+
+    [Fact]
     public void PowerPointNet_Connectors()
     {
         using var deck = Presentation.Create();

@@ -340,61 +340,6 @@ re-runs its own engine and the shapes move to wherever it decides.** The content
 placement becomes PowerPoint's. That is a real boundary, and it is the same one PowerPoint puts on
 its own cached drawing.
 
-## SmartArt
-
-```csharp
-using PowerPointNet.Diagrams;
-
-slide.AddSmartArt(DiagramKind.Process, "Kumpulkan", "Olah", "Laporkan");
-```
-
-Five kinds: `List` (boxes stacked down the slide), `Process` (chevrons across it), `Cycle` (a ring
-with arrows), `Hierarchy` (a tree) and `Pyramid` (stacked bands). Colours are the caller's, and
-position and size have an overload each:
-
-```csharp
-var diagram = slide.AddSmartArt(DiagramKind.Cycle,
-    [new DiagramNode("Rencana"), new DiagramNode("Kerjakan"), new DiagramNode("Periksa")],
-    Units.Cm(3), Units.Cm(4), Units.Cm(18), Units.Cm(10),
-    fill: OfficeColor.FromRgb(0x1F, 0x3A, 0x5F),
-    text: OfficeColor.White);
-```
-
-`Hierarchy` is the only kind that draws children, and `DiagramNode.With` builds them:
-
-```csharp
-slide.AddSmartArt(DiagramKind.Hierarchy,
-[
-    DiagramNode.With("Direktur",
-        DiagramNode.With("Operasi", new DiagramNode("Gudang"), new DiagramNode("Armada")),
-        DiagramNode.With("Keuangan", new DiagramNode("Penagihan"))),
-]);
-```
-
-The other kinds flatten the tree into a list rather than dropping the deeper levels, so nothing
-disappears silently.
-
-`slide.Diagrams` finds them again, and `diagram.Nodes` reads the text back out of the data model.
-
-### What is in the file, and where the boundary is
-
-A diagram is **five parts**, not one: `data` (the nodes and how they connect), `layout`, `colors`,
-`quickStyle`, plus a Microsoft extension part holding the rendered shapes. The slide points at the
-first four through a single `dgm:relIds` element naming all four relationship ids; the *data* part
-points at the fifth.
-
-`layout` is the interesting one. It is not a picture — it is an **algorithm**, a constraint system
-PowerPoint solves at draw time to decide where each node goes. Reimplementing that is not a thing a
-library does in an afternoon, and shipping a hollow one gives a diagram that opens as a blank
-rectangle.
-
-So OfficeNet computes the geometry itself and writes it into the drawing part, which is exactly what
-PowerPoint caches there. That part is what every consumer draws: PowerPoint, LibreOffice, Google
-Slides, and this library's own PDF export. **The moment someone edits the diagram in PowerPoint, it
-re-runs its own engine and the shapes move to wherever it decides.** The content stays; the exact
-placement becomes PowerPoint's. That is a real boundary, and it is the same one PowerPoint puts on
-its own cached drawing.
-
 ## Pictures and media
 
 ```csharp
@@ -410,6 +355,46 @@ slide.AddOnlineVideo("https://www.youtube.com/watch?v=…", /* … */);
 An embedded clip needs *two* relationships — one `video`/`audio` and one `media` — pointing at the
 same part. PowerPoint silently drops a clip that has only one, which is the usual reason a
 hand-built deck plays nothing.
+
+### Embedded files
+
+```csharp
+// A first page rendered with OfficeNet.Rendering makes the best preview.
+var preview = DocumentRenderer.Render("anggaran.xlsx", new RenderOptions { Dpi = 96 })[0];
+
+slide.AddEmbeddedObject("anggaran.xlsx", Units.Inches(1), Units.Inches(1),
+    Units.Inches(5), Units.Inches(3), preview);
+
+slide.AddEmbeddedObject("laporan.pdf", Units.Inches(7), Units.Inches(1),
+    Units.Inches(1), Units.Inches(1), showAsIcon: true);
+
+foreach (var embedded in slide.EmbeddedObjects)
+{
+    Console.WriteLine($"{embedded.ProgId}: {embedded.FileName}, {embedded.GetData()!.Length} bytes");
+}
+```
+
+A file embedded on a slide opens on a double-click in PowerPoint. How it is stored depends on what
+it is, as PowerPoint does it:
+
+| File | Stored as | ProgID | Double-click |
+| --- | --- | --- | --- |
+| .xlsx, .docx, .pptx (and .xlsm, .docm, .pptm) | the file itself, under `ppt/embeddings` | `Excel.Sheet.12`, `Word.Document.12`, `PowerPoint.Show.12` | edits in place |
+| anything else — .pdf, .csv, .zip | an **OLE Package**: a compound file holding the name and bytes | `Package` | opens with the program for the extension |
+
+A file named `.xlsx` that is not a zip is refused: it would embed and then fail in someone else's
+PowerPoint, where nobody sees why.
+
+**The slide shows the preview, never the content.** PowerPoint draws nothing of an embedded object
+until it is activated, and the PDF export, printouts and thumbnails show the same picture. Without
+one, a plain tile in the owning application's colour is generated.
+
+Reading takes PowerPoint's own markup too — it wraps the object in `mc:AlternateContent` with a VML
+choice — and `GetData` unwraps an OLE Package to the file inside. Checked in PowerPoint through COM:
+the three objects read back as embedded OLE objects with their ProgIDs; activating the workbook
+started Excel inside the deck and read its cells, the document likewise in Word; a re-save kept the
+packaged PDF with its name. The `CompObj` stream is byte for byte the one PowerPoint wrote when it
+embedded a PDF itself.
 
 ## HTML → slides
 
