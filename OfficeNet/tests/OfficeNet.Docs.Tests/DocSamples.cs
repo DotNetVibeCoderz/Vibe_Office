@@ -1372,6 +1372,28 @@ public class DocSamples : IDisposable
     }
 
     [Fact]
+    public void PdfNet_AttachmentsAndXmp()
+    {
+        using var document = PdfDocument.Create();
+        document.Pages.Add();
+        var invoiceXml = "<Invoice/>"u8.ToArray();
+
+        document.WriteXmpMetadata = true;
+        document.AddAttachment("factur-x.xml", invoiceXml, "text/xml", "Faktur elektronik", relationship: "Alternative");
+
+        foreach (var file in document.Attachments)
+        {
+            _ = $"{file.Name} ({file.MimeType}, {file.Data.Length} bytes)";
+        }
+
+        document.ToArray();
+        string? xmp = document.XmpMetadata;
+        Assert.Contains("xmpmeta", xmp);
+
+        Assert.True(document.RemoveAttachment("factur-x.xml"));
+    }
+
+    [Fact]
     public void PdfNet_CreatingFormFields()
     {
         using var document = PdfDocument.Create();

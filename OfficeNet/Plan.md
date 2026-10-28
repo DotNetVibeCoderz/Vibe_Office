@@ -773,13 +773,19 @@ melengkapi.
   box menampilkan semua opsinya dengan yang terpilih disorot, bukan hanya nilai terpilih. Diperiksa
   dengan **PyMuPDF** — MuPDF me-render keenam jenis field dan membaca jenis serta nilainya — dan
   pypdf; delapan mutasi tertangkap.
-- [ ] **Lampiran (embedded files).** Ekstrak dan tambah lewat name tree `/EmbeddedFiles` dan
-  anotasi `/FileAttachment`. Prasyarat PDF/A-3 (ZUGFeRD/Factur-X untuk e-invoice).
+- [x] **Lampiran — selesai.** `AddAttachment`, `Attachments`, `RemoveAttachment`: name tree
+  `/EmbeddedFiles` yang tetap terurut, ukuran, tanggal ubah, checksum MD5, `/AFRelationship` dan
+  `/AF` di katalog seperti syarat PDF/A-3; membaca juga anotasi file-attachment dan name tree yang
+  dipecah ke `/Kids`. MuPDF dan pypdf membaca nama, deskripsi, dan isinya; checksum tersimpan
+  dicocokkan dengan MD5 datanya.
 - [ ] **PDF/A-2b dan PDF/A-3b.** Metadata XMP yang selaras dengan `/Info`, `/OutputIntent` dengan
   profil ICC sRGB, semua font tersemat (14 font baku **tidak** boleh dipakai — ekspornya harus
   memaksa font tersemat), tanpa enkripsi dan tanpa transparansi untuk PDF/A-1. Diverifikasi dengan
   veraPDF, bukan dengan klaim sendiri.
-- [ ] **Metadata XMP** baca/tulis — berdiri sendiri juga, bukan hanya untuk PDF/A.
+- [x] **Metadata XMP — selesai.** `XmpMetadata` (baca/tulis, tanpa kompresi) dan
+  `WriteXmpMetadata`, yang membangkitkan paket dari `/Info` *setelah* penyimpanan mencap tanggalnya
+  — satu-satunya cara agar keduanya sepakat sampai detik dan zona waktu, seperti yang diperiksa PDF/A.
+  pypdf membaca judul, pembuat, dan tanggalnya.
 - [ ] **Timestamp tepercaya (RFC 3161).** Sebelumnya ditolak karena butuh layanan jaringan. Bisa
   tanpa membuat pustaka ini melakukan request sendiri: pemanggil memberi delegasi
   `Func<byte[], byte[]>` yang mengirim permintaan ke TSA-nya, sama seperti `ImageResolver` di

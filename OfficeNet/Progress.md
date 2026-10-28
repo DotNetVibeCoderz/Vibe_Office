@@ -634,8 +634,8 @@ memeriksa bagaimana pustaka memperlakukan `w:ins` sebelum menulis fitur track ch
 - [ ] PowerPointNet: custom geometry (`a:custGeom`), ikut digambar di ekspor PDF
 - [ ] PowerPointNet: objek OLE tersemat dengan pratinjau
 - [x] PdfNet: membuat field AcroForm (text, checkbox, radio, combo, list, button) — dirender MuPDF
-- [ ] PdfNet: lampiran — ekstrak dan tambah (`/EmbeddedFiles`)
-- [ ] PdfNet: metadata XMP
+- [x] PdfNet: lampiran — ekstrak dan tambah (`/EmbeddedFiles`, `/AF` untuk PDF/A-3)
+- [x] PdfNet: metadata XMP, sepakat dengan `/Info` sampai detik
 - [ ] PdfNet: PDF/A-2b dan PDF/A-3b, diverifikasi veraPDF
 - [ ] PdfNet: timestamp RFC 3161 lewat delegasi pemanggil; verifikasi token yang ada
 - [ ] Rendering: keluaran TIFF multi-halaman

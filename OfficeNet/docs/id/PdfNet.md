@@ -398,7 +398,32 @@ document.Info.Title = "Laporan Tahunan";
 document.Info.Author = "Gravicode Studios";
 document.Info.Subject = "Ringkasan 2026";
 document.Info.Keywords = "laporan; 2026";
+
+document.WriteXmpMetadata = true;    // paket XMP yang mencerminkan Info, ditulis setiap menyimpan
+string? xmp = document.XmpMetadata;
 ```
+
+XMP adalah format metadata yang diwajibkan PDF/A, dan paket itu harus sepakat dengan `/Info` —
+tanggal sampai detik, zona waktu ikut. Menulisnya dari `Info` setelah penyimpanan mencap tanggalnya
+membuat itu benar dengan sendirinya. Disimpan tanpa kompresi, sesuai syarat PDF/A.
+
+## Lampiran
+
+```csharp
+document.AddAttachment("factur-x.xml", invoiceXml, "text/xml", "Faktur elektronik", relationship: "Alternative");
+
+foreach (var file in document.Attachments)
+{
+    Console.WriteLine($"{file.Name} ({file.MimeType}, {file.Data.Length} byte)");
+}
+
+document.RemoveAttachment("factur-x.xml");
+```
+
+Berkas masuk ke name tree `/EmbeddedFiles` di katalog, tetap terurut, dengan ukuran, tanggal ubah,
+dan checksum MD5, serta dicantumkan di `/AF` seperti syarat PDF/A-3 — bentuk yang dipakai e-invoice
+ZUGFeRD dan Factur-X. Membaca juga menemukan berkas yang ditempel ke halaman lewat anotasi
+file-attachment, dan menelusuri name tree yang dipecah ke `/Kids`.
 
 ## Merender ke gambar
 

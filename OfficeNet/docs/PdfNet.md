@@ -389,7 +389,32 @@ document.Info.Title = "Laporan Tahunan";
 document.Info.Author = "Gravicode Studios";
 document.Info.Subject = "Ringkasan 2026";
 document.Info.Keywords = "laporan; 2026";
+
+document.WriteXmpMetadata = true;    // an XMP packet mirroring Info, written on every save
+string? xmp = document.XmpMetadata;
 ```
+
+XMP is the metadata format PDF/A requires, and the packet and `/Info` must agree — dates to the
+second, time zone included. Writing it from `Info` after the save has stamped the dates makes that
+true by construction. It is stored uncompressed, as PDF/A requires.
+
+## Attachments
+
+```csharp
+document.AddAttachment("factur-x.xml", invoiceXml, "text/xml", "Faktur elektronik", relationship: "Alternative");
+
+foreach (var file in document.Attachments)
+{
+    Console.WriteLine($"{file.Name} ({file.MimeType}, {file.Data.Length} bytes)");
+}
+
+document.RemoveAttachment("factur-x.xml");
+```
+
+Files go in the catalog's `/EmbeddedFiles` name tree, kept sorted, with a size, a modification date
+and an MD5 checksum, and are listed in `/AF` as PDF/A-3 requires — the shape ZUGFeRD and Factur-X
+e-invoices use. Reading also finds files attached to pages through file-attachment annotations, and
+walks a name tree split into `/Kids`.
 
 ## Rendering to images
 

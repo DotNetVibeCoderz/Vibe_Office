@@ -24,7 +24,7 @@ namespace PdfNet.Document;
 /// something asks for their content. A 200-page report loads as a few thousand small dictionaries.
 /// </para>
 /// </remarks>
-public sealed class PdfDocument : IPdfObjectResolver, IDisposable
+public sealed partial class PdfDocument : IPdfObjectResolver, IDisposable
 {
     private readonly Dictionary<int, PdfObject> _objects = [];
     private readonly PdfReader? _reader;
@@ -630,6 +630,12 @@ public sealed class PdfDocument : IPdfObjectResolver, IDisposable
 
         Pages.Flush();
         Info.Flush();
+
+        // After Info.Flush has stamped the dates, so the packet and the dictionary agree.
+        if (WriteXmpMetadata)
+        {
+            XmpMetadata = BuildXmp();
+        }
 
         var writer = new PdfWriter(stream) { Version = Version };
 
