@@ -873,7 +873,25 @@ daftar bernomor dan berbutir, tabel dengan warna dan garis, gambar inline, heade
 halaman, watermark, ukuran halaman dan margin, section.
 
 **Yang tidak:** objek mengambang dengan `wrap="square"` (digambar inline), catatan kaki, komentar,
-text box, serta hifenasi dan kerning persis seperti Word. Lihat [Plan.md](../../Plan.md).
+text box, serta hifenasi dan kerning persis seperti Word. Daftar bernomor digambar dengan butir, belum
+dengan nomornya. Lihat [Plan.md](../../Plan.md).
+
+### Arsip: PDF/A
+
+```csharp
+document.SaveAsPdf("arsip.pdf", new PdfExportOptions
+{
+    Conformance = PdfConformance.PdfA2B,
+    FontResolver = FontDirectory.System().Resolve,   // (family, bold, italic) → byte TrueType
+});
+```
+
+Tanpa `FontResolver`, 14 font baku dipakai sebagai pengganti — berkas kecil dan cukup untuk teks
+Latin. Dengan `FontResolver`, font aslinya disematkan — bentuk persis, aksara apa pun — dan family
+yang tidak dimilikinya kembali ke `DefaultFontFamily`. PDF/A membutuhkannya: ekspor arsip menolak
+mengganti dengan font baku, dan menolak karakter yang tidak punya glyph di font mana pun, alih-alih
+menulis berkas yang mengklaim lebih dari kenyataannya. Heading, daftar, tabel, chart, dan watermark
+semuanya digambar dengan font tersemat, dan veraPDF menyatakan hasilnya sesuai.
 
 ## Kesalahan yang sering terjadi
 

@@ -159,7 +159,7 @@ public sealed class PdfAnnotation
 
             var action = new PdfDictionary();
             action.SetName(PdfName.Type, "Action");
-            action.SetName(PdfName.Subtype, "URI");
+            action.SetName(PdfName.Get("S"), "URI");
             action[PdfName.Get("URI")] = new PdfString(value);
             Dictionary[PdfName.Get("A")] = action;
         }
@@ -277,13 +277,16 @@ public static class AnnotationExtensions
         dictionary[PdfName.Get("Rect")] = new PdfArray(x, y - 20, x + 20, y);
         dictionary[PdfName.Get("Contents")] = new PdfString(contents);
         dictionary.SetName(PdfName.Get("Name"), "Comment");
-        dictionary[PdfName.Get("C")] = ColorArray(color ?? OfficeColor.FromRgb(0xFF, 0xD4, 0x00));
+
+        var noteColor = color ?? OfficeColor.FromRgb(0xFF, 0xD4, 0x00);
+        dictionary[PdfName.Get("C")] = ColorArray(noteColor);
 
         if (author is not null)
         {
             dictionary[PdfName.Get("T")] = new PdfString(author);
         }
 
+        GenerateNoteAppearance(page, dictionary, noteColor);
         return Add(page, dictionary);
     }
 
@@ -293,9 +296,11 @@ public static class AnnotationExtensions
         ArgumentNullException.ThrowIfNull(page);
         ArgumentException.ThrowIfNullOrWhiteSpace(uri);
 
+        // An action's type is /S. This once wrote /Subtype, which strict viewers and PDF/A
+        // validators read as an action of no type at all.
         var action = new PdfDictionary();
         action.SetName(PdfName.Type, "Action");
-        action.SetName(PdfName.Subtype, "URI");
+        action.SetName(PdfName.Get("S"), "URI");
         action[PdfName.Get("URI")] = new PdfString(uri);
 
         var dictionary = new PdfDictionary();
@@ -421,6 +426,37 @@ public static class AnnotationExtensions
     /// Without an appearance stream a highlight shows only in readers that synthesise one, and
     /// without the multiply blend it paints an opaque block over the text it is meant to emphasise.
     /// </remarks>
+    /// <summary>
+    /// Draws the note's icon — a coloured sheet with a folded corner and lines of "text".
+    /// </summary>
+    /// <remarks>
+    /// Without it each viewer draws an icon of its own choosing, so the page does not look the same
+    /// everywhere — which PDF/A forbids. Paths only, so it needs no font.
+    /// </remarks>
+    private static void GenerateNoteAppearance(PdfPage page, PdfDictionary annotation, OfficeColor color)
+    {
+        var builder = new StringBuilder();
+        builder.Append(CultureInfo.InvariantCulture,
+            $"{color.R / 255.0:0.###} {color.G / 255.0:0.###} {color.B / 255.0:0.###} rg\n");
+        builder.Append("0.35 G 0.8 w\n");
+
+        // The sheet, with its top-right corner folded over.
+        builder.Append("1.5 1.5 m 18.5 1.5 l 18.5 14 l 14 18.5 l 1.5 18.5 l h B\n");
+        builder.Append("14 18.5 m 14 14 l 18.5 14 l S\n");
+        builder.Append("4.5 13.5 m 11.5 13.5 l 4.5 10 m 15.5 10 l 4.5 6.5 m 15.5 6.5 l S\n");
+
+        var appearance = new PdfStream();
+        appearance[PdfName.Type] = PdfName.XObject;
+        appearance.SetName(PdfName.Subtype, "Form");
+        appearance[PdfName.Get("BBox")] = new PdfArray(0, 0, 20, 20);
+        appearance[PdfName.Resources] = new PdfDictionary();
+        appearance.SetText(builder.ToString());
+
+        var appearanceDictionary = new PdfDictionary();
+        appearanceDictionary[PdfName.Get("N")] = page.Document.AddObject(appearance);
+        annotation[PdfName.Get("AP")] = appearanceDictionary;
+    }
+
     private static void GenerateHighlightAppearance(PdfPage page, PdfDictionary annotation,
         PdfRectangle bounds, IReadOnlyList<PdfRectangle> areas, OfficeColor color)
     {
@@ -642,5 +678,38 @@ public static class AnnotationExtensions
             $"({EscapeText(text)}) Tj\nET\nQ\n");
 
         page.PrependContent(Encoding.Latin1.GetBytes(content));
+    }
+
+    /// <summary>
+    /// Stamps a diagonal watermark in a font of your choosing — an embedded one, for a document
+    /// that must embed every font it draws with, as PDF/A does.
+    /// </summary>
+    public static void AddWatermark(this PdfPage page, string text, Content.PdfFont font, OfficeColor? color = null,
+        double opacity = 0.15, double angleDegrees = 45)
+    {
+        ArgumentNullException.ThrowIfNull(page);
+        ArgumentException.ThrowIfNullOrWhiteSpace(text);
+        ArgumentNullException.ThrowIfNull(font);
+
+        var box = page.MediaBox;
+        var diagonal = Math.Sqrt(box.Width * box.Width + box.Height * box.Height);
+        var unitWidth = font.Measure(text, 1);
+        var fontSize = unitWidth > 0 ? diagonal * 0.7 / unitWidth : 48;
+        var textWidth = font.Measure(text, fontSize);
+
+        var radians = angleDegrees * Math.PI / 180;
+        var cos = Math.Cos(radians);
+        var sin = Math.Sin(radians);
+
+        // The same placement as the standard-font watermark: centred on the page along the diagonal.
+        var startX = box.Left + box.Width / 2 - textWidth / 2 * cos + fontSize * 0.35 * sin;
+        var startY = box.Bottom + box.Height / 2 - textWidth / 2 * sin - fontSize * 0.35 * cos;
+
+        using var canvas = page.OpenCanvasBehind();
+        canvas.SetOpacity(opacity);
+        canvas.SetFillColor(color ?? OfficeColor.Gray);
+        canvas.Transform(cos, sin, -sin, cos, startX, startY);
+        canvas.SetFont(font, fontSize);
+        canvas.DrawText(text, 0, 0);
     }
 }

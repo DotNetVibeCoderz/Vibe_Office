@@ -1581,6 +1581,71 @@ public class DocSamples : IDisposable
     }
 
     [Fact]
+    public void PdfNet_PdfA()
+    {
+        using var pdf = PdfDocument.Create();
+        pdf.Conformance = PdfConformance.PdfA3B;
+        var invoiceXml = "<Invoice/>"u8.ToArray();
+
+        var font = pdf.EmbedFont(OfficeNet.TestKit.SyntheticFont.Build("Faktur 2026/001"));
+        using (var canvas = pdf.Pages.Add(PageSize.A4).OpenCanvas())
+        {
+            canvas.SetFont(font, 12);
+            canvas.DrawText("Faktur 2026/001", 72, 700);
+        }
+
+        pdf.AddAttachment("factur-x.xml", invoiceXml, "text/xml", "Faktur", relationship: "Alternative");
+
+        using var reopened = PdfDocument.Open(pdf.ToArray());
+        Assert.Contains("<pdfaid:part>3</pdfaid:part>", reopened.XmpMetadata, StringComparison.Ordinal);
+
+        // The 14 standard fonts are never embedded, so a PDF/A save refuses them.
+        using var standard = PdfDocument.Create();
+        standard.Conformance = PdfConformance.PdfA2B;
+        using (var canvas = standard.Pages.Add(PageSize.A4).OpenCanvas())
+        {
+            canvas.SetFont(StandardFont.Helvetica, 12);
+            canvas.DrawText("x", 72, 700);
+        }
+
+        Assert.Throws<OfficeNetException>(() => standard.ToArray());
+    }
+
+    [Fact]
+    public void WordNet_PdfAExport()
+    {
+        using var document = WordDocument.Create();
+        document.AddHeading("Arsip", 1);
+
+        // The page uses FontDirectory.System(); a folder of its own keeps the test from depending on
+        // what the machine has installed.
+        var folder = Directory.CreateTempSubdirectory("officenet-fonts-");
+        File.WriteAllBytes(Path.Combine(folder.FullName, "dasar.ttf"), OfficeNet.TestKit.SyntheticFont.Build());
+
+        var fonts = new PdfNet.Fonts.FontDirectory(folder.FullName);
+        var family = Assert.Single(fonts.Families);
+        byte[]? Resolve(string requested, bool bold, bool italic) => fonts.Resolve(family, bold, italic);
+
+        var path = Path.Combine(folder.FullName, "arsip.pdf");
+
+        try
+        {
+            document.SaveAsPdf(path, new WordNet.Export.PdfExportOptions
+            {
+                Conformance = PdfConformance.PdfA2B,
+                FontResolver = Resolve,
+            });
+
+            using var pdf = PdfDocument.Open(path);
+            Assert.Contains("<pdfaid:part>2</pdfaid:part>", pdf.XmpMetadata, StringComparison.Ordinal);
+        }
+        finally
+        {
+            folder.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
     public void PdfNet_AttachmentsAndXmp()
     {
         using var document = PdfDocument.Create();

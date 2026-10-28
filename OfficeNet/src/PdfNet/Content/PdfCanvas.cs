@@ -58,9 +58,12 @@ public sealed class PdfCanvas : IDisposable
     private double _currentFontSize = 11;
     private string? _currentFontResource;
 
-    internal PdfCanvas(PdfPage page)
+    private readonly bool _behind;
+
+    internal PdfCanvas(PdfPage page, bool behind = false)
     {
         _page = page;
+        _behind = behind;
         PageHeight = page.MediaBox.Height;
     }
 
@@ -374,6 +377,14 @@ public sealed class PdfCanvas : IDisposable
         }
 
         return this;
+    }
+
+    /// <summary>Selects a font of either kind.</summary>
+    public PdfCanvas SetFont(PdfFont font, double size)
+    {
+        ArgumentNullException.ThrowIfNull(font);
+
+        return font.Embedded is { } embedded ? SetFont(embedded, size) : SetFont(font.Standard, size);
     }
 
     /// <summary>Draws a single line of text with its left end at the baseline point.</summary>
@@ -707,16 +718,13 @@ public sealed class PdfCanvas : IDisposable
             return;
         }
 
-        // An embedded font's object only exists once its subset has been built, which happens at
-        // save time — after this. Resolving it here would write a reference to nothing.
+        // The subset is built now, for the glyphs drawn so far, so the document can be read and
+        // rendered before it is saved — and rebuilt in place whenever a later canvas or the save
+        // finds more. The object the page refers to never changes, so every reference stays good.
         foreach (var (name, font) in _embeddedFonts)
         {
             font.Finish();
-
-            if (font.FontObject is { } resolved)
-            {
-                _fonts[name] = resolved;
-            }
+            _fonts[name] = font.FontObject;
         }
 
         MergeResource(PdfName.Font, _fonts);
@@ -744,7 +752,14 @@ public sealed class PdfCanvas : IDisposable
         bytes[at] = (byte)'Q';
         bytes[at + 1] = (byte)'\n';
 
-        _page.AppendContent(bytes);
+        if (_behind)
+        {
+            _page.PrependContent(bytes);
+        }
+        else
+        {
+            _page.AppendContent(bytes);
+        }
     }
 
     private void MergeResource(PdfName category, Dictionary<string, PdfObject> entries)

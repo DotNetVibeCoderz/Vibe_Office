@@ -41,18 +41,31 @@ public static class ChartRenderer
     /// to PowerPointNet, which is why a workbook's charts were missing from its PDF.
     /// </remarks>
     public static void Render(
-        PdfCanvas canvas, ChartData data, double left, double top, double width, double height)
+        PdfCanvas canvas, ChartData data, double left, double top, double width, double height) =>
+        Render(canvas, data, left, top, width, height, StandardFont.Helvetica, StandardFont.HelveticaBold);
+
+    /// <summary>
+    /// Draws a chart with the fonts given — embedded ones, for a document that must embed every
+    /// font it uses, as PDF/A does.
+    /// </summary>
+    public static void Render(PdfCanvas canvas, ChartData data, double left, double top, double width,
+        double height, PdfFont regular, PdfFont bold)
     {
+        ArgumentNullException.ThrowIfNull(regular);
+        ArgumentNullException.ThrowIfNull(bold);
+
         if (data.Series.Count == 0 || width <= 0 || height <= 0)
         {
             return;
         }
 
+        var fonts = new ChartFonts(regular, bold);
+
         var plot = new Rect(left, top, width, height);
 
         if (data.Title is { Length: > 0 } title)
         {
-            canvas.SetFont(StandardFont.HelveticaBold, TitleSize);
+            canvas.SetFont(fonts.Bold, TitleSize);
             canvas.SetFillColor(OfficeColor.FromRgb(0x40, 0x40, 0x40));
             canvas.DrawText(title, plot.Left, plot.Top + TitleSize, plot.Width, PdfAlignment.Center);
 
@@ -61,21 +74,21 @@ public static class ChartRenderer
 
         if (data.Legend != LegendPosition.None && data.Series.Count > 0)
         {
-            plot = DrawLegend(canvas, data, plot);
+            plot = DrawLegend(canvas, fonts, data, plot);
         }
 
         if (data.IsPieFamily)
         {
-            DrawPie(canvas, data, plot);
+            DrawPie(canvas, fonts, data, plot);
             return;
         }
 
-        DrawAxisChart(canvas, data, plot);
+        DrawAxisChart(canvas, fonts, data, plot);
     }
 
     // ---- Legend --------------------------------------------------------------------------------
 
-    private static Rect DrawLegend(PdfCanvas canvas, ChartData data, Rect plot)
+    private static Rect DrawLegend(PdfCanvas canvas, ChartFonts fonts, ChartData data, Rect plot)
     {
         // A pie's legend names the categories; every other chart's names the series. Labelling a
         // pie with its single series name would produce a legend with one meaningless entry.
@@ -88,7 +101,7 @@ public static class ChartRenderer
             return plot;
         }
 
-        canvas.SetFont(StandardFont.Helvetica, LegendSize);
+        canvas.SetFont(fonts.Regular, LegendSize);
 
         const double SwatchSize = 7;
         const double Gap = 12;
@@ -111,7 +124,7 @@ public static class ChartRenderer
 
             for (var i = 0; i < labels.Count; i++)
             {
-                DrawLegendEntry(canvas, data, i, labels[i], x, y, SwatchSize);
+                DrawLegendEntry(canvas, fonts, data, i, labels[i], x, y, SwatchSize);
                 y += SwatchSize + 6;
             }
 
@@ -125,7 +138,7 @@ public static class ChartRenderer
 
         for (var i = 0; i < labels.Count; i++)
         {
-            DrawLegendEntry(canvas, data, i, labels[i], startX, rowY, SwatchSize);
+            DrawLegendEntry(canvas, fonts, data, i, labels[i], startX, rowY, SwatchSize);
             startX += widths[i];
         }
 
@@ -135,19 +148,19 @@ public static class ChartRenderer
     }
 
     private static void DrawLegendEntry(
-        PdfCanvas canvas, ChartData data, int index, string label, double x, double y, double size)
+        PdfCanvas canvas, ChartFonts fonts, ChartData data, int index, string label, double x, double y, double size)
     {
         canvas.SetFillColor(ColorFor(data, index));
         canvas.Rectangle(x, y, size, size).Fill();
 
         canvas.SetFillColor(OfficeColor.FromRgb(0x40, 0x40, 0x40));
-        canvas.SetFont(StandardFont.Helvetica, LegendSize);
+        canvas.SetFont(fonts.Regular, LegendSize);
         canvas.DrawText(label, x + size + 4, y + size - 0.5);
     }
 
     // ---- Pie and doughnut ----------------------------------------------------------------------
 
-    private static void DrawPie(PdfCanvas canvas, ChartData data, Rect plot)
+    private static void DrawPie(PdfCanvas canvas, ChartFonts fonts, ChartData data, Rect plot)
     {
         var values = data.Series[0].Values;
         var total = values.Where(v => !double.IsNaN(v) && v > 0).Sum();
@@ -177,7 +190,7 @@ public static class ChartRenderer
             var sweep = value / total * 360.0;
 
             canvas.SetFillColor(ChartData.DefaultPalette[i % ChartData.DefaultPalette.Length]);
-            DrawSlice(canvas, cx, cy, radius, angle, angle - sweep,
+            DrawSlice(canvas, fonts, cx, cy, radius, angle, angle - sweep,
                 data.Type == ChartType.Doughnut ? radius * data.DoughnutHoleSize / 100.0 : 0);
 
             if (data.ShowDataLabels || data.ShowPercentages)
@@ -189,7 +202,7 @@ public static class ChartRenderer
                     ? $"{value / total * 100:0.#}%"
                     : Format(value, data.ValueFormat);
 
-                canvas.SetFont(StandardFont.HelveticaBold, LabelSize);
+                canvas.SetFont(fonts.Bold, LabelSize);
                 canvas.SetFillColor(OfficeColor.White);
 
                 var textWidth = canvas.MeasureText(text);
@@ -202,7 +215,7 @@ public static class ChartRenderer
         }
     }
 
-    private static void DrawSlice(PdfCanvas canvas, double cx, double cy, double radius,
+    private static void DrawSlice(PdfCanvas canvas, ChartFonts fonts, double cx, double cy, double radius,
         double fromDegrees, double toDegrees, double innerRadius)
     {
         // Flat-shaded polygons rather than Béziers: at slide scale the difference is invisible and
@@ -244,7 +257,7 @@ public static class ChartRenderer
 
     // ---- Bar, column, line, area, scatter and radar ---------------------------------------------
 
-    private static void DrawAxisChart(PdfCanvas canvas, ChartData data, Rect plot)
+    private static void DrawAxisChart(PdfCanvas canvas, ChartFonts fonts, ChartData data, Rect plot)
     {
         var stacked = data.Type is ChartType.ColumnStacked or ChartType.BarStacked
             or ChartType.AreaStacked;
@@ -253,7 +266,7 @@ public static class ChartRenderer
 
         var (minimum, maximum, step) = ChooseScale(data, stacked);
 
-        canvas.SetFont(StandardFont.Helvetica, LabelSize);
+        canvas.SetFont(fonts.Regular, LabelSize);
 
         // The value labels decide how much room the axis needs, so they are measured before the
         // plot rectangle is fixed rather than assumed to fit.
@@ -267,7 +280,7 @@ public static class ChartRenderer
         var axisGap = LabelSize + 6;
 
         var area = horizontal
-            ? plot.Inset(left: MeasureCategories(canvas, data) + 6, bottom: axisGap)
+            ? plot.Inset(left: MeasureCategories(canvas, fonts, data) + 6, bottom: axisGap)
             : plot.Inset(left: labelWidth + 6, bottom: axisGap);
 
         // The value-axis title needs a row of its own above the plot. Insetting the left edge, as
@@ -287,30 +300,30 @@ public static class ChartRenderer
             return;
         }
 
-        DrawGrid(canvas, data, area, minimum, maximum, step, horizontal);
-        DrawAxisTitles(canvas, data, plot, area, horizontal);
+        DrawGrid(canvas, fonts, data, area, minimum, maximum, step, horizontal);
+        DrawAxisTitles(canvas, fonts, data, plot, area, horizontal);
 
         switch (data.Type)
         {
             case ChartType.Line or ChartType.LineMarkers or ChartType.Radar:
-                DrawLines(canvas, data, area, minimum, maximum, markers: data.Type != ChartType.Line);
+                DrawLines(canvas, fonts, data, area, minimum, maximum, markers: data.Type != ChartType.Line);
                 break;
 
             case ChartType.Area or ChartType.AreaStacked:
-                DrawAreas(canvas, data, area, minimum, maximum, stacked);
+                DrawAreas(canvas, fonts, data, area, minimum, maximum, stacked);
                 break;
 
             case ChartType.Scatter:
-                DrawScatter(canvas, data, area, minimum, maximum);
+                DrawScatter(canvas, fonts, data, area, minimum, maximum);
                 break;
 
             default:
-                DrawBars(canvas, data, area, minimum, maximum, stacked, horizontal);
+                DrawBars(canvas, fonts, data, area, minimum, maximum, stacked, horizontal);
                 break;
         }
     }
 
-    private static double MeasureCategories(PdfCanvas canvas, ChartData data)
+    private static double MeasureCategories(PdfCanvas canvas, ChartFonts fonts, ChartData data)
     {
         var width = 0.0;
 
@@ -322,11 +335,11 @@ public static class ChartRenderer
         return width;
     }
 
-    private static void DrawGrid(PdfCanvas canvas, ChartData data, Rect area,
+    private static void DrawGrid(PdfCanvas canvas, ChartFonts fonts, ChartData data, Rect area,
         double minimum, double maximum, double step, bool horizontal)
     {
         canvas.SetLineWidth(0.5);
-        canvas.SetFont(StandardFont.Helvetica, LabelSize);
+        canvas.SetFont(fonts.Regular, LabelSize);
 
         for (var value = minimum; value <= maximum + (step / 2); value += step)
         {
@@ -365,9 +378,9 @@ public static class ChartRenderer
     }
 
     private static void DrawAxisTitles(
-        PdfCanvas canvas, ChartData data, Rect plot, Rect area, bool horizontal)
+        PdfCanvas canvas, ChartFonts fonts, ChartData data, Rect plot, Rect area, bool horizontal)
     {
-        canvas.SetFont(StandardFont.Helvetica, LabelSize + 1);
+        canvas.SetFont(fonts.Regular, LabelSize + 1);
         canvas.SetFillColor(OfficeColor.FromRgb(0x59, 0x59, 0x59));
 
         if (data.CategoryAxisTitle is { Length: > 0 } category)
@@ -383,7 +396,7 @@ public static class ChartRenderer
         }
     }
 
-    private static void DrawBars(PdfCanvas canvas, ChartData data, Rect area,
+    private static void DrawBars(PdfCanvas canvas, ChartFonts fonts, ChartData data, Rect area,
         double minimum, double maximum, bool stacked, bool horizontal)
     {
         var categories = Math.Max(1, CategoryCount(data));
@@ -397,7 +410,7 @@ public static class ChartRenderer
 
         var baseline = Project(Math.Clamp(0, minimum, maximum), minimum, maximum, area, horizontal);
 
-        canvas.SetFont(StandardFont.Helvetica, LabelSize);
+        canvas.SetFont(fonts.Regular, LabelSize);
 
         for (var category = 0; category < categories; category++)
         {
@@ -473,12 +486,12 @@ public static class ChartRenderer
                 }
             }
 
-            DrawCategoryLabel(canvas, data, category, area, slot, horizontal);
+            DrawCategoryLabel(canvas, fonts, data, category, area, slot, horizontal);
         }
     }
 
     private static void DrawCategoryLabel(
-        PdfCanvas canvas, ChartData data, int index, Rect area, double slot, bool horizontal)
+        PdfCanvas canvas, ChartFonts fonts, ChartData data, int index, Rect area, double slot, bool horizontal)
     {
         if (index >= data.Categories.Count)
         {
@@ -486,7 +499,7 @@ public static class ChartRenderer
         }
 
         var label = data.Categories[index];
-        canvas.SetFont(StandardFont.Helvetica, LabelSize);
+        canvas.SetFont(fonts.Regular, LabelSize);
         canvas.SetFillColor(OfficeColor.FromRgb(0x59, 0x59, 0x59));
 
         if (horizontal)
@@ -502,7 +515,7 @@ public static class ChartRenderer
         }
     }
 
-    private static void DrawLines(PdfCanvas canvas, ChartData data, Rect area,
+    private static void DrawLines(PdfCanvas canvas, ChartFonts fonts, ChartData data, Rect area,
         double minimum, double maximum, bool markers)
     {
         var categories = Math.Max(1, CategoryCount(data));
@@ -552,17 +565,17 @@ public static class ChartRenderer
 
             if (markers)
             {
-                DrawMarkers(canvas, data, s, area, minimum, maximum, slot, categories);
+                DrawMarkers(canvas, fonts, data, s, area, minimum, maximum, slot, categories);
             }
         }
 
         for (var category = 0; category < categories; category++)
         {
-            DrawCategoryLabel(canvas, data, category, area, slot, horizontal: false);
+            DrawCategoryLabel(canvas, fonts, data, category, area, slot, horizontal: false);
         }
     }
 
-    private static void DrawMarkers(PdfCanvas canvas, ChartData data, int series, Rect area,
+    private static void DrawMarkers(PdfCanvas canvas, ChartFonts fonts, ChartData data, int series, Rect area,
         double minimum, double maximum, double slot, int categories)
     {
         canvas.SetFillColor(ColorFor(data, series));
@@ -583,7 +596,7 @@ public static class ChartRenderer
         }
     }
 
-    private static void DrawAreas(PdfCanvas canvas, ChartData data, Rect area,
+    private static void DrawAreas(PdfCanvas canvas, ChartFonts fonts, ChartData data, Rect area,
         double minimum, double maximum, bool stacked)
     {
         var categories = Math.Max(1, CategoryCount(data));
@@ -637,12 +650,12 @@ public static class ChartRenderer
 
         for (var category = 0; category < categories; category++)
         {
-            DrawCategoryLabel(canvas, data, category, area, slot, horizontal: false);
+            DrawCategoryLabel(canvas, fonts, data, category, area, slot, horizontal: false);
         }
     }
 
     private static void DrawScatter(
-        PdfCanvas canvas, ChartData data, Rect area, double minimum, double maximum)
+        PdfCanvas canvas, ChartFonts fonts, ChartData data, Rect area, double minimum, double maximum)
     {
         var xMinimum = double.MaxValue;
         var xMaximum = double.MinValue;
@@ -838,4 +851,7 @@ public static class ChartRenderer
         public Rect Inset(double left = 0, double top = 0, double right = 0, double bottom = 0) =>
             new(Left + left, Top + top, Width - left - right, Height - top - bottom);
     }
+
+    /// <summary>The two faces a chart is drawn in.</summary>
+    private readonly record struct ChartFonts(PdfFont Regular, PdfFont Bold);
 }

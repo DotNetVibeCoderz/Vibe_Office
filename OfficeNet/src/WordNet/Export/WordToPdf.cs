@@ -43,6 +43,25 @@ public sealed class PdfExportOptions
 
     /// <summary>The default font size when neither the run nor its style gives one.</summary>
     public double DefaultFontSizePoints { get; set; } = 11;
+
+    /// <summary>
+    /// The archival standard to write: <see cref="PdfConformance.PdfA2B"/> or
+    /// <see cref="PdfConformance.PdfA3B"/>. PDF/A embeds every font, so it needs
+    /// <see cref="FontResolver"/>.
+    /// </summary>
+    public PdfConformance Conformance { get; set; }
+
+    /// <summary>
+    /// Supplies the TrueType file for a family, bold and italic — or <c>null</c> when there is none.
+    /// With it, fonts are embedded and drawn exactly, in any script; without it, the 14 standard
+    /// fonts stand in. <see cref="PdfNet.Fonts.FontDirectory.Resolve"/> fits, and nothing is read
+    /// from disk unless you hand over something that reads it.
+    /// </summary>
+    /// <remarks>
+    /// A family it does not have falls back to <see cref="DefaultFontFamily"/>. For PDF/A, a font
+    /// that is still not found is an error rather than a silent standard font.
+    /// </remarks>
+    public Func<string, bool, bool, byte[]?>? FontResolver { get; set; }
 }
 
 /// <summary>
@@ -58,9 +77,11 @@ public sealed class PdfExportOptions
 /// will differ from Word's own PDF export.
 /// </para>
 /// <para>
-/// Fonts are mapped to the standard 14 rather than embedded. That keeps the output free of font
-/// licensing questions and small, at the cost of exact glyph shapes; the metrics are close enough
-/// that line breaks land in the same places for ordinary Latin text.
+/// Fonts are mapped to the standard 14 unless <see cref="PdfExportOptions.FontResolver"/> supplies
+/// the real ones. The standard fonts keep the output small and free of licensing questions, at the
+/// cost of exact glyph shapes; the metrics are close enough that line breaks land in the same
+/// places for ordinary Latin text. Embedded fonts are exact, cover any script, and are what PDF/A
+/// requires.
 /// </para>
 /// </remarks>
 public static class WordToPdf
@@ -84,6 +105,7 @@ public static class WordToPdf
         layout.Run();
         layout.Finish();
 
+        pdf.Conformance = options.Conformance;
         return pdf;
     }
 
@@ -138,6 +160,49 @@ public static class WordToPdf
 
         private double ContentWidth => _right - _left;
 
+        private readonly Dictionary<(string Family, bool Bold, bool Italic), PdfFont> _fonts = [];
+
+        /// <summary>
+        /// The font a run is drawn in: embedded when the resolver has it, otherwise the closest of
+        /// the standard 14 — unless the export is PDF/A, which may not use those.
+        /// </summary>
+        private PdfFont FontFor(string? family, bool bold, bool italic)
+        {
+            family = string.IsNullOrWhiteSpace(family) ? _options.DefaultFontFamily : family;
+
+            if (_fonts.TryGetValue((family, bold, italic), out var cached))
+            {
+                return cached;
+            }
+
+            var font = Embed(family, bold, italic) ?? Embed(_options.DefaultFontFamily, bold, italic);
+
+            if (font is null && _options.Conformance != PdfConformance.None)
+            {
+                throw new OfficeNetException(
+                    $"A PDF/A export embeds every font, and no font file was found for '{family}' or the default " +
+                    $"'{_options.DefaultFontFamily}'. " + (_options.FontResolver is null
+                        ? "Set PdfExportOptions.FontResolver — FontDirectory.System().Resolve looks in the system's font folders."
+                        : "Make FontResolver return a TrueType file for one of them."));
+            }
+
+            font ??= StandardFonts.Match(family, bold, italic);
+            _fonts[(family, bold, italic)] = font;
+            return font;
+        }
+
+        private PdfFont? Embed(string family, bool bold, bool italic)
+        {
+            if (_options.FontResolver?.Invoke(family, bold, italic) is not { Length: > 0 } bytes)
+            {
+                return null;
+            }
+
+            // Two styles that resolve to the same file — a family with no bold face — are one font:
+            // EmbedFont recognises the bytes it has already embedded.
+            return _pdf.EmbedFont(bytes);
+        }
+
         /// <summary>Where the body text has to stop, once the page's footnotes are accounted for.</summary>
         private double TextBottom => _bottom - _noteAreaHeight;
 
@@ -181,9 +246,18 @@ public static class WordToPdf
             // on the .docx should not vanish the moment it is exported.
             if ((_options.Watermark ?? _document.Watermark) is { Length: > 0 } watermark)
             {
+                var font = FontFor(_options.DefaultFontFamily, bold: true, italic: false);
+
                 foreach (var page in _pages)
                 {
-                    page.AddWatermark(watermark, OfficeColor.Gray, _options.WatermarkOpacity);
+                    if (font.IsEmbedded)
+                    {
+                        page.AddWatermark(watermark, font, OfficeColor.Gray, _options.WatermarkOpacity);
+                    }
+                    else
+                    {
+                        page.AddWatermark(watermark, OfficeColor.Gray, _options.WatermarkOpacity);
+                    }
                 }
             }
         }
@@ -495,7 +569,7 @@ public static class WordToPdf
                 segments.Add(new Segment(string.Empty, baseFormat));
             }
 
-            var filler = new LineFiller(segments);
+            var filler = new LineFiller(segments, FontFor);
             var bulletIndent = bulletText is null ? 0 : 18;
 
             for (var i = 0; !filler.AtEnd; i++)
@@ -529,7 +603,7 @@ public static class WordToPdf
                 if (i == 0 && bulletText is not null)
                 {
                     var canvas = _canvas!;
-                    canvas.SetFont(StandardFonts.Match(baseFormat.FontFamily, false, false),
+                    canvas.SetFont(FontFor(baseFormat.FontFamily, false, false),
                         baseFormat.SizePoints);
                     canvas.SetFillColor(baseFormat.Color);
                     canvas.DrawText(bulletText, lineLeft - bulletIndent,
@@ -673,10 +747,10 @@ public static class WordToPdf
         /// <summary>How many lines a note will take at the width available to it.</summary>
         private int EstimateNoteLines(int number, string text)
         {
-            var font = StandardFonts.Match(_options.DefaultFontFamily, false, false);
+            var font = FontFor(_options.DefaultFontFamily, false, false);
             var prefix = number.ToString(CultureInfo.InvariantCulture) + " ";
 
-            var width = StandardFonts.MeasurePoints(font, prefix + text, NoteFontSize);
+            var width = font.Measure(prefix + text, NoteFontSize);
             var available = Math.Max(1, ContentWidth);
 
             return (int)Math.Ceiling(width / available);
@@ -702,7 +776,7 @@ public static class WordToPdf
 
             y += NoteSeparatorGap;
 
-            var font = StandardFonts.Match(_options.DefaultFontFamily, false, false);
+            var font = FontFor(_options.DefaultFontFamily, false, false);
 
             foreach (var (number, text) in _pageNotes)
             {
@@ -712,7 +786,7 @@ public static class WordToPdf
                 canvas.SetFillColor(OfficeColor.Black);
                 canvas.DrawText(prefix, _left, y + NoteFontSize * 0.5);
 
-                var indent = StandardFonts.MeasurePoints(font, prefix + " ", NoteFontSize);
+                var indent = font.Measure(prefix + " ", NoteFontSize);
 
                 canvas.SetFont(font, NoteFontSize);
 
@@ -729,7 +803,7 @@ public static class WordToPdf
 
         /// <summary>Breaks plain text to a width, for the note area's simpler layout needs.</summary>
         private static IEnumerable<string> WrapPlainText(
-            string text, double width, StandardFont font, double size)
+            string text, double width, PdfFont font, double size)
         {
             var current = string.Empty;
 
@@ -737,7 +811,7 @@ public static class WordToPdf
             {
                 var candidate = current.Length == 0 ? word : current + " " + word;
 
-                if (StandardFonts.MeasurePoints(font, candidate, size) > width && current.Length > 0)
+                if (font.Measure(candidate, size) > width && current.Length > 0)
                 {
                     yield return current;
                     current = word;
@@ -774,10 +848,10 @@ public static class WordToPdf
         /// </remarks>
         private readonly record struct LinePiece(int Segment, int Start, int Length, double Width);
 
-        private static List<List<LinePiece>> WrapSegments(List<Segment> segments, double width,
+        private List<List<LinePiece>> WrapSegments(List<Segment> segments, double width,
             double firstLineIndent, double bulletIndent)
         {
-            var filler = new LineFiller(segments);
+            var filler = new LineFiller(segments, FontFor);
             var lines = new List<List<LinePiece>>();
             var available = width - Math.Max(0, firstLineIndent) - bulletIndent;
 
@@ -805,7 +879,7 @@ public static class WordToPdf
             private readonly List<LinePiece> _words = [];
             private int _index;
 
-            public LineFiller(List<Segment> segments)
+            public LineFiller(List<Segment> segments, Func<string?, bool, bool, PdfFont> fontFor)
             {
                 _segments = segments;
 
@@ -824,7 +898,7 @@ public static class WordToPdf
                 for (var index = 0; index < segments.Count; index++)
                 {
                     var segment = segments[index];
-                    var font = StandardFonts.Match(segment.Format.FontFamily, segment.Format.Bold,
+                    var font = fontFor(segment.Format.FontFamily, segment.Format.Bold,
                         segment.Format.Italic);
 
                     // Split on spaces, keeping each space attached to the word before it: that is
@@ -843,8 +917,7 @@ public static class WordToPdf
 
                         if (end > start)
                         {
-                            var width = StandardFonts.MeasurePoints(font,
-                                segment.Text.AsSpan(start, end - start), segment.Format.SizePoints);
+                            var width = font.Measure(segment.Text.AsSpan(start, end - start), segment.Format.SizePoints);
 
                             _words.Add(new LinePiece(index, start, end - start, width));
                         }
@@ -948,7 +1021,7 @@ public static class WordToPdf
         /// inside its own box rather than at the page cursor, and duplicating the baseline and
         /// justification arithmetic to say so is how the two quietly drift apart.
         /// </remarks>
-        private static void DrawLineOn(PdfCanvas canvas, List<Segment> segments,
+        private void DrawLineOn(PdfCanvas canvas, List<Segment> segments,
             List<LinePiece> pieces, double x, double width, double top, double lineHeight,
             ParagraphAlignment alignment)
         {
@@ -1009,7 +1082,7 @@ public static class WordToPdf
             {
                 var piece = pieces[index];
                 var format = segments[piece.Segment].Format;
-                var font = StandardFonts.Match(format.FontFamily, format.Bold, format.Italic);
+                var font = FontFor(format.FontFamily, format.Bold, format.Italic);
 
                 var runEnd = index + 1;
                 var runLength = piece.Length;
@@ -1110,7 +1183,7 @@ public static class WordToPdf
         /// one gap. It still has to be a loop, because a run boundary can fall inside a space.
         /// </remarks>
         private static void DrawWithExtraSpacing(PdfCanvas canvas, List<Segment> segments,
-            LinePiece piece, StandardFont font, double x, double baseline, double extraPerSpace)
+            LinePiece piece, PdfFont font, double x, double baseline, double extraPerSpace)
         {
             var format = segments[piece.Segment].Format;
             var text = segments[piece.Segment].Text;
@@ -1130,7 +1203,7 @@ public static class WordToPdf
                 if (to > from)
                 {
                     canvas.DrawText(text.Substring(from, to - from), cursor, baseline);
-                    cursor += StandardFonts.MeasurePoints(font, text.AsSpan(from, to - from),
+                    cursor += font.Measure(text.AsSpan(from, to - from),
                         format.SizePoints);
                 }
 
@@ -1139,7 +1212,7 @@ public static class WordToPdf
                     break;
                 }
 
-                cursor += StandardFonts.MeasurePoints(font, " ", format.SizePoints) + extraPerSpace;
+                cursor += font.Measure(" ", format.SizePoints) + extraPerSpace;
                 from = to + 1;
             }
         }
@@ -1386,7 +1459,8 @@ public static class WordToPdf
                 if (_document.DocumentPart.RelatedPart(chartId) is { } chartPart)
                 {
                     PdfNet.Content.ChartRenderer.Render(canvas, OfficeNet.Core.Charts.ChartXml.Read(chartPart.Xml),
-                        x, y, width, height);
+                        x, y, width, height, FontFor(_options.DefaultFontFamily, false, false),
+                        FontFor(_options.DefaultFontFamily, true, false));
                 }
 
                 return;
@@ -2021,12 +2095,12 @@ public static class WordToPdf
                 return;
             }
 
-            var font = StandardFonts.Match(format.FontFamily, format.Bold, format.Italic);
+            var font = FontFor(format.FontFamily, format.Bold, format.Italic);
             canvas.SetFont(font, format.SizePoints);
             canvas.SetFillColor(format.Color);
 
             var width = ContentWidth;
-            var textWidth = StandardFonts.MeasurePoints(font, text, format.SizePoints);
+            var textWidth = font.Measure(text, format.SizePoints);
 
             var x = alignment switch
             {

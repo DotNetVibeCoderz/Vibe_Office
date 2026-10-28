@@ -851,7 +851,21 @@ document.SaveAsPdf("laporan.pdf", new PdfExportOptions
 });
 
 using var pdf = document.ToPdf();   // a PdfDocument you can merge, encrypt or annotate
+
+// Archival: PDF/A-2b, every font embedded.
+document.SaveAsPdf("arsip.pdf", new PdfExportOptions
+{
+    Conformance = PdfConformance.PdfA2B,
+    FontResolver = FontDirectory.System().Resolve,   // (family, bold, italic) → TrueType bytes
+});
 ```
+
+Without `FontResolver` the 14 standard fonts stand in, which keeps a file small and is fine for
+Latin text. With it, the real fonts are embedded — exact shapes, any script — and a family it lacks
+falls back to `DefaultFontFamily`. PDF/A needs it: an archival export refuses to substitute a
+standard font, and refuses a character no font has a glyph for, rather than write a file that claims
+more than it is. Headings, lists, tables, charts and the watermark all draw in the embedded fonts, and
+veraPDF finds the result conforming.
 
 The exporter resolves style inheritance before laying anything out. A Heading 1 paragraph carries no
 direct formatting at all — a converter that reads only a run's own `w:rPr` renders the whole
@@ -862,7 +876,8 @@ numbered and bulleted lists, tables with shading and borders, inline images, hea
 page fields, watermarks, page sizes and margins, sections.
 
 **What it does not:** floating objects positioned by `wrap="square"` (drawn inline), footnotes,
-comments, text boxes, and Word's exact hyphenation and kerning. See [Plan.md](../Plan.md).
+comments, text boxes, and Word's exact hyphenation and kerning. A numbered list is drawn with bullets,
+not its numbers. See [Plan.md](../Plan.md).
 
 ## Common mistakes
 

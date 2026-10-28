@@ -664,7 +664,14 @@ melengkapi.
   `<ol start>` diabaikan, spasi setelah `<br>` terbawa, `blockquote` berparagraf banyak tergabung
   jadi satu — kini `HtmlBlock.Quote` dan gaya `Quote` Word, dua arah. `AllowFileAccess` baru untuk
   HTML/Markdown yang tidak tepercaya.
-- [ ] **Ekspor PDF/A** (lihat PdfNet) sebagai opsi `PdfExportOptions.Conformance`.
+- [x] **Ekspor PDF/A — selesai.** `PdfExportOptions.Conformance` dan `FontResolver` (family, tebal,
+  miring → byte TrueType; `FontDirectory.System().Resolve` cocok). Ekspor kini bisa menyematkan font
+  sungguhan — juga di luar PDF/A — lewat `PdfFont` di seluruh mesin tata letak, chart, dan watermark.
+  Ekspor arsip menolak font baku dan karakter tanpa glyph. veraPDF: sesuai PDF/A-2b, dengan heading,
+  daftar, tabel, chart, dan watermark.
+- [ ] **Nomor daftar di ekspor PDF.** Daftar bernomor masih digambar dengan butir (`BulletFor`).
+  Mesin hitungnya sudah ada di `WordToHtml.ListCounters` (`StartAt`, `IsBulleted`); yang kurang format
+  nomor (`decimal`, `lowerLetter`, `upperRoman`, …) dan `lvlText` (`%1.`).
 
 ### ExcelNet
 
@@ -793,10 +800,18 @@ melengkapi.
   `/AF` di katalog seperti syarat PDF/A-3; membaca juga anotasi file-attachment dan name tree yang
   dipecah ke `/Kids`. MuPDF dan pypdf membaca nama, deskripsi, dan isinya; checksum tersimpan
   dicocokkan dengan MD5 datanya.
-- [ ] **PDF/A-2b dan PDF/A-3b.** Metadata XMP yang selaras dengan `/Info`, `/OutputIntent` dengan
-  profil ICC sRGB, semua font tersemat (14 font baku **tidak** boleh dipakai — ekspornya harus
-  memaksa font tersemat), tanpa enkripsi dan tanpa transparansi untuk PDF/A-1. Diverifikasi dengan
-  veraPDF, bukan dengan klaim sendiri.
+- [x] **PDF/A-2b dan PDF/A-3b — selesai.** `PdfDocument.Conformance`: identifikasi di XMP, output
+  intent sRGB dengan profil ICC yang dihitung dari IEC 61966-2-1 (LittleCMS: selisih 0 di 343 warna),
+  PDF 1.7, anotasi bisa dicetak, catatan diberi appearance. Yang tidak bisa disediakan ditolak dengan
+  pesan: font tak tersemat (dihitung dari `Tf` yang benar-benar digambar), karakter `.notdef`,
+  enkripsi, lampiran non-PDF di PDF/A-2. Diverifikasi veraPDF 1.30 (tes berjalan bila `VERAPDF`
+  diatur). Ikut ditemukan dan diperbaiki: subset font tersemat dibangun saat canvas pertama ditutup,
+  sehingga glyph yang digambar sesudahnya hilang; aksi tautan ditulis `/Subtype` alih-alih `/S`.
+- [ ] **Text field di PDF/A.** Appearance text field digambar dengan Helvetica, jadi dokumen PDF/A
+  belum bisa punya text field; butuh appearance dengan font tersemat (Identity-H) yang dibangun ulang
+  saat nilainya berubah.
+- [ ] **PDF/A untuk ekspor Excel dan PowerPoint.** Sama dengan Word: `FontResolver` lewat `PdfFont`;
+  `ChartRenderer` sudah menerima font.
 - [x] **Metadata XMP — selesai.** `XmpMetadata` (baca/tulis, tanpa kompresi) dan
   `WriteXmpMetadata`, yang membangkitkan paket dari `/Info` *setelah* penyimpanan mencap tanggalnya
   — satu-satunya cara agar keduanya sepakat sampai detik dan zona waktu, seperti yang diperiksa PDF/A.

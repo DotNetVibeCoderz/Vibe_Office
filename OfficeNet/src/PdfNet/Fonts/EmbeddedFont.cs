@@ -73,8 +73,30 @@ public sealed class EmbeddedFont
     /// <summary>The six-letter subset prefix the specification requires.</summary>
     internal string SubsetTag { get; }
 
-    /// <summary>The object holding the font, once <see cref="Finish"/> has run.</summary>
-    internal PdfObject? FontObject { get; private set; }
+    private readonly PdfDictionary _fontDictionary = new();
+    private readonly List<PdfReference> _subsetObjects = [];
+    private PdfReference? _fontObject;
+    private int _builtFor = -1;
+    private readonly SortedSet<string> _missing = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// The characters drawn with this font that it has no glyph for — each one drawn as
+    /// <c>.notdef</c>, an empty box, which PDF/A forbids.
+    /// </summary>
+    public IReadOnlyCollection<string> MissingDrawnCharacters => _missing;
+
+    /// <summary>
+    /// The font's object, which a page refers to — reserved the first time anything asks for it,
+    /// and filled in by <see cref="Finish"/>.
+    /// </summary>
+    /// <remarks>
+    /// Every glyph is not known when a canvas closes: page two draws after page one's canvas is
+    /// gone, and a watermark after them all. Building the subset once, at the first close, as this
+    /// once did, left every glyph drawn later out of the subset and out of the <c>/ToUnicode</c>
+    /// map — text that drew as nothing and extracted as noise. <see cref="Finish"/> now rebuilds it
+    /// into this same object whenever more glyphs have been drawn, and the save always calls it.
+    /// </remarks>
+    internal PdfReference FontObject => _fontObject ??= _document.AddObject(_fontDictionary);
 
     /// <summary>
     /// How many distinct glyphs the document has drawn.
@@ -104,6 +126,11 @@ public sealed class EmbeddedFont
         foreach (var rune in text.EnumerateRunes())
         {
             var glyph = Font.GlyphFor(rune.Value);
+
+            if (glyph == 0 && !Rune.IsControl(rune))
+            {
+                _missing.Add(rune.ToString());
+            }
 
             _usedGlyphs.Add(glyph);
 
@@ -153,10 +180,19 @@ public sealed class EmbeddedFont
     /// </remarks>
     internal void Finish()
     {
-        if (FontObject is not null)
+        // Built for this set of glyphs already. A save after more drawing builds it again.
+        if (_builtFor == _usedGlyphs.Count)
         {
             return;
         }
+
+        foreach (var stale in _subsetObjects)
+        {
+            _document.RemoveObject(stale.Number);
+        }
+
+        _subsetObjects.Clear();
+        _builtFor = _usedGlyphs.Count;
 
         var subset = FontSubset.Build(Font, _usedGlyphs);
 
@@ -166,13 +202,14 @@ public sealed class EmbeddedFont
         // know how much font it should have got, and a wrong value fails validation in some tools.
         file.Set(PdfName.Get("Length1"), subset.Data.Length);
 
-        var fileObject = _document.AddObject(file);
-        var descriptor = _document.AddObject(BuildDescriptor(fileObject));
-        var cidToGid = _document.AddObject(BuildCidToGidMap(subset.GlyphMap));
-        var descendant = _document.AddObject(BuildDescendant(descriptor, cidToGid));
-        var toUnicode = _document.AddObject(BuildToUnicode());
+        var fileObject = Keep(_document.AddObject(file));
+        var descriptor = Keep(_document.AddObject(BuildDescriptor(fileObject)));
+        var cidToGid = Keep(_document.AddObject(BuildCidToGidMap(subset.GlyphMap)));
+        var descendant = Keep(_document.AddObject(BuildDescendant(descriptor, cidToGid)));
+        var toUnicode = Keep(_document.AddObject(BuildToUnicode()));
 
-        var font = new PdfDictionary();
+        // The same entries every build, so a rebuild overwrites them all.
+        var font = _fontDictionary;
 
         font[PdfName.Type] = PdfName.Font;
         font.SetName(PdfName.Subtype, "Type0");
@@ -184,7 +221,13 @@ public sealed class EmbeddedFont
         font[PdfName.Get("DescendantFonts")] = new PdfArray([descendant]);
         font[PdfName.Get("ToUnicode")] = toUnicode;
 
-        FontObject = _document.AddObject(font);
+        _ = FontObject;
+
+        PdfReference Keep(PdfReference reference)
+        {
+            _subsetObjects.Add(reference);
+            return reference;
+        }
     }
 
     private PdfDictionary BuildDescendant(PdfObject descriptor, PdfObject cidToGid)

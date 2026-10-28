@@ -151,6 +151,11 @@ without any font files present. Embedding a TrueType font is on the [roadmap](..
 
 ## Embedding a font
 
+A font is subset to the glyphs the document draws, and the subset is rebuilt whenever more are
+drawn — on a later page, in a watermark added last, or after a save — so every glyph ends up in the
+file and in its `/ToUnicode` map. (It once was built when the first canvas closed, and text drawn
+after that rendered as nothing and extracted as noise.)
+
 The standard 14 fonts cover Latin-1 and nothing else. A document in Javanese, Arabic, Thai or
 Chinese — or one that has to use a brand face — needs the font in the file:
 
@@ -415,6 +420,51 @@ Files go in the catalog's `/EmbeddedFiles` name tree, kept sorted, with a size, 
 and an MD5 checksum, and are listed in `/AF` as PDF/A-3 requires — the shape ZUGFeRD and Factur-X
 e-invoices use. Reading also finds files attached to pages through file-attachment annotations, and
 walks a name tree split into `/Kids`.
+
+## PDF/A
+
+```csharp
+using var pdf = PdfDocument.Create();
+pdf.Conformance = PdfConformance.PdfA3B;      // or PdfA2B
+
+var font = pdf.EmbedFont("NotoSans-Regular.ttf");
+using (var canvas = pdf.Pages.Add(PageSize.A4).OpenCanvas())
+{
+    canvas.SetFont(font, 12);
+    canvas.DrawText("Faktur 2026/001", 72, 700);
+}
+
+pdf.AddAttachment("factur-x.xml", invoiceXml, "text/xml", "Faktur", relationship: "Alternative");
+pdf.Save("faktur.pdf");
+```
+
+Setting `Conformance` makes every save carry what PDF/A requires and a writer can supply: the
+identification in an XMP packet that agrees with `Info` to the second, an sRGB output intent, PDF 1.7
+in the header, every annotation printable, and no request for the viewer to redraw form fields. The
+sRGB profile is computed from IEC 61966-2-1 rather than copied from somewhere; LittleCMS reads it as
+`sRGB IEC61966-2.1` and converts through it without changing a single channel.
+
+What a writer cannot supply is checked, and a save that would make a false claim **throws instead**,
+saying what to change:
+
+- **A font that is not embedded.** The 14 standard fonts never are — draw with `EmbedFont()`. What
+  counts is what is drawn (`Tf` in a content stream), not what a resource dictionary lists, so a check
+  box — whose tick is a path — does not block. A form **text field** does: its appearance is drawn in
+  Helvetica, so a PDF/A document cannot have one yet.
+- **A character the font has no glyph for**, which would draw the empty `.notdef` glyph — named, with
+  its code point.
+- **Encryption** — call `Decrypt()` first.
+- **Under PDF/A-2, an attachment that is not a PDF.** PDF/A-3 allows any, which is what an e-invoice
+  needs.
+
+`PdfFont` is either kind of font, so code that draws can take whichever it is given, and
+`page.AddWatermark(text, font)` and `ChartRenderer.Render(…, regular, bold)` take one. `FontDirectory`
+finds TrueType files by family and style in folders on disk (`FontDirectory.System()` for the
+operating system's) and skips fonts whose licence forbids embedding.
+
+The claim is checked against **veraPDF**, the reference validator, in this library's tests: set
+`VERAPDF` to its launcher and they run it on PDF/A-2b and PDF/A-3b files with text, a transparent
+image, a note, a link, a highlight, a check box and a watermark. Without it they say they skipped.
 
 ## Rendering to images
 

@@ -278,6 +278,16 @@ public sealed class PdfPage
     /// <summary>Opens a drawing surface that appends to this page.</summary>
     public Content.PdfCanvas OpenCanvas() => new(this);
 
+    /// <summary>
+    /// Opens a drawing surface whose drawing goes underneath everything already on the page — a
+    /// watermark, a background.
+    /// </summary>
+    /// <remarks>
+    /// The drawing is wrapped in <c>q</c>/<c>Q</c> like any canvas's, so it leaves the graphics
+    /// state the existing content starts from exactly as it was.
+    /// </remarks>
+    public Content.PdfCanvas OpenCanvasBehind() => new(this, behind: true);
+
     public override string ToString() => $"Page {Width:0.#}x{Height:0.#}pt rot={Rotation}";
 }
 

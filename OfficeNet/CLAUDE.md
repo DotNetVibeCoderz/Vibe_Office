@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 are both complete, and 1.3.0 is on NuGet**; v2.0 is in progress — the HTML engine now lives in
 `OfficeNet.Core.Html`, and `WordNet.Import.HtmlToWord` and `WordNet.Export.WordToHtml` exist. All six
 libraries build clean with zero warnings: `OfficeNet.Core`, `PdfNet`, `WordNet`, `ExcelNet`,
-`PowerPointNet`, `OfficeNet` (meta), `OfficeNet.Rendering`, and the MCP server `OfficeNet.Mcp`. **1663 tests pass** across eight
+`PowerPointNet`, `OfficeNet` (meta), `OfficeNet.Rendering`, and the MCP server `OfficeNet.Mcp`. **1681 tests pass** across eight
 test projects.
 
 Everything the plan listed through v1.1 exists: the libraries, tests with independent structural
@@ -146,6 +146,18 @@ Every item here cost real debugging time. None are hypothetical.
 - **Objects inside an object stream are not individually encrypted** — the container already was.
   Decrypting twice yields garbage that still parses.
 - **An XRef stream is never encrypted.**
+- **An embedded font's subset is rebuilt whenever more glyphs are drawn.** It was built once, when the
+  first canvas closed, so page two's letters and a watermark drawn last were missing from the font
+  and its `/ToUnicode` — text that drew as nothing. The font object is a placeholder reserved on
+  first use; `EmbeddedFont.Finish` refills it and removes the stale subset objects.
+- **An action's type is `/S`, not `/Subtype`.** `AddLink` wrote `/Subtype /URI` for a long time;
+  veraPDF reported it as an action of type null.
+- **PDF/A checks what is drawn, not what is listed.** A check box's appearance lists Helvetica and
+  draws a path; counting resource dictionaries would refuse it. `PdfA.cs` follows `Tf` and `Do`
+  through the content streams. And a character a font lacks draws `.notdef`, which PDF/A forbids —
+  `EmbeddedFont.MissingDrawnCharacters` records them so the save can refuse by name.
+- **Verify PDF/A with veraPDF, not by reading the spec.** Tests run it when `VERAPDF` names its
+  launcher (`TestKit/VeraPdf.cs`) and skip saying so otherwise.
 - **A signature's `/Contents` padding is cut where the DER says the structure ends, never by
   stripping zeros.** The RSA value is the last field, so one signature in 256 ends in a real `00`,
   and a BER indefinite length always ends in `00 00`. Stripping zeros made 1 in 256 of our own

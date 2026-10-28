@@ -629,6 +629,10 @@ public sealed partial class PdfDocument : IPdfObjectResolver, IDisposable
         FinishEmbeddedFonts();
 
         Pages.Flush();
+
+        // After the pages are flushed, so every font a page uses is in its resources to check.
+        ApplyConformance();
+
         Info.Flush();
 
         // After Info.Flush has stamped the dates, so the packet and the dictionary agree.

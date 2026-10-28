@@ -154,6 +154,11 @@ tanpa berkas font apa pun. Menyematkan font TrueType ada di [peta jalan](../../P
 
 ## Menyematkan font
 
+Font di-subset ke glyph yang digambar dokumen, dan subset itu dibangun ulang setiap kali ada glyph
+baru — di halaman berikutnya, di watermark yang ditambahkan terakhir, atau setelah disimpan — jadi
+setiap glyph ada di berkas dan di peta `/ToUnicode`-nya. (Dulu subset dibangun saat canvas pertama
+ditutup, dan teks yang digambar sesudahnya tampil kosong dan terekstrak sebagai sampah.)
+
 14 font baku hanya mencakup Latin-1 dan tidak lebih. Dokumen berbahasa Jawa, Arab, Thai, atau
 Tionghoa — atau yang harus memakai font merek tertentu — perlu fontnya ikut di dalam berkas:
 
@@ -424,6 +429,53 @@ Berkas masuk ke name tree `/EmbeddedFiles` di katalog, tetap terurut, dengan uku
 dan checksum MD5, serta dicantumkan di `/AF` seperti syarat PDF/A-3 — bentuk yang dipakai e-invoice
 ZUGFeRD dan Factur-X. Membaca juga menemukan berkas yang ditempel ke halaman lewat anotasi
 file-attachment, dan menelusuri name tree yang dipecah ke `/Kids`.
+
+## PDF/A
+
+```csharp
+using var pdf = PdfDocument.Create();
+pdf.Conformance = PdfConformance.PdfA3B;      // atau PdfA2B
+
+var font = pdf.EmbedFont("NotoSans-Regular.ttf");
+using (var canvas = pdf.Pages.Add(PageSize.A4).OpenCanvas())
+{
+    canvas.SetFont(font, 12);
+    canvas.DrawText("Faktur 2026/001", 72, 700);
+}
+
+pdf.AddAttachment("factur-x.xml", invoiceXml, "text/xml", "Faktur", relationship: "Alternative");
+pdf.Save("faktur.pdf");
+```
+
+Mengatur `Conformance` membuat setiap penyimpanan membawa apa yang diwajibkan PDF/A dan bisa
+disediakan penulis: identifikasi dalam paket XMP yang sepakat dengan `Info` sampai detik, output
+intent sRGB, PDF 1.7 di header, setiap anotasi bisa dicetak, dan tanpa permintaan agar viewer
+menggambar ulang field formulir. Profil sRGB dihitung dari IEC 61966-2-1, bukan disalin dari mana
+pun; LittleCMS membacanya sebagai `sRGB IEC61966-2.1` dan mengonversi melewatinya tanpa mengubah satu
+kanal pun.
+
+Yang tidak bisa disediakan penulis diperiksa, dan penyimpanan yang akan membuat klaim palsu **justru
+melempar exception**, dengan penjelasan apa yang harus diubah:
+
+- **Font yang tidak tersemat.** 14 font baku tidak pernah tersemat — gambar dengan `EmbedFont()`.
+  Yang dihitung adalah yang digambar (`Tf` di content stream), bukan yang tercantum di resource, jadi
+  check box — yang centangnya berupa path — tidak menghalangi. **Text field** formulir menghalangi:
+  tampilannya digambar dengan Helvetica, jadi dokumen PDF/A belum bisa memilikinya.
+- **Karakter yang tidak ada glyph-nya di font**, yang akan menggambar glyph kosong `.notdef` —
+  disebutkan beserta code point-nya.
+- **Enkripsi** — panggil `Decrypt()` dulu.
+- **Pada PDF/A-2, lampiran yang bukan PDF.** PDF/A-3 mengizinkan apa saja, itulah yang dibutuhkan
+  e-invoice.
+
+`PdfFont` adalah salah satu dari kedua jenis font, jadi kode yang menggambar bisa menerima jenis mana
+pun yang diberikan, dan `page.AddWatermark(text, font)` serta `ChartRenderer.Render(…, regular, bold)`
+menerimanya. `FontDirectory` mencari berkas TrueType berdasarkan family dan style di folder disk
+(`FontDirectory.System()` untuk folder sistem operasi) dan melewati font yang lisensinya melarang
+penyematan.
+
+Klaimnya diperiksa dengan **veraPDF**, validator rujukan, di tes pustaka ini: atur `VERAPDF` ke
+peluncurnya dan tes menjalankannya pada berkas PDF/A-2b dan PDF/A-3b berisi teks, gambar transparan,
+catatan, tautan, highlight, check box, dan watermark. Tanpanya, tes menyatakan dirinya dilewati.
 
 ## Merender ke gambar
 
