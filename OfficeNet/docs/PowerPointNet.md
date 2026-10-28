@@ -252,6 +252,39 @@ chart.SetData(data with { Type = ChartType.Line });
 writes. A chart authored in PowerPoint against an embedded workbook returns its cache too, but not
 the formulas behind it.
 
+### Combination charts and a secondary axis
+
+```csharp
+slide.AddChart(new ChartData
+{
+    Type = ChartType.Column,
+    Categories = ["Q1", "Q2", "Q3", "Q4"],
+    Series =
+    [
+        new ChartSeries("Pendapatan", [1120, 1480, 1310, 1720]),
+        new ChartSeries("Margin", [0.29, 0.36, 0.31, 0.36])
+        {
+            Type = ChartType.LineMarkers,   // this series' own type
+            SecondaryAxis = true,           // against the axis on the right
+        },
+    ],
+    ValueFormat = "#,##0",
+    ValueAxisTitle = "Juta Rp",
+    SecondaryAxisTitle = "Margin",
+    SecondaryValueFormat = "0%",
+});
+```
+
+A series may take its own type, and may be plotted against a second value axis on the right. Each
+type and axis becomes a chart group of its own — the shape Excel and PowerPoint write — with a hidden
+category axis and a right-hand value axis crossing at the far end for the secondary series. Columns,
+lines and areas combine; pie, doughnut, scatter, radar and horizontal bar charts do not, and
+`Validate` says so. `GetData` reads it back series by series, in order; python-pptx sees a bar plot
+and a line plot. The PDF export draws bars, then areas, then lines on top, each on its own scale.
+
+`ChartData` is shared, so the same chart works in a workbook (`sheet.AddChart`) and a Word document
+(`document.AddChart`).
+
 ## SmartArt
 
 ```csharp

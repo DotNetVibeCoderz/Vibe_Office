@@ -1368,6 +1368,36 @@ public class DocSamples : IDisposable
     }
 
     [Fact]
+    public void PowerPointNet_ComboCharts()
+    {
+        using var deck = Presentation.Create();
+        var slide = deck.AddSlide(2);
+
+        slide.AddChart(new ChartData
+        {
+            Type = ChartType.Column,
+            Categories = ["Q1", "Q2", "Q3", "Q4"],
+            Series =
+            [
+                new ChartSeries("Pendapatan", [1120, 1480, 1310, 1720]),
+                new ChartSeries("Margin", [0.29, 0.36, 0.31, 0.36])
+                {
+                    Type = ChartType.LineMarkers,
+                    SecondaryAxis = true,
+                },
+            ],
+            ValueFormat = "#,##0",
+            ValueAxisTitle = "Juta Rp",
+            SecondaryAxisTitle = "Margin",
+            SecondaryValueFormat = "0%",
+        });
+
+        var data = slide.Charts.Single().GetData();
+        Assert.True(data.IsCombo);
+        Assert.True(data.Series[1].SecondaryAxis);
+    }
+
+    [Fact]
     public void PowerPointNet_Connectors()
     {
         using var deck = Presentation.Create();

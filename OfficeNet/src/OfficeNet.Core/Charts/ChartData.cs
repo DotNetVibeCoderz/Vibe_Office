@@ -80,6 +80,22 @@ public sealed record ChartSeries(string Name, IReadOnlyList<double> Values)
     /// </remarks>
     public IReadOnlyList<double>? XValues { get; init; }
 
+    /// <summary>
+    /// This series' own type, for a combination chart — a line over columns, say. <c>null</c> takes
+    /// the chart's.
+    /// </summary>
+    /// <remarks>
+    /// Column, line and area types combine, as they share a category axis; pie, doughnut, scatter,
+    /// radar and horizontal bar charts do not, and <see cref="ChartData.Validate"/> says so.
+    /// </remarks>
+    public ChartType? Type { get; init; }
+
+    /// <summary>
+    /// Plots the series against a second value axis, on the right — for numbers on another scale,
+    /// a percentage beside amounts.
+    /// </summary>
+    public bool SecondaryAxis { get; init; }
+
     /// <summary>Creates a series from values.</summary>
     public static ChartSeries From(string name, params double[] values) => new(name, values);
 }
@@ -131,6 +147,12 @@ public sealed record ChartData
     /// <summary>The title of the value axis.</summary>
     public string? ValueAxisTitle { get; init; }
 
+    /// <summary>The title of the secondary value axis, when a series uses it.</summary>
+    public string? SecondaryAxisTitle { get; init; }
+
+    /// <summary>The number format of the secondary value axis; <c>null</c> takes <see cref="ValueFormat"/>.</summary>
+    public string? SecondaryValueFormat { get; init; }
+
     /// <summary>Draws horizontal gridlines behind the plot.</summary>
     public bool ShowGridLines { get; init; } = true;
 
@@ -172,6 +194,19 @@ public sealed record ChartData
 
     /// <summary>True when the type plots against two value axes.</summary>
     public bool IsScatter => Type == ChartType.Scatter;
+
+    /// <summary>The type a series is drawn as: its own, or the chart's.</summary>
+    public ChartType TypeOf(ChartSeries series)
+    {
+        ArgumentNullException.ThrowIfNull(series);
+        return series.Type ?? Type;
+    }
+
+    /// <summary>True when the series are not all one type on one axis — a combination chart.</summary>
+    public bool IsCombo => Series.Any(s => s.SecondaryAxis || TypeOf(s) != Type);
+
+    private static bool Combines(ChartType type) => type is ChartType.Column or ChartType.ColumnStacked
+        or ChartType.Line or ChartType.LineMarkers or ChartType.Area or ChartType.AreaStacked;
 
     /// <summary>
     /// Checks the data is renderable and explains what is wrong when it is not.
@@ -216,6 +251,13 @@ public sealed record ChartData
                     $"Series '{series.Name}' has {series.Values.Count} values but there are " +
                     $"{Categories.Count} categories; every series must cover every category.");
             }
+        }
+
+        if (IsCombo && Series.Select(TypeOf).Prepend(Type).Where(t => !Combines(t)).ToList() is [var odd, ..])
+        {
+            throw new OfficeNetException(
+                $"A {odd} chart cannot be combined with others. Columns, lines and areas combine, because " +
+                "they share a category axis; pie, doughnut, scatter, radar and horizontal bar charts do not.");
         }
 
         if (IsPieFamily && Series.Count > 1)

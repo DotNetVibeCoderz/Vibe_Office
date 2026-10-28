@@ -62,6 +62,9 @@ public sealed record ChartSpec
     public string? ValueFormat { get; init; }
 
     public bool? ShowDataLabels { get; init; }
+
+    [Description("Number format of the right-hand axis, when a series uses it, e.g. 0%.")]
+    public string? SecondaryValueFormat { get; init; }
 }
 
 /// <summary>One series of a chart.</summary>
@@ -70,6 +73,12 @@ public sealed record SeriesSpec
     public string Name { get; init; } = "Series";
 
     public double[] Values { get; init; } = [];
+
+    [Description("This series' own type, for a combination chart — e.g. a line over columns. Columns, lines and areas combine.")]
+    public string? Type { get; init; }
+
+    [Description("Plot against a second value axis on the right, for numbers on another scale (a percentage beside amounts).")]
+    public bool? SecondaryAxis { get; init; }
 }
 
 /// <summary>One worksheet.</summary>

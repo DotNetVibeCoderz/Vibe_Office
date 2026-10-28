@@ -254,6 +254,40 @@ chart.SetData(data with { Type = ChartType.Line });
 ini. Chart yang dibuat di PowerPoint dengan workbook tersemat juga mengembalikan cache-nya, tetapi
 bukan formula di baliknya.
 
+### Chart kombinasi dan sumbu sekunder
+
+```csharp
+slide.AddChart(new ChartData
+{
+    Type = ChartType.Column,
+    Categories = ["Q1", "Q2", "Q3", "Q4"],
+    Series =
+    [
+        new ChartSeries("Pendapatan", [1120, 1480, 1310, 1720]),
+        new ChartSeries("Margin", [0.29, 0.36, 0.31, 0.36])
+        {
+            Type = ChartType.LineMarkers,   // tipe milik series ini sendiri
+            SecondaryAxis = true,           // terhadap sumbu di kanan
+        },
+    ],
+    ValueFormat = "#,##0",
+    ValueAxisTitle = "Juta Rp",
+    SecondaryAxisTitle = "Margin",
+    SecondaryValueFormat = "0%",
+});
+```
+
+Sebuah series boleh punya tipenya sendiri, dan boleh digambar terhadap sumbu nilai kedua di kanan.
+Setiap tipe dan sumbu menjadi chart group tersendiri — bentuk yang ditulis Excel dan PowerPoint — dengan
+sumbu kategori tersembunyi dan sumbu nilai di kanan yang memotong di ujung jauh untuk series sekunder.
+Kolom, garis, dan area bisa dikombinasikan; pie, doughnut, scatter, radar, dan bar horizontal tidak,
+dan `Validate` mengatakannya. `GetData` membacanya kembali series demi series, sesuai urutan;
+python-pptx melihat bar plot dan line plot. Ekspor PDF menggambar batang, lalu area, lalu garis di
+atasnya, masing-masing dengan skalanya sendiri.
+
+`ChartData` dipakai bersama, jadi chart yang sama juga bisa di workbook (`sheet.AddChart`) dan dokumen
+Word (`document.AddChart`).
+
 ## SmartArt
 
 ```csharp

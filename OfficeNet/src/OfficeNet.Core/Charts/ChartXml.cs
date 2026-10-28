@@ -30,6 +30,7 @@ public static class ChartXml
     private const long CategoryAxisId = 111_111_111;
     private const long ValueAxisId = 222_222_222;
     private const long SecondaryValueAxisId = 333_333_333;
+    private const long SecondaryCategoryAxisId = 444_444_444;
 
     public static XDocument Build(ChartData data)
     {
@@ -105,66 +106,91 @@ public static class ChartXml
             return new ChartData();
         }
 
-        var group = plot.Elements().FirstOrDefault(e => e.Name.LocalName.EndsWith("Chart", StringComparison.Ordinal));
+        var groups = plot.Elements().Where(e => e.Name.LocalName.EndsWith("Chart", StringComparison.Ordinal)).ToList();
 
-        if (group is null)
+        if (groups.Count == 0)
         {
             return new ChartData();
         }
 
-        var stacked = group.Val(Ns.C + "grouping") == "stacked";
-        var horizontal = group.Val(Ns.C + "barDir") == "bar";
+        // A value axis on the right, or one that crosses at the far end, is a secondary axis; a
+        // group plotted against it is a secondary group.
+        var secondaryAxes = plot.Elements(Ns.C + "valAx")
+            .Where(a => a.Val(Ns.C + "crosses") == "max" || a.Val(Ns.C + "axPos") is "r" or "t")
+            .Select(a => a.Val(Ns.C + "axId"))
+            .ToHashSet();
 
-        var type = group.Name.LocalName switch
+        bool IsSecondary(XElement g) => g.Elements(Ns.C + "axId").Any(a => secondaryAxes.Contains(a.Val()));
+
+        // The chart's type is its first primary group's; another group's series carry their own.
+        var group = groups.FirstOrDefault(g => !IsSecondary(g)) ?? groups[0];
+        var type = TypeOf(group);
+
+        // The same rule as for each series below, or a line chart with markers would read as a
+        // plain line chart whose every series overrides it — a combination chart that is not one.
+        if (type == ChartType.Line &&
+            group.Element(Ns.C + "ser")?.Element(Ns.C + "marker")?.Val(Ns.C + "symbol") is { } mainSymbol && mainSymbol != "none")
         {
-            "barChart" when horizontal && stacked => ChartType.BarStacked,
-            "barChart" when horizontal => ChartType.Bar,
-            "barChart" when stacked => ChartType.ColumnStacked,
-            "barChart" => ChartType.Column,
-            "lineChart" => ChartType.Line,
-            "areaChart" when stacked => ChartType.AreaStacked,
-            "areaChart" => ChartType.Area,
-            "pieChart" => ChartType.Pie,
-            "doughnutChart" => ChartType.Doughnut,
-            "scatterChart" => ChartType.Scatter,
-            "radarChart" => ChartType.Radar,
-            _ => ChartType.Column,
-        };
+            type = ChartType.LineMarkers;
+        }
 
         var categories = new List<string>();
-        var series = new List<ChartSeries>();
+        var series = new List<(int Order, ChartSeries Series)>();
 
-        foreach (var element in group.Elements(Ns.C + "ser"))
+        foreach (var chartGroup in groups)
         {
-            var name = element.Element(Ns.C + "tx")?
-                .Element(Ns.C + "strRef")?
-                .Element(Ns.C + "strCache")?
-                .Elements(Ns.C + "pt")
-                .FirstOrDefault()?
-                .Element(Ns.C + "v")?.Value ?? string.Empty;
+            var groupType = TypeOf(chartGroup);
+            var secondary = IsSecondary(chartGroup);
 
-            // Every series repeats the same categories; the first one that has them wins.
-            if (categories.Count == 0)
+            foreach (var element in chartGroup.Elements(Ns.C + "ser"))
             {
-                categories.AddRange(ReadStrings(element.Element(Ns.C + "cat")));
+                var name = element.Element(Ns.C + "tx")?
+                    .Element(Ns.C + "strRef")?
+                    .Element(Ns.C + "strCache")?
+                    .Elements(Ns.C + "pt")
+                    .FirstOrDefault()?
+                    .Element(Ns.C + "v")?.Value ?? string.Empty;
+
+                // Every series repeats the same categories; the first one that has them wins.
+                if (categories.Count == 0)
+                {
+                    categories.AddRange(ReadStrings(element.Element(Ns.C + "cat")));
+                }
+
+                var values = ReadNumbers(element.Element(Ns.C + "val") ?? element.Element(Ns.C + "yVal"));
+
+                var color = element.Element(Ns.C + "spPr") is { } shape
+                    ? ReadColor(shape)
+                    : null;
+
+                var xValues = groupType == ChartType.Scatter
+                    ? ReadNumbers(element.Element(Ns.C + "xVal"))
+                    : null;
+
+                // A line chart's markers are per series: a symbol other than none is a line with markers.
+                var seriesType = groupType == ChartType.Line &&
+                                 element.Element(Ns.C + "marker")?.Val(Ns.C + "symbol") is { } symbol && symbol != "none"
+                    ? ChartType.LineMarkers
+                    : groupType;
+
+                // c:order is the series' place in the chart, across all its groups.
+                var order = int.TryParse(element.Val(Ns.C + "order"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var o)
+                    ? o
+                    : series.Count;
+
+                series.Add((order, new ChartSeries(name, values)
+                {
+                    Color = color,
+                    XValues = xValues is { Count: > 0 } ? xValues : null,
+                    Type = seriesType != type ? seriesType : null,
+                    SecondaryAxis = secondary,
+                }));
             }
-
-            var values = ReadNumbers(element.Element(Ns.C + "val") ?? element.Element(Ns.C + "yVal"));
-
-            var color = element.Element(Ns.C + "spPr") is { } shape
-                ? ReadColor(shape)
-                : null;
-
-            var xValues = type == ChartType.Scatter
-                ? ReadNumbers(element.Element(Ns.C + "xVal"))
-                : null;
-
-            series.Add(new ChartSeries(name, values)
-            {
-                Color = color,
-                XValues = xValues is { Count: > 0 } ? xValues : null,
-            });
         }
+
+        var secondaryGroup = groups.FirstOrDefault(IsSecondary);
+        var secondaryAxis = plot.Elements(Ns.C + "valAx").FirstOrDefault(a => secondaryAxes.Contains(a.Val(Ns.C + "axId")));
+        var primaryAxis = plot.Elements(Ns.C + "valAx").FirstOrDefault(a => !secondaryAxes.Contains(a.Val(Ns.C + "axId")));
 
         var title = document.Root?
             .Element(Ns.C + "chart")?
@@ -184,7 +210,7 @@ public static class ChartXml
             Type = type,
             Title = title,
             Categories = categories,
-            Series = series,
+            Series = [.. series.OrderBy(x => x.Order).Select(x => x.Series)],
             Legend = legend is null ? LegendPosition.None : legend.Val(Ns.C + "legendPos") switch
             {
                 "t" => LegendPosition.Top,
@@ -193,10 +219,14 @@ public static class ChartXml
                 _ => LegendPosition.Bottom,
             },
             CategoryAxisTitle = AxisTitle(plot, Ns.C + "catAx"),
-            ValueAxisTitle = AxisTitle(plot, Ns.C + "valAx"),
+            ValueAxisTitle = primaryAxis is null ? null : TitleOf(primaryAxis),
+            SecondaryAxisTitle = secondaryAxis is null ? null : TitleOf(secondaryAxis),
+            SecondaryValueFormat = secondaryGroup is null ? null : ValueFormatOf(secondaryGroup),
             DoughnutHoleSize = int.TryParse(group.Val(Ns.C + "holeSize"), out var hole) ? hole : 50,
-            GapWidth = int.TryParse(group.Val(Ns.C + "gapWidth"), out var gap) ? gap : 150,
-            ShowGridLines = plot.Element(Ns.C + "valAx")?.Element(Ns.C + "majorGridlines") is not null,
+            // The bars' own gap, whichever group they are in.
+            GapWidth = int.TryParse((groups.FirstOrDefault(g => g.Name.LocalName == "barChart") ?? group).Val(Ns.C + "gapWidth"),
+                out var gap) ? gap : 150,
+            ShowGridLines = primaryAxis?.Element(Ns.C + "majorGridlines") is not null,
             ShowDataLabels = labels.Val(Ns.C + "showVal") == "1"
                              || labels.Val(Ns.C + "showPercent") == "1",
             ShowPercentages = labels.Val(Ns.C + "showPercent") == "1",
@@ -213,8 +243,33 @@ public static class ChartXml
             .FirstOrDefault(f => f is { Length: > 0 });
 
     private static string? AxisTitle(XElement plot, XName axis) =>
-        plot.Element(axis)?.Element(Ns.C + "title")?
-            .Descendants(Ns.A + "t").Select(t => t.Value).FirstOrDefault();
+        plot.Element(axis) is { } element ? TitleOf(element) : null;
+
+    private static string? TitleOf(XElement axis) =>
+        axis.Element(Ns.C + "title")?.Descendants(Ns.A + "t").Select(t => t.Value).FirstOrDefault();
+
+    /// <summary>The chart type a chart group draws, from its element and its grouping.</summary>
+    private static ChartType TypeOf(XElement group)
+    {
+        var stacked = group.Val(Ns.C + "grouping") == "stacked";
+        var horizontal = group.Val(Ns.C + "barDir") == "bar";
+
+        return group.Name.LocalName switch
+        {
+            "barChart" when horizontal && stacked => ChartType.BarStacked,
+            "barChart" when horizontal => ChartType.Bar,
+            "barChart" when stacked => ChartType.ColumnStacked,
+            "barChart" => ChartType.Column,
+            "lineChart" => ChartType.Line,
+            "areaChart" when stacked => ChartType.AreaStacked,
+            "areaChart" => ChartType.Area,
+            "pieChart" => ChartType.Pie,
+            "doughnutChart" => ChartType.Doughnut,
+            "scatterChart" => ChartType.Scatter,
+            "radarChart" => ChartType.Radar,
+            _ => ChartType.Column,
+        };
+    }
 
     private static IReadOnlyList<string> ReadStrings(XElement? reference)
     {
@@ -316,7 +371,19 @@ public static class ChartXml
     {
         var plot = new XElement(Ns.C + "plotArea", new XElement(Ns.C + "layout"));
 
-        plot.Add(BuildChartGroup(data));
+        // A combination chart is one chart group per type and axis, in the order the series first
+        // ask for them — the shape Excel and PowerPoint write. Series keep their place in the
+        // chart's numbering across groups, so the legend and the colours stay in order.
+        var groups = Enumerable.Range(0, data.Series.Count)
+            .GroupBy(i => (Type: data.TypeOf(data.Series[i]), Secondary: data.Series[i].SecondaryAxis && !data.IsPieFamily))
+            .ToList();
+
+        foreach (var group in groups)
+        {
+            plot.Add(BuildChartGroup(data, group.Key.Type, [.. group], group.Key.Secondary));
+        }
+
+        var secondary = groups.Any(g => g.Key.Secondary);
 
         // A pie or doughnut has no axes at all; adding empty ones makes PowerPoint repair the part.
         if (!data.IsPieFamily)
@@ -329,8 +396,18 @@ public static class ChartXml
             }
             else
             {
-                plot.Add(BuildCategoryAxis(data));
+                plot.Add(BuildCategoryAxis(data, CategoryAxisId, ValueAxisId, hidden: false));
                 plot.Add(BuildValueAxis(data, ValueAxisId, CategoryAxisId, "l", data.ValueAxisTitle));
+            }
+
+            // The secondary axes: a category axis that is there for the schema and hidden, and a
+            // value axis on the right that crosses at the far end.
+            if (secondary)
+            {
+                plot.Add(BuildCategoryAxis(data, SecondaryCategoryAxisId, SecondaryValueAxisId, hidden: true));
+                plot.Add(BuildValueAxis(data, SecondaryValueAxisId, SecondaryCategoryAxisId, "r",
+                    data.SecondaryAxisTitle, gridLines: false, crosses: "max",
+                    format: data.SecondaryValueFormat ?? data.ValueFormat));
             }
         }
 
@@ -341,9 +418,9 @@ public static class ChartXml
         return plot;
     }
 
-    private static XElement BuildChartGroup(ChartData data)
+    private static XElement BuildChartGroup(ChartData data, ChartType type, IReadOnlyList<int> indices, bool secondary)
     {
-        var (element, grouping) = data.Type switch
+        var (element, grouping) = type switch
         {
             ChartType.Column => (Ns.C + "barChart", "clustered"),
             ChartType.ColumnStacked => (Ns.C + "barChart", "stacked"),
@@ -366,7 +443,7 @@ public static class ChartXml
         if (element == Ns.C + "barChart")
         {
             group.Add(Val(Ns.C + "barDir",
-                data.Type is ChartType.Bar or ChartType.BarStacked ? "bar" : "col"));
+                type is ChartType.Bar or ChartType.BarStacked ? "bar" : "col"));
         }
 
         if (grouping.Length > 0)
@@ -388,7 +465,7 @@ public static class ChartXml
         // point and destroy the series distinction.
         group.Add(Val(Ns.C + "varyColors", data.IsPieFamily ? "1" : "0"));
 
-        for (var index = 0; index < data.Series.Count; index++)
+        foreach (var index in indices)
         {
             group.Add(BuildSeries(data, index));
         }
@@ -426,8 +503,8 @@ public static class ChartXml
 
         if (!data.IsPieFamily)
         {
-            group.Add(Val(Ns.C + "axId", CategoryAxisId.ToString(CultureInfo.InvariantCulture)));
-            group.Add(Val(Ns.C + "axId", ValueAxisId.ToString(CultureInfo.InvariantCulture)));
+            group.Add(Val(Ns.C + "axId", (secondary ? SecondaryCategoryAxisId : CategoryAxisId).ToString(CultureInfo.InvariantCulture)));
+            group.Add(Val(Ns.C + "axId", (secondary ? SecondaryValueAxisId : ValueAxisId).ToString(CultureInfo.InvariantCulture)));
         }
 
         return group;
@@ -445,6 +522,7 @@ public static class ChartXml
     {
         var series = data.Series[index];
         var color = data.ColorFor(index);
+        var type = data.TypeOf(series);
 
         var element = new XElement(Ns.C + "ser",
             Val(Ns.C + "idx", index.ToString(CultureInfo.InvariantCulture)),
@@ -458,7 +536,7 @@ public static class ChartXml
                             new XAttribute("idx", "0"),
                             new XElement(Ns.C + "v", series.Name))))));
 
-        var isLine = data.Type is ChartType.Line or ChartType.LineMarkers or ChartType.Radar
+        var isLine = type is ChartType.Line or ChartType.LineMarkers or ChartType.Radar
                      or ChartType.Scatter;
 
         element.Add(new XElement(Ns.C + "spPr",
@@ -472,11 +550,11 @@ public static class ChartXml
 
         // A line without markers still needs an explicit "none" marker, or PowerPoint draws its
         // default diamonds.
-        if (data.Type is ChartType.Line or ChartType.Area or ChartType.AreaStacked)
+        if (type is ChartType.Line or ChartType.Area or ChartType.AreaStacked)
         {
             element.Add(new XElement(Ns.C + "marker", Val(Ns.C + "symbol", "none")));
         }
-        else if (data.Type is ChartType.LineMarkers or ChartType.Scatter or ChartType.Radar)
+        else if (type is ChartType.LineMarkers or ChartType.Scatter or ChartType.Radar)
         {
             element.Add(new XElement(Ns.C + "marker",
                 Val(Ns.C + "symbol", "circle"),
@@ -528,10 +606,12 @@ public static class ChartXml
                             new XAttribute("idx", i.ToString(CultureInfo.InvariantCulture)),
                             new XElement(Ns.C + "v", label)))))));
 
+        // A series on the secondary axis carries that axis's format, which is how it reads back.
         element.Add(new XElement(Ns.C + "val", NumberReference(
-            SeriesValuesFormula(index, series.Values.Count), series.Values, data.ValueFormat)));
+            SeriesValuesFormula(index, series.Values.Count), series.Values,
+            series.SecondaryAxis ? data.SecondaryValueFormat ?? data.ValueFormat : data.ValueFormat)));
 
-        if (data.Type is ChartType.Line or ChartType.LineMarkers)
+        if (type is ChartType.Line or ChartType.LineMarkers)
         {
             element.Add(Val(Ns.C + "smooth", "0"));
         }
@@ -581,16 +661,16 @@ public static class ChartXml
         return labels;
     }
 
-    private static XElement BuildCategoryAxis(ChartData data)
+    private static XElement BuildCategoryAxis(ChartData data, long id, long crossId, bool hidden)
     {
         var axis = new XElement(Ns.C + "catAx",
-            Val(Ns.C + "axId", CategoryAxisId.ToString(CultureInfo.InvariantCulture)),
+            Val(Ns.C + "axId", id.ToString(CultureInfo.InvariantCulture)),
             new XElement(Ns.C + "scaling", Val(Ns.C + "orientation", "minMax")),
-            Val(Ns.C + "delete", "0"),
+            Val(Ns.C + "delete", hidden ? "1" : "0"),
             // A bar chart's category axis runs up the left; a column chart's runs along the bottom.
             Val(Ns.C + "axPos", data.Type is ChartType.Bar or ChartType.BarStacked ? "l" : "b"));
 
-        if (data.CategoryAxisTitle is { Length: > 0 } title)
+        if (!hidden && data.CategoryAxisTitle is { Length: > 0 } title)
         {
             axis.Add(AxisTitle(title, data, rotated: false));
         }
@@ -600,7 +680,7 @@ public static class ChartXml
         axis.Add(Val(Ns.C + "tickLblPos", "nextTo"));
         axis.Add(AxisLine());
         axis.Add(TextProperties(data.FontSize));
-        axis.Add(Val(Ns.C + "crossAx", ValueAxisId.ToString(CultureInfo.InvariantCulture)));
+        axis.Add(Val(Ns.C + "crossAx", crossId.ToString(CultureInfo.InvariantCulture)));
         axis.Add(Val(Ns.C + "crosses", "autoZero"));
         axis.Add(Val(Ns.C + "auto", "1"));
         axis.Add(Val(Ns.C + "lblAlgn", "ctr"));
@@ -611,7 +691,7 @@ public static class ChartXml
     }
 
     private static XElement BuildValueAxis(ChartData data, long id, long crossId, string position,
-        string? title)
+        string? title, bool gridLines = true, string crosses = "autoZero", string? format = null)
     {
         var axis = new XElement(Ns.C + "valAx",
             Val(Ns.C + "axId", id.ToString(CultureInfo.InvariantCulture)),
@@ -619,7 +699,7 @@ public static class ChartXml
             Val(Ns.C + "delete", "0"),
             Val(Ns.C + "axPos", position));
 
-        if (data.ShowGridLines)
+        if (data.ShowGridLines && gridLines)
         {
             axis.Add(new XElement(Ns.C + "majorGridlines",
                 new XElement(Ns.C + "spPr",
@@ -636,7 +716,7 @@ public static class ChartXml
         }
 
         axis.Add(new XElement(Ns.C + "numFmt",
-            new XAttribute("formatCode", data.ValueFormat),
+            new XAttribute("formatCode", format ?? data.ValueFormat),
             // sourceLinked=0 makes the format above win; with 1 the axis takes the cell's format
             // from a workbook that is not there.
             new XAttribute("sourceLinked", "0")));
@@ -647,7 +727,7 @@ public static class ChartXml
         axis.Add(AxisLine());
         axis.Add(TextProperties(data.FontSize));
         axis.Add(Val(Ns.C + "crossAx", crossId.ToString(CultureInfo.InvariantCulture)));
-        axis.Add(Val(Ns.C + "crosses", "autoZero"));
+        axis.Add(Val(Ns.C + "crosses", crosses));
         axis.Add(Val(Ns.C + "crossBetween", "between"));
 
         return axis;

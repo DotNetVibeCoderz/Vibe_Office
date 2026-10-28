@@ -344,6 +344,41 @@ public class EndToEndTests(ServerFixture server) : IClassFixture<ServerFixture>
     }
 
     [Fact]
+    public async Task AComboChartWithASecondaryAxisIsMade()
+    {
+        (await Call("word_create", new
+        {
+            path = "combo/laporan.docx",
+            blocks = new object[]
+            {
+                new
+                {
+                    type = "chart",
+                    chart = new
+                    {
+                        type = "column",
+                        categories = new[] { "Q1", "Q2" },
+                        secondaryValueFormat = "0%",
+                        series = new object[]
+                        {
+                            new { name = "Pendapatan", values = new[] { 1120.0, 1480 } },
+                            new { name = "Margin", values = new[] { 0.29, 0.36 }, type = "lineMarkers", secondaryAxis = true },
+                        },
+                    },
+                },
+            },
+        })).Ok();
+
+        using var document = WordDocument.Open(Full("combo/laporan.docx"));
+        var data = document.Charts.Single().GetData();
+
+        Assert.True(data.IsCombo);
+        Assert.Equal([false, true], data.Series.Select(s => s.SecondaryAxis));
+        Assert.Equal(OfficeNet.Core.Charts.ChartType.LineMarkers, data.Series[1].Type);
+        Assert.Equal("0%", data.SecondaryValueFormat);
+    }
+
+    [Fact]
     public async Task AWorkbookBecomesHtmlAndHtmlTablesBecomeAWorkbook()
     {
         (await Call("excel_create", new

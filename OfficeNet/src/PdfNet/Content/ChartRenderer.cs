@@ -259,6 +259,12 @@ public static class ChartRenderer
 
     private static void DrawAxisChart(PdfCanvas canvas, ChartFonts fonts, ChartData data, Rect plot)
     {
+        if (data.IsCombo)
+        {
+            DrawCombo(canvas, fonts, data, plot);
+            return;
+        }
+
         var stacked = data.Type is ChartType.ColumnStacked or ChartType.BarStacked
             or ChartType.AreaStacked;
 
@@ -320,6 +326,144 @@ public static class ChartRenderer
             default:
                 DrawBars(canvas, fonts, data, area, minimum, maximum, stacked, horizontal);
                 break;
+        }
+    }
+
+    /// <summary>
+    /// A combination chart: each type drawn in turn — bars, then areas, then lines on top — each
+    /// against its own axis, the primary on the left and the secondary on the right.
+    /// </summary>
+    /// <remarks>
+    /// Each group is drawn as a chart of its own series only, with every series' colour fixed to
+    /// its place in the whole chart first, so a line keeps the colour the legend gives it. Only the
+    /// first group draws the category labels; the others are given none, which leaves the slots
+    /// where they were, since the slot count also comes from the values.
+    /// </remarks>
+    private static void DrawCombo(PdfCanvas canvas, ChartFonts fonts, ChartData data, Rect plot)
+    {
+        var coloured = data.Series.Select((s, i) => s with { Color = s.Color ?? ColorFor(data, i) }).ToList();
+
+        var groups = coloured.GroupBy(s => (Type: data.TypeOf(s), s.SecondaryAxis))
+            .OrderBy(g => g.Key.Type switch
+            {
+                ChartType.Column or ChartType.ColumnStacked => 0,
+                ChartType.Area or ChartType.AreaStacked => 1,
+                _ => 2,
+            })
+            .ToList();
+
+        var primary = Scale(groups.Where(g => !g.Key.SecondaryAxis).ToList());
+        var secondary = groups.Any(g => g.Key.SecondaryAxis) ? Scale(groups.Where(g => g.Key.SecondaryAxis).ToList()) : default;
+        var secondaryFormat = data.SecondaryValueFormat ?? data.ValueFormat;
+
+        canvas.SetFont(fonts.Regular, LabelSize);
+
+        double LabelWidth((double Minimum, double Maximum, double Step) scale, string format)
+        {
+            var width = 0.0;
+
+            for (var value = scale.Minimum; scale.Step > 0 && value <= scale.Maximum + (scale.Step / 2); value += scale.Step)
+            {
+                width = Math.Max(width, canvas.MeasureText(Format(value, format)));
+            }
+
+            return width;
+        }
+
+        var axisGap = LabelSize + 6;
+        var area = plot.Inset(left: LabelWidth(primary, data.ValueFormat) + 6, bottom: axisGap);
+
+        if (secondary.Step > 0)
+        {
+            area = area.Inset(right: LabelWidth(secondary, secondaryFormat) + 6);
+        }
+
+        if (data.ValueAxisTitle is { Length: > 0 } || data.SecondaryAxisTitle is { Length: > 0 })
+        {
+            area = area.Inset(top: LabelSize + 6);
+        }
+
+        if (data.CategoryAxisTitle is { Length: > 0 })
+        {
+            area = area.Inset(bottom: LabelSize + 6);
+        }
+
+        if (area.Width <= 10 || area.Height <= 10)
+        {
+            return;
+        }
+
+        DrawGrid(canvas, fonts, data, area, primary.Minimum, primary.Maximum, primary.Step, horizontal: false);
+        DrawAxisTitles(canvas, fonts, data, plot, area, horizontal: false);
+
+        if (secondary.Step > 0)
+        {
+            canvas.SetFont(fonts.Regular, LabelSize);
+            canvas.SetFillColor(OfficeColor.FromRgb(0x59, 0x59, 0x59));
+
+            for (var value = secondary.Minimum; value <= secondary.Maximum + (secondary.Step / 2); value += secondary.Step)
+            {
+                var y = Project(value, secondary.Minimum, secondary.Maximum, area, horizontal: false);
+                canvas.DrawText(Format(value, secondaryFormat), area.Right + 4, y + (LabelSize / 3));
+            }
+
+            canvas.SetStrokeColor(OfficeColor.FromRgb(0x90, 0x90, 0x90));
+            canvas.SetLineWidth(0.5);
+            canvas.MoveTo(area.Right, area.Top).LineTo(area.Right, area.Bottom).Stroke();
+
+            if (data.SecondaryAxisTitle is { Length: > 0 } title)
+            {
+                canvas.SetFont(fonts.Regular, LabelSize + 1);
+                canvas.DrawText(title, plot.Right - canvas.MeasureText(title), area.Top - 5);
+            }
+        }
+
+        var first = true;
+
+        foreach (var group in groups)
+        {
+            var (minimum, maximum, _) = group.Key.SecondaryAxis ? secondary : primary;
+            var part = data with
+            {
+                Type = group.Key.Type,
+                Series = [.. group.Select(s => s with { Type = null, SecondaryAxis = false })],
+                Categories = first ? data.Categories : [],
+            };
+
+            switch (group.Key.Type)
+            {
+                case ChartType.Line or ChartType.LineMarkers:
+                    DrawLines(canvas, fonts, part, area, minimum, maximum, markers: group.Key.Type != ChartType.Line);
+                    break;
+
+                case ChartType.Area or ChartType.AreaStacked:
+                    DrawAreas(canvas, fonts, part, area, minimum, maximum, group.Key.Type == ChartType.AreaStacked);
+                    break;
+
+                default:
+                    DrawBars(canvas, fonts, part, area, minimum, maximum, group.Key.Type == ChartType.ColumnStacked, horizontal: false);
+                    break;
+            }
+
+            first = false;
+        }
+
+        // One scale over every group on an axis: stacked groups by their totals, the rest by values.
+        (double Minimum, double Maximum, double Step) Scale(List<IGrouping<(ChartType Type, bool SecondaryAxis), ChartSeries>> axis)
+        {
+            var extents = new List<double>();
+
+            foreach (var group in axis)
+            {
+                var stacked = group.Key.Type is ChartType.ColumnStacked or ChartType.AreaStacked;
+                var (minimum, maximum, _) = ChooseScale(data with { Series = [.. group] }, stacked);
+                extents.Add(minimum);
+                extents.Add(maximum);
+            }
+
+            return extents.Count == 0
+                ? (0, 1, 1)
+                : ChooseScale(data with { Series = [new ChartSeries(string.Empty, extents)] }, stacked: false);
         }
     }
 

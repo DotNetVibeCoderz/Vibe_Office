@@ -761,8 +761,12 @@ melengkapi.
   NPV tidak menggeser apa pun — lalu ditambah arus kas dengan dua IRR eksak (10% dan 20%) dan teks
   di tengah range. Satu mutasi ekuivalen dan dicatat: pemeriksaan tanda arus kas di IRR hanyalah
   jalan pintas, karena Newton tanpa akar tetap berakhir `#NUM!`.
-- [ ] **Chart kombinasi** (batang + garis, sumbu sekunder) di `ChartData`/`ChartXml` — berlaku
-  sekaligus untuk ExcelNet, PowerPointNet, dan chart Word di atas.
+- [x] **Chart kombinasi — selesai.** `ChartSeries.Type` (tipe per series) dan `SecondaryAxis`;
+  `ChartData.SecondaryAxisTitle`/`SecondaryValueFormat`. Ditulis sebagai satu chart group per tipe dan
+  sumbu dengan pasangan sumbu kedua (kategori tersembunyi, nilai di kanan memotong di `max`), dibaca
+  kembali series demi series sesuai `c:order`; python-pptx melihat bar plot dan line plot. Renderer PDF
+  menggambar tiap kelompok dengan skalanya sendiri. Berlaku untuk ExcelNet, PowerPointNet, Word, dan
+  tool MCP. Ikut diperbaiki: chart garis dengan marker terbaca kembali sebagai garis biasa.
 - [ ] **Enkripsi workbook** (ECMA-376 Agile Encryption, AES-256 + SHA-512). Berkas terenkripsi
   bukan ZIP melainkan compound file (CFB) berisi `EncryptionInfo` dan `EncryptedPackage`. Ini
   **bukan** format biner lama: yang dibutuhkan hanya pembaca/penulis CFB minimal untuk dua stream,

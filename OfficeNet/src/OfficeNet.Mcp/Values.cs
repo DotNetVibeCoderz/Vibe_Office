@@ -114,8 +114,15 @@ internal static partial class Values
             Type = type,
             Title = spec.Title,
             Categories = spec.Categories,
-            Series = [.. spec.Series.Select(s => new ChartSeries(s.Name, s.Values))],
+            Series = [.. spec.Series.Select(s => new ChartSeries(s.Name, s.Values)
+            {
+                Type = s.Type is { Length: > 0 } own ? Enum.TryParse<ChartType>(own, ignoreCase: true, out var t)
+                    ? t
+                    : throw new ArgumentException($"Unknown series type '{own}' for '{s.Name}'.") : null,
+                SecondaryAxis = s.SecondaryAxis ?? false,
+            })],
             ValueFormat = spec.ValueFormat ?? "General",
+            SecondaryValueFormat = spec.SecondaryValueFormat,
             ShowDataLabels = spec.ShowDataLabels ?? false,
         };
     }
