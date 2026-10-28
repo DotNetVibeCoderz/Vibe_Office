@@ -64,7 +64,7 @@ public sealed partial class PdfDocument
             problems.Add($"these fonts are not embedded: {string.Join(", ", unembedded.Fonts)}. PDF/A requires every " +
                          "font's program in the file, and the 14 standard fonts never are — draw with EmbedFont() instead" +
                          (unembedded.InFields
-                             ? ". Form text fields are drawn in Helvetica, so a PDF/A document cannot have them yet"
+                             ? ". Form fields are drawn in Helvetica unless AcroForm.Font is set to an embedded font before they are added or filled"
                              : string.Empty));
         }
 

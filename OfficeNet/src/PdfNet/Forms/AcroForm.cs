@@ -349,7 +349,7 @@ public sealed class PdfFormField
             builder.Append("BT\n");
             builder.Append(CultureInfo.InvariantCulture,
                 $"{color.R / 255.0:0.###} {color.G / 255.0:0.###} {color.B / 255.0:0.###} rg\n");
-            builder.Append(CultureInfo.InvariantCulture, $"/Helv {size:0.##} Tf\n");
+            builder.Append(CultureInfo.InvariantCulture, $"/{_form.FontResource} {size:0.##} Tf\n");
 
             if (IsMultiline)
             {
@@ -360,7 +360,7 @@ public sealed class PdfFormField
                 {
                     builder.Append(CultureInfo.InvariantCulture,
                         $"1 0 0 1 {Padding + 2:0.##} {y:0.##} Tm\n");
-                    builder.Append(Escape(line)).Append(" Tj\n");
+                    builder.Append(_form.ShowText(line)).Append(" Tj\n");
                     y -= lineHeight;
 
                     if (y < Padding)
@@ -375,7 +375,7 @@ public sealed class PdfFormField
                 var baseline = (rect.Height - size) / 2 + size * 0.22;
                 builder.Append(CultureInfo.InvariantCulture,
                     $"1 0 0 1 {Padding + 2:0.##} {baseline:0.##} Tm\n");
-                builder.Append(Escape(value)).Append(" Tj\n");
+                builder.Append(_form.ShowText(value)).Append(" Tj\n");
             }
 
             builder.Append("ET\nQ\nEMC\n");
@@ -457,8 +457,8 @@ public sealed class PdfFormField
             }
 
             builder.Append(CultureInfo.InvariantCulture,
-                $"BT\n{color.R / 255.0:0.###} {color.G / 255.0:0.###} {color.B / 255.0:0.###} rg\n/Helv {size:0.##} Tf\n" +
-                $"1 0 0 1 4 {y + lineHeight * 0.25:0.##} Tm\n{Escape(option)} Tj\nET\n");
+                $"BT\n{color.R / 255.0:0.###} {color.G / 255.0:0.###} {color.B / 255.0:0.###} rg\n/{_form.FontResource} {size:0.##} Tf\n" +
+                $"1 0 0 1 4 {y + lineHeight * 0.25:0.##} Tm\n{_form.ShowText(option)} Tj\nET\n");
 
             y -= lineHeight;
 
@@ -517,7 +517,7 @@ public sealed class PdfFormField
         return (StandardFont.Helvetica, size, color);
     }
 
-    private static string Escape(string text)
+    internal static string Escape(string text)
     {
         var bytes = StandardFonts.EncodeWinAnsi(text);
         var builder = new StringBuilder(bytes.Length + 2).Append('(');
@@ -607,6 +607,52 @@ public sealed partial class AcroForm : IReadOnlyCollection<PdfFormField>
 
     /// <summary>Every field, including those nested inside groups.</summary>
     public IReadOnlyList<PdfFormField> Fields => _fields;
+
+    /// <summary>
+    /// The font field values and button captions are drawn in — Helvetica unless set.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Set it to an embedded font (<c>pdf.EmbedFont(...)</c>) <em>before</em> adding or filling
+    /// fields for two reasons. Helvetica covers Latin-1 only, so a name in another script needs a
+    /// font that has it. And PDF/A requires every font that draws a glyph to be embedded, so a
+    /// PDF/A document with text fields needs one: their appearances are then drawn with the
+    /// embedded font in <c>Identity-H</c>, and the glyphs they use go into its subset.
+    /// </para>
+    /// <para>
+    /// The choice belongs to the document, so a form opened again later in the same session draws
+    /// with it too. New fields name it in their <c>/DA</c>; a viewer that redraws a field as it is
+    /// edited only has the glyphs the subset already holds, as with any subset font.
+    /// </para>
+    /// </remarks>
+    public PdfFont Font
+    {
+        get => Document.FormFont ?? StandardFont.Helvetica;
+        set
+        {
+            ArgumentNullException.ThrowIfNull(value);
+
+            if (value.Embedded is { } embedded && !Document.EmbeddedFonts.Contains(embedded))
+            {
+                throw new ArgumentException("The font must be embedded in this form's document.", nameof(value));
+            }
+
+            Document.FormFont = value;
+        }
+    }
+
+    /// <summary>The name appearances select the font by.</summary>
+    internal string FontResource => Font.Embedded?.ResourceName ?? "Helv";
+
+    /// <summary>A string operand for <c>Tj</c> in the form's font.</summary>
+    /// <remarks>
+    /// An embedded font takes two-byte glyph ids, written as hex; encoding them also records the
+    /// glyphs, so the subset written at save keeps every character a field shows.
+    /// </remarks>
+    internal string ShowText(string text) =>
+        Font.Embedded is { } embedded
+            ? "<" + Convert.ToHexString(embedded.Encode(text)) + ">"
+            : PdfFormField.Escape(text);
 
     /// <summary>Opens a document's form, or <c>null</c> when it has none.</summary>
     public static AcroForm? Open(PdfDocument document)
@@ -833,21 +879,32 @@ public sealed partial class AcroForm : IReadOnlyCollection<PdfFormField>
     {
         // The generated appearances reference /Helv, so the resource must exist. Reusing the form's
         // own /DR when it has one keeps the filled text in the font the form designer chose.
+        PdfDictionary resources;
+
         if (Document.Follow(Dictionary[PdfName.Get("DR")]) is PdfDictionary existing &&
             Document.Follow(existing[PdfName.Font]) is PdfDictionary fonts &&
             fonts.ContainsKey(PdfName.Get("Helv")))
         {
-            return existing;
+            resources = existing;
+        }
+        else
+        {
+            var fontDictionary = new PdfDictionary();
+            fontDictionary[PdfName.Get("Helv")] =
+                Document.AddObject(StandardFonts.CreateFontDictionary(StandardFont.Helvetica));
+
+            resources = new PdfDictionary();
+            resources[PdfName.Font] = fontDictionary;
+            Dictionary[PdfName.Get("DR")] = resources;
         }
 
-        var fontDictionary = new PdfDictionary();
-        fontDictionary[PdfName.Get("Helv")] =
-            Document.AddObject(StandardFonts.CreateFontDictionary(StandardFont.Helvetica));
+        // An embedded font is listed beside it, under the name the appearances select it by.
+        if (Font.Embedded is { } embedded &&
+            Document.Follow(resources[PdfName.Font]) is PdfDictionary listed)
+        {
+            listed[PdfName.Get(embedded.ResourceName)] = embedded.FontObject;
+        }
 
-        var resources = new PdfDictionary();
-        resources[PdfName.Font] = fontDictionary;
-
-        Dictionary[PdfName.Get("DR")] = resources;
         return resources;
     }
 

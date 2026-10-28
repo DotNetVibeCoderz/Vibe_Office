@@ -499,6 +499,12 @@ public sealed partial class PdfDocument : IPdfObjectResolver, IDisposable
     // ---- Embedded fonts ------------------------------------------------------------------------
 
     private readonly List<Fonts.EmbeddedFont> _embeddedFonts = [];
+
+    /// <summary>
+    /// The font form fields are drawn in. Kept on the document, not the form, because every
+    /// <c>AcroForm.Open</c> is a new handle and a value set through any of them must draw alike.
+    /// </summary>
+    internal Content.PdfFont? FormFont { get; set; }
     private readonly Dictionary<string, Fonts.EmbeddedFont> _embeddedByKey = new(StringComparer.Ordinal);
 
     /// <summary>The fonts embedded in this document.</summary>

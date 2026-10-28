@@ -142,13 +142,83 @@ public class PdfATests
 
         var bytes = pdf.ToArray();
 
-        // But a text field does draw with it, and says so.
+        // But a text field does draw with it, and says what to do instead.
         using var withText = Document(PdfConformance.PdfA2B);
         AcroForm.OpenOrCreate(withText).AddTextField(withText.Pages[0], "nama", new PdfRectangle(72, 500, 250, 520), "Fadhil");
         var error = Assert.Throws<OfficeNetException>(() => withText.ToArray());
-        Assert.Contains("text fields", error.Message, StringComparison.Ordinal);
+        Assert.Contains("AcroForm.Font", error.Message, StringComparison.Ordinal);
 
         Assert.NotEmpty(bytes);
+    }
+
+    [Fact]
+    public void FieldsDrawnInAnEmbeddedFontAreAllowedAndKeepTheirGlyphs()
+    {
+        using var pdf = Document(PdfConformance.PdfA2B);
+        var page = pdf.Pages[0];
+
+        // The font the page text is drawn in draws the fields too.
+        var form = AcroForm.OpenOrCreate(pdf);
+        form.Font = pdf.EmbeddedFonts[0];
+
+        form.AddTextField(page, "nama", new PdfRectangle(72, 500, 250, 520), "Fadhil");
+        form.AddTextField(page, "catatan", new PdfRectangle(72, 420, 250, 480), "Arsip\nini", multiline: true);
+        form.AddComboBox(page, "kota", new PdfRectangle(300, 500, 420, 520), ["Jakarta", "Bandung"], "Bandung");
+        form.AddListBox(page, "status", new PdfRectangle(300, 420, 420, 480), ["Tetap", "Arsip"], "Arsip");
+        form.AddPushButton(page, "kirim", new PdfRectangle(72, 380, 160, 400), "Kirim");
+
+        using var reopened = PdfDocument.Open(new MemoryStream(pdf.ToArray(), writable: false));
+        var fields = AcroForm.Open(reopened)!;
+
+        foreach (var field in fields.Fields)
+        {
+            var content = Normal(field).DecodedText;
+
+            // Selected by the embedded font's name and drawn as glyph ids, never with Helvetica.
+            Assert.DoesNotContain("/Helv", content, StringComparison.Ordinal);
+            Assert.Contains("/TT1 ", content, StringComparison.Ordinal);
+            Assert.Matches(@"<[0-9A-F]+> Tj", content);
+        }
+
+        Assert.StartsWith("/TT1 ", fields.Fields[0].Dictionary.GetText(PdfName.Get("DA")), StringComparison.Ordinal);
+
+        // The font object the appearances name is the embedded composite font.
+        var widget = Normal(fields.Fields[0]);
+        var resources = (PdfDictionary)reopened.Follow(widget[PdfName.Resources])!;
+        var tt1 = (PdfDictionary)reopened.Follow(((PdfDictionary)reopened.Follow(resources[PdfName.Font])!)[PdfName.Get("TT1")])!;
+        Assert.Equal("Type0", tt1.GetName(PdfName.Subtype));
+
+        // And the glyphs the fields draw went into its subset: F, d, h, l, B, K, ... are not on the page.
+        Assert.True(pdf.EmbeddedFonts[0].UsedGlyphCount > 12, $"{pdf.EmbeddedFonts[0].UsedGlyphCount} glyphs");
+
+        // A button's normal appearance is a dictionary of states even for a push button (ISO 19005-2,
+        // 6.3.3) — veraPDF refused the bare stream this once wrote.
+        var button = fields["kirim"]!.Dictionary;
+        Assert.IsType<PdfDictionary>(reopened.Follow(((PdfDictionary)reopened.Follow(button[PdfName.Get("AP")])!)[PdfName.Get("N")]));
+        Assert.Equal("On", button.GetName(PdfName.Get("AS")));
+
+        PdfStream Normal(PdfFormField field)
+        {
+            var normal = reopened.Follow(((PdfDictionary)reopened.Follow(field.Dictionary[PdfName.Get("AP")])!)[PdfName.Get("N")]);
+
+            return normal as PdfStream
+                   ?? (PdfStream)reopened.Follow(((PdfDictionary)normal!)[PdfName.Get(field.Dictionary.GetName(PdfName.Get("AS"))!)])!;
+        }
+    }
+
+    [Fact]
+    public void AFormFontFromAnotherDocumentIsRefused()
+    {
+        using var pdf = PdfDocument.Create();
+        using var other = PdfDocument.Create();
+
+        var form = AcroForm.OpenOrCreate(pdf);
+        Assert.Throws<ArgumentException>(() => form.Font = other.EmbedFont(SyntheticFont.Build()));
+
+        // Kept by the document: a second handle on the form draws with the same font.
+        var font = pdf.EmbedFont(SyntheticFont.Build());
+        form.Font = font;
+        Assert.Same(font, AcroForm.Open(pdf)!.Font.Embedded);
     }
 
     [Fact]
@@ -249,7 +319,16 @@ public class PdfATests
             page.AddTextNote(300, 700, "catatan");
             page.AddLink(new PdfRectangle(72, 690, 200, 720), "https://gravicode.com");
             page.AddHighlight([new PdfRectangle(72, 695, 180, 715)]);
-            AcroForm.OpenOrCreate(a2).AddCheckBox(page, "setuju", new PdfRectangle(72, 470, 86, 484), isChecked: true);
+            var form = AcroForm.OpenOrCreate(a2);
+            form.AddCheckBox(page, "setuju", new PdfRectangle(72, 470, 86, 484), isChecked: true);
+
+            // Text, choice and button fields, drawn in the embedded font.
+            form.Font = a2.EmbeddedFonts[0];
+            form.AddTextField(page, "nama", new PdfRectangle(72, 420, 250, 440), "Fadhil");
+            form.AddComboBox(page, "kota", new PdfRectangle(300, 420, 420, 440), ["Jakarta", "Bandung"], "Bandung");
+            form.AddListBox(page, "status", new PdfRectangle(300, 340, 420, 400), ["Tetap", "Arsip"], "Arsip");
+            form.AddPushButton(page, "kirim", new PdfRectangle(72, 380, 160, 400), "Kirim");
+
             page.AddWatermark("ARSIP", a2.EmbedFont(SyntheticFont.Build()));
             a2.Save(Path.Combine(folder.Path, "a2b.pdf"));
         }

@@ -411,6 +411,23 @@ missing any of the three is invisible, not a field, or absent from the printout.
 Rectangles are in points from the page's bottom-left. Names must be unique and contain no dot, which
 separates a group from a field.
 
+### The font fields are drawn in
+
+```csharp
+var form = AcroForm.OpenOrCreate(document);
+form.Font = document.EmbedFont("NotoSans-Regular.ttf");   // before adding or filling fields
+
+form.AddTextField(page, "nama", Box(110, 700, 250, 22), "Fadhil — Ελλάδα Київ");
+```
+
+Values and captions are drawn in Helvetica unless `Font` is set, and Helvetica covers Latin-1 only.
+An embedded font draws them as glyph ids (`Identity-H`), and the glyphs a field shows go into the
+font's subset like any other text — so a name in Greek, Cyrillic or Javanese shows, and a **PDF/A**
+document can have text, combo, list and button fields at all (veraPDF passes them). The choice is the
+document's: a form opened again later in the same session draws with it too. New fields name the
+font in `/DA`; a viewer that redraws a field while it is edited has only the glyphs already in the
+subset, as with any subset font.
+
 ## Annotations
 
 ```csharp
@@ -495,8 +512,8 @@ saying what to change:
 
 - **A font that is not embedded.** The 14 standard fonts never are — draw with `EmbedFont()`. What
   counts is what is drawn (`Tf` in a content stream), not what a resource dictionary lists, so a check
-  box — whose tick is a path — does not block. A form **text field** does: its appearance is drawn in
-  Helvetica, so a PDF/A document cannot have one yet.
+  box — whose tick is a path — does not block. A form **text field** does, unless `AcroForm.Font` is
+  an embedded font (see *The font fields are drawn in*).
 - **A character the font has no glyph for**, which would draw the empty `.notdef` glyph — named, with
   its code point.
 - **Encryption** — call `Decrypt()` first.

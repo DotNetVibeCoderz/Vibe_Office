@@ -420,6 +420,23 @@ kehilangan salah satunya tidak terlihat, bukan field, atau hilang dari hasil cet
 Persegi panjang dalam point dari kiri bawah halaman. Nama harus unik dan tanpa titik, yang memisahkan
 grup dari field.
 
+### Font untuk menggambar field
+
+```csharp
+var form = AcroForm.OpenOrCreate(document);
+form.Font = document.EmbedFont("NotoSans-Regular.ttf");   // sebelum field ditambah atau diisi
+
+form.AddTextField(page, "nama", Box(110, 700, 250, 22), "Fadhil — Ελλάδα Київ");
+```
+
+Nilai dan caption digambar dengan Helvetica kecuali `Font` diatur, dan Helvetica hanya mencakup
+Latin-1. Font tersemat menggambarnya sebagai glyph id (`Identity-H`), dan glyph yang ditampilkan field
+masuk ke subset font itu seperti teks lainnya — jadi nama dalam aksara Yunani, Kiril, atau Jawa tampil,
+dan dokumen **PDF/A** bisa punya field teks, combo, list, dan tombol sama sekali (lolos veraPDF).
+Pilihan ini milik dokumen: formulir yang dibuka lagi nanti di sesi yang sama ikut memakainya. Field baru
+menyebut font itu di `/DA`; penampil yang menggambar ulang field saat diedit hanya punya glyph yang sudah
+ada di subset, seperti font subset mana pun.
+
 ## Anotasi
 
 ```csharp
@@ -505,8 +522,8 @@ melempar exception**, dengan penjelasan apa yang harus diubah:
 
 - **Font yang tidak tersemat.** 14 font baku tidak pernah tersemat — gambar dengan `EmbedFont()`.
   Yang dihitung adalah yang digambar (`Tf` di content stream), bukan yang tercantum di resource, jadi
-  check box — yang centangnya berupa path — tidak menghalangi. **Text field** formulir menghalangi:
-  tampilannya digambar dengan Helvetica, jadi dokumen PDF/A belum bisa memilikinya.
+  check box — yang centangnya berupa path — tidak menghalangi. **Text field** formulir menghalangi,
+  kecuali `AcroForm.Font` berupa font tersemat (lihat *Font untuk menggambar field*).
 - **Karakter yang tidak ada glyph-nya di font**, yang akan menggambar glyph kosong `.notdef` —
   disebutkan beserta code point-nya.
 - **Enkripsi** — panggil `Decrypt()` dulu.

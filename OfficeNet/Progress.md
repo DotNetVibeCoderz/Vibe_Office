@@ -629,16 +629,17 @@ memeriksa bagaimana pustaka memperlakukan `w:ins` sebelum menulis fitur track ch
       diuji terhadap contoh resmi Microsoft; parser kini menerima argumen yang dikosongkan
 - [x] ExcelNet: XLSX ↔ HTML (`HtmlIo`), juga di tool MCP `convert`
 - [x] ExcelNet: round-trip XLSM terverifikasi (content type macro-enabled dan `vbaProject.bin` bertahan)
-- [ ] Core: chart kombinasi + sumbu sekunder
+- [x] Core: chart kombinasi + sumbu sekunder
 - [ ] Core: enkripsi Agile ECMA-376 (CFB minimal) untuk .docx/.xlsx/.pptx
-- [ ] PowerPointNet: garis, panah, konektor (`p:cxnSp`)
-- [ ] PowerPointNet: custom geometry (`a:custGeom`), ikut digambar di ekspor PDF
+- [x] PowerPointNet: garis, panah, konektor (`p:cxnSp`)
+- [x] PowerPointNet: custom geometry (`a:custGeom`), ikut digambar di ekspor PDF
 - [ ] PowerPointNet: objek OLE tersemat dengan pratinjau
 - [x] PdfNet: membuat field AcroForm (text, checkbox, radio, combo, list, button) — dirender MuPDF
 - [x] PdfNet: lampiran — ekstrak dan tambah (`/EmbeddedFiles`, `/AF` untuk PDF/A-3)
 - [x] PdfNet: metadata XMP, sepakat dengan `/Info` sampai detik
 - [x] PdfNet: PDF/A-2b dan PDF/A-3b, diverifikasi veraPDF; ekspor Word ke PDF/A dengan font tersemat
 - [x] PdfNet: timestamp RFC 3161 lewat delegasi pemanggil; verifikasi token yang ada
+- [x] PdfNet: field formulir dengan font tersemat (`AcroForm.Font`) — field teks di PDF/A, lolos veraPDF
 - [x] Rendering: keluaran TIFF multi-halaman
 
 Sudah ada dan **tidak** perlu dikerjakan, walaupun tercantum di `reference.md`: copy/move/hide

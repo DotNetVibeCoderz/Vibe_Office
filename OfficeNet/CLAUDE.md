@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 are both complete, and 1.3.0 is on NuGet**; v2.0 is in progress — the HTML engine now lives in
 `OfficeNet.Core.Html`, and `WordNet.Import.HtmlToWord` and `WordNet.Export.WordToHtml` exist. All six
 libraries build clean with zero warnings: `OfficeNet.Core`, `PdfNet`, `WordNet`, `ExcelNet`,
-`PowerPointNet`, `OfficeNet` (meta), `OfficeNet.Rendering`, and the MCP server `OfficeNet.Mcp`. **1747 tests** (four veraPDF checks skip unless `VERAPDF` is set) across eight
+`PowerPointNet`, `OfficeNet` (meta), `OfficeNet.Rendering`, and the MCP server `OfficeNet.Mcp`. **1750 tests** (four veraPDF checks skip unless `VERAPDF` is set) across eight
 test projects.
 
 Everything the plan listed through v1.1 exists: the libraries, tests with independent structural
@@ -156,6 +156,10 @@ Every item here cost real debugging time. None are hypothetical.
   draws a path; counting resource dictionaries would refuse it. `PdfA.cs` follows `Tf` and `Do`
   through the content streams. And a character a font lacks draws `.notdef`, which PDF/A forbids —
   `EmbeddedFont.MissingDrawnCharacters` records them so the save can refuse by name.
+- **A `Btn` widget's `/N` appearance is a dictionary of states under PDF/A, even for a push
+  button** (ISO 19005-2, 6.3.3). A bare stream is legal PDF and fails veraPDF. Form fields draw in
+  `AcroForm.Font` (kept on the document, since every `AcroForm.Open` is a new handle); Helvetica,
+  the default, cannot draw a field in a PDF/A file.
 - **Verify PDF/A with veraPDF, not by reading the spec.** Tests run it when `VERAPDF` names its
   launcher (`TestKit/VeraPdf.cs`) and skip saying so otherwise.
 - **A signature's `/Contents` padding is cut where the DER says the structure ends, never by

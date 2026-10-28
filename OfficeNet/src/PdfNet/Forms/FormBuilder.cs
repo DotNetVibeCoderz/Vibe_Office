@@ -162,18 +162,24 @@ public sealed partial class AcroForm
         field[PdfName.Get("MK")] = characteristics;
 
         var size = Math.Max(6, Math.Min(12, rect.Height * 0.55));
-        var width = StandardFonts.MeasurePoints(StandardFont.Helvetica, caption, size);
+        var width = Font.Measure(caption, size);
         var x = Math.Max(2, (rect.Width - width) / 2);
         var baseline = (rect.Height - size) / 2 + size * 0.22;
 
         var content = new StringBuilder();
         Box(content, rect, background: 0.85);
         content.Append(CultureInfo.InvariantCulture,
-            $"BT\n0 g\n/Helv {size:0.##} Tf\n1 0 0 1 {x:0.##} {baseline:0.##} Tm\n{EscapeText(caption)} Tj\nET\n");
+            $"BT\n0 g\n/{FontResource} {size:0.##} Tf\n1 0 0 1 {x:0.##} {baseline:0.##} Tm\n{ShowText(caption)} Tj\nET\n");
+
+        // A button's normal appearance is a dictionary of states, even with only one: PDF/A
+        // (ISO 19005-2, 6.3.3) refuses a bare stream on any Btn widget, and every viewer reads both.
+        var states = new PdfDictionary();
+        states[PdfName.Get("On")] = Document.AddObject(AppearanceStream(rect, content.ToString()));
 
         var appearances = new PdfDictionary();
-        appearances[PdfName.Get("N")] = Document.AddObject(AppearanceStream(rect, content.ToString()));
+        appearances[PdfName.Get("N")] = states;
         field[PdfName.Get("AP")] = appearances;
+        field[PdfName.Get("AS")] = PdfName.Get("On");
 
         if (url is not null)
         {
@@ -204,7 +210,7 @@ public sealed partial class AcroForm
         field[PdfName.Get("F")] = new PdfNumber(4);
         field[PdfName.Get("P")] = Document.ReferenceTo(page.Dictionary);
         field[PdfName.Get("MK")] = Characteristics();
-        field.Set(PdfName.Get("DA"), $"/Helv {fontSize.ToString("0.##", CultureInfo.InvariantCulture)} Tf 0 g");
+        field.Set(PdfName.Get("DA"), $"/{FontResource} {fontSize.ToString("0.##", CultureInfo.InvariantCulture)} Tf 0 g");
 
         if (flags != 0)
         {
@@ -347,23 +353,5 @@ public sealed partial class AcroForm
         stream[PdfName.Resources] = AppearanceResources();
         stream.SetText(content);
         return stream;
-    }
-
-    private static string EscapeText(string text)
-    {
-        var bytes = StandardFonts.EncodeWinAnsi(text);
-        var builder = new StringBuilder(bytes.Length + 2).Append('(');
-
-        foreach (var b in bytes)
-        {
-            if (b is (byte)'(' or (byte)')' or (byte)'\\')
-            {
-                builder.Append('\\');
-            }
-
-            builder.Append((char)b);
-        }
-
-        return builder.Append(')').ToString();
     }
 }

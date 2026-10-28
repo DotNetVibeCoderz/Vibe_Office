@@ -821,9 +821,12 @@ melengkapi.
   enkripsi, lampiran non-PDF di PDF/A-2. Diverifikasi veraPDF 1.30 (tes berjalan bila `VERAPDF`
   diatur). Ikut ditemukan dan diperbaiki: subset font tersemat dibangun saat canvas pertama ditutup,
   sehingga glyph yang digambar sesudahnya hilang; aksi tautan ditulis `/Subtype` alih-alih `/S`.
-- [ ] **Text field di PDF/A.** Appearance text field digambar dengan Helvetica, jadi dokumen PDF/A
-  belum bisa punya text field; butuh appearance dengan font tersemat (Identity-H) yang dibangun ulang
-  saat nilainya berubah.
+- [x] **Text field di PDF/A — selesai.** `AcroForm.Font` (sebuah `PdfFont`, Helvetica secara default):
+  dengan font tersemat, appearance field teks, combo, list, dan caption tombol digambar sebagai glyph
+  id `Identity-H`, glyph-nya masuk subset, dan `/DA` field baru menyebut font itu. Pilihannya disimpan
+  di dokumen, jadi handle `AcroForm` berikutnya ikut memakainya. veraPDF meloloskan formulir lengkap;
+  MuPDF menggambar nilai berhuruf Yunani dan Kiril. Ikut ditemukan oleh veraPDF: appearance `/N`
+  push button harus berupa kamus state (ISO 19005-2, 6.3.3), bukan stream.
 - [x] **PDF/A untuk ekspor Excel dan PowerPoint — selesai.** `ExcelPdfOptions`/`SlidePdfOptions` kini
   punya `Conformance` dan `FontResolver`. Pilihan font dipindah ke `PdfNet.Content.FontSet`, satu
   implementasi untuk ketiga eksportir (Word ikut memakainya). veraPDF: sheet dengan chart dan deck

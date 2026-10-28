@@ -1833,6 +1833,23 @@ public class DocSamples : IDisposable
     }
 
     [Fact]
+    public void PdfNet_FormFont()
+    {
+        using var document = PdfDocument.Create();
+        var page = document.Pages.Add();
+        PdfRectangle Box(double x, double y, double w, double h) => PdfRectangle.FromSize(x, y, w, h);
+
+        // The doc embeds NotoSans-Regular.ttf; here the font is built so the sample runs anywhere.
+        const string Name = "Fadhil — Ελλάδα Київ";
+        var form = AcroForm.OpenOrCreate(document);
+        form.Font = document.EmbedFont(OfficeNet.TestKit.SyntheticFont.Build(Name));
+
+        form.AddTextField(page, "nama", Box(110, 700, 250, 22), Name);
+
+        Assert.Empty(document.EmbeddedFonts[0].MissingDrawnCharacters);
+    }
+
+    [Fact]
     public void PdfNet_ExtractEncryptAndAnnotate()
     {
         var path = Path_("source.pdf");
