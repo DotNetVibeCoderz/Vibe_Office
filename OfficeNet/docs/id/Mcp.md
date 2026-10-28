@@ -85,7 +85,10 @@ ditegakkan di kode, bukan diserahkan pada pertimbangan model:
 
 - **Satu workspace.** Setiap path di-resolve terhadap `--root` dan ditolak bila keluar darinya —
   `..`, path absolut di tempat lain, folder saudara yang hanya berbagi awalan (`C:\work` tidak
-  pernah mengizinkan `C:\workshop`), atau symbolic link di dalam root yang menunjuk keluar.
+  pernah mengizinkan `C:\workshop`), atau symbolic link di dalam root yang menunjuk keluar. Hal yang
+  sama berlaku untuk gambar *yang disebut di dalam* dokumen: `img` HTML atau gambar Markdown juga
+  dibaca lewat workspace, jadi `../../rahasia.png` atau path absolut di tempat lain dilewati, tidak
+  disematkan.
 - **`--read-only`** menolak setiap tool yang akan membuat atau mengubah berkas; membaca,
   mengekstrak, dan meninjau tetap bisa. Pakai bila asisten hanya boleh *melihat* dokumen.
 - **Error dijelaskan, bukan dibuang mentah.** Kesalahan yang bisa diperbaiki model — jenis blok tak
@@ -105,7 +108,7 @@ direktori home.
 | Tool | Fungsinya |
 |---|---|
 | **Word** | |
-| `word_create` | `.docx` dari blok: `heading`, `paragraph`, `quote`, `bullets`, `numbered`, `table`, `image`, `pagebreak`, `toc`. Teks boleh memakai `**tebal**` dan `*miring*`. |
+| `word_create` | `.docx` dari blok: `heading`, `paragraph`, `quote`, `bullets`, `numbered`, `table`, `image`, `chart`, `markdown`, `pagebreak`, `toc`. Teks boleh memakai `**tebal**` dan `*miring*`; blok `markdown` menerima satu dokumen Markdown utuh (dialek GitHub: tabel, kode, kutipan, tautan, gambar lewat path workspace). |
 | `word_append` | Menambahkan blok ke dokumen yang sudah ada. |
 | `word_fill_template` | Mengisi `{{field}}`, `{{a.b}}`, `{{total:N0}}`, `{{#items}}…{{/items}}` berulang, dan `{{^x}}…{{/x}}` terbalik dari JSON, dalam culture pilihan. |
 | `word_replace_text` | Cari dan ganti, termasuk frasa yang dipecah Word lintas run. |
@@ -125,7 +128,7 @@ direktori home.
 | `pdf_merge` / `pdf_split` | Menggabungkan; memecah per N halaman. |
 | `pdf_protect` | Enkripsi AES-256 dengan password. |
 | **Semua format** | |
-| `convert` | `docx/xlsx/pptx → pdf`, `docx → html`, `html → docx/pptx`, `pdf → docx/xlsx`. |
+| `convert` | `docx/xlsx/pptx → pdf`, `docx → html/md`, `html → docx/pptx`, `md/txt → docx`, `pdf → docx/xlsx`. |
 | `extract_text` | Teks polos, maksimal 20 000 karakter. |
 | `document_info` | Format, metadata, dan struktur — heading, sheet, slide, halaman. |
 | `render_page` | Satu halaman sebagai **gambar PNG yang bisa dilihat model**, dan opsional disimpan. |

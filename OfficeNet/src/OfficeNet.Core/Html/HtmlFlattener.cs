@@ -23,6 +23,17 @@ public sealed class HtmlFlattenOptions
     /// quietly becoming an outbound HTTP call.
     /// </remarks>
     public Func<string, byte[]?>? ImageResolver { get; set; }
+
+    /// <summary>
+    /// Whether a local image path is read from disk. Off, only <c>data:</c> URIs and the
+    /// <see cref="ImageResolver"/> supply images.
+    /// </summary>
+    /// <remarks>
+    /// Turn it off when the HTML is not trusted — on a server, say. An <c>img</c> whose
+    /// <c>src</c> is an absolute path or climbs out with <c>../</c> would otherwise copy any file
+    /// the process can read into the document it hands back.
+    /// </remarks>
+    public bool AllowFileAccess { get; set; } = true;
 }
 
 /// <summary>What kind of content a parsed block holds.</summary>
@@ -87,6 +98,32 @@ public sealed class HtmlBlock
 
     public string PlainText => string.Concat(Spans.Select(s => s.Text));
 
+    /// <summary>
+    /// Whether the block is quoted — inside a <c>blockquote</c>, a Word paragraph in the Quote
+    /// style, or after <c>&gt;</c> in Markdown.
+    /// </summary>
+    public bool Quote { get; init; }
+
+    internal HtmlBlock AsQuote() => Quote ? this : Copy(quote: true, ListNumber);
+
+    internal HtmlBlock WithListNumber(int number) => Copy(Quote, number);
+
+    private HtmlBlock Copy(bool quote, int listNumber) => new()
+    {
+        Kind = Kind,
+        HeadingLevel = HeadingLevel,
+        ListLevel = ListLevel,
+        Numbered = Numbered,
+        ListId = ListId,
+        ListNumber = listNumber,
+        Spans = Spans,
+        TableRows = TableRows,
+        TableHasHeader = TableHasHeader,
+        Image = Image,
+        AltText = AltText,
+        Style = Style,
+        Quote = quote,
+    };
 }
 
 
@@ -105,7 +142,7 @@ public sealed class HtmlBlock
 /// level means. One reader that every converter shares is the point.
 /// </para>
 /// </remarks>
-public static class HtmlFlattener
+public static partial class HtmlFlattener
 {
     /// <summary>Parses and flattens an HTML fragment.</summary>
     public static List<HtmlBlock> Flatten(string html, HtmlFlattenOptions? options = null)
@@ -146,6 +183,11 @@ public static class HtmlFlattener
     private static readonly HashSet<string> Skipped = new(StringComparer.Ordinal)
     {
         "script", "style", "head", "meta", "link", "noscript", "template", "svg", "iframe",
+    };
+
+    private static readonly HashSet<string> QuoteContent = new(StringComparer.Ordinal)
+    {
+        "p", "div", "ul", "ol", "pre", "table", "blockquote", "hr", "h1", "h2", "h3", "h4", "h5", "h6",
     };
 
     /// <summary>Hands out list ids across the whole walk, which recursion alone cannot do.</summary>
@@ -197,16 +239,65 @@ public static class HtmlFlattener
                     });
                     break;
 
-                case "p" or "blockquote" or "figcaption" or "dd" or "dt":
-                    AddParagraph(child, style, blocks);
+                case "p" or "figcaption" or "dd" or "dt":
+                    AddParagraph(child, style, blocks, options);
                     break;
 
+                case "blockquote":
+                {
+                    // A quotation holding paragraphs, lists or code keeps them apart; one holding
+                    // only text is one paragraph. Either way every block in it is marked quoted.
+                    // How a quotation looks is the writer's business — Word has a Quote style for
+                    // it — so only what the author wrote on the element is inherited, not the
+                    // italics the tag implies.
+                    style = inherited.Merge(CssStyle.OfAttributes(child));
+                    var first = blocks.Count;
+
+                    if (child.Elements().Any(e => QuoteContent.Contains(e.Name)))
+                    {
+                        Walk(child, style, listLevel, numbered, blocks, options, listId, counter);
+                    }
+                    else
+                    {
+                        AddParagraph(child, style, blocks, options);
+                    }
+
+                    for (var i = first; i < blocks.Count; i++)
+                    {
+                        blocks[i] = blocks[i].AsQuote();
+                    }
+
+                    break;
+                }
+
                 case "ul" or "ol":
+                {
                     // Only an outermost list starts a new id. One reached through a container at
                     // list depth — a div inside an li — is still part of the list around it.
+                    var first = blocks.Count;
+
                     Walk(child, style, listLevel + 1, child.Name == "ol", blocks, options,
                         listLevel == 0 ? ++counter.Last : listId, counter);
+
+                    // <ol start="3"> numbers its own items from 3; nested lists count for themselves.
+                    if (child.Name == "ol" && int.TryParse(child.Attribute("start"),
+                            System.Globalization.NumberStyles.Integer,
+                            System.Globalization.CultureInfo.InvariantCulture, out var start))
+                    {
+                        var level = Math.Max(0, Math.Min(listLevel, 8));
+                        var number = start;
+
+                        for (var i = first; i < blocks.Count; i++)
+                        {
+                            if (blocks[i].Kind == HtmlBlockKind.ListItem && blocks[i].ListLevel == level)
+                            {
+                                blocks[i] = blocks[i].WithListNumber(number++);
+                            }
+                        }
+                    }
+
                     break;
+                }
 
                 case "li":
                     blocks.Add(new HtmlBlock
@@ -272,21 +363,41 @@ public static class HtmlFlattener
         }
     }
 
-    private static void AddParagraph(HtmlNode node, CssStyle style, List<HtmlBlock> blocks)
+    private static void AddParagraph(HtmlNode node, CssStyle style, List<HtmlBlock> blocks,
+        HtmlFlattenOptions options)
     {
         var spans = ReadSpans(node, style, null);
 
-        if (spans.Count == 0 || spans.All(s => s.Text.Trim().Length == 0))
+        if (spans.Count > 0 && spans.Any(s => s.Text.Trim().Length > 0))
+        {
+            blocks.Add(new HtmlBlock
+            {
+                Kind = HtmlBlockKind.Paragraph,
+                Spans = spans,
+                Style = style,
+            });
+        }
+
+        // A picture inside a paragraph — which is where Markdown always puts one — follows the
+        // paragraph's text, as the Word exporter writes it the other way.
+        if (!options.IncludeImages)
         {
             return;
         }
 
-        blocks.Add(new HtmlBlock
+        foreach (var image in node.Descendants("img"))
         {
-            Kind = HtmlBlockKind.Paragraph,
-            Spans = spans,
-            Style = style,
-        });
+            if (ResolveImage(image, options) is { } bytes)
+            {
+                blocks.Add(new HtmlBlock
+                {
+                    Kind = HtmlBlockKind.Image,
+                    Image = bytes,
+                    AltText = image.Attribute("alt"),
+                    Style = style,
+                });
+            }
+        }
     }
 
     /// <summary>
@@ -370,8 +481,30 @@ public static class HtmlFlattener
             result[^1] = result[^1] with { Text = result[^1].Text.TrimEnd() };
         }
 
+        // So is whitespace either side of a <br>: "a<br>\n b" is two lines, "a" and "b", not "a"
+        // and " b". The source's own line ending after the tag collapses to a space otherwise.
+        for (var i = 0; i < result.Count; i++)
+        {
+            var text = SpaceAroundBreak().Replace(result[i].Text, "\n");
+
+            if (i > 0 && result[i - 1].Text.EndsWith('\n'))
+            {
+                text = text.TrimStart(' ');
+            }
+
+            if (i + 1 < result.Count && result[i + 1].Text.StartsWith('\n'))
+            {
+                text = text.TrimEnd(' ');
+            }
+
+            result[i] = result[i] with { Text = text };
+        }
+
         return [.. result.Where(s => s.Text.Length > 0)];
     }
+
+    [System.Text.RegularExpressions.GeneratedRegex(@" *\n *")]
+    private static partial System.Text.RegularExpressions.Regex SpaceAroundBreak();
 
     /// <summary>
     /// Collapses runs of whitespace the way HTML rendering does.
@@ -506,6 +639,11 @@ public static class HtmlFlattener
         if (source.StartsWith("http:", StringComparison.OrdinalIgnoreCase) ||
             source.StartsWith("https:", StringComparison.OrdinalIgnoreCase) ||
             source.StartsWith("//", StringComparison.Ordinal))
+        {
+            return options.ImageResolver?.Invoke(source);
+        }
+
+        if (!options.AllowFileAccess)
         {
             return options.ImageResolver?.Invoke(source);
         }

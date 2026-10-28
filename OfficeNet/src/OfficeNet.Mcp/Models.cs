@@ -11,10 +11,12 @@ namespace OfficeNet.Mcp;
 /// <summary>One block of a Word document.</summary>
 public sealed record DocBlock
 {
-    [Description("heading | paragraph | bullets | numbered | table | image | chart | pagebreak | toc | quote")]
+    [Description("heading | paragraph | bullets | numbered | table | image | chart | pagebreak | toc | quote | markdown")]
     public string Type { get; init; } = "paragraph";
 
-    [Description("The text of a heading, paragraph or quote. **bold** and *italic* are honoured.")]
+    [Description("The text of a heading, paragraph or quote (**bold** and *italic* are honoured), or for a " +
+                 "markdown block a whole Markdown document: headings, lists, tables, quotes, code, links, " +
+                 "and images by workspace path.")]
     public string? Text { get; init; }
 
     [Description("Heading level, 0 (title) to 9. Defaults to 1.")]

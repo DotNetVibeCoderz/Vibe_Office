@@ -141,6 +141,33 @@ PNG, JPEG, GIF, BMP and TIFF are recognised, with pixel dimensions and DPI where
 them. DPI is what turns pixels into a physical size, so an image inserted "at natural size" lands
 correctly instead of at an arbitrary 96 DPI guess.
 
+## Markdown
+
+```csharp
+using OfficeNet.Core.Markdown;
+
+var html = MarkdownToHtml.Convert("# Judul\n\nTeks **tebal** dan ~~coret~~.");
+var strict = MarkdownToHtml.Convert(markdown, new MarkdownOptions
+{
+    Tables = false, Strikethrough = false, Autolinks = false,   // CommonMark only
+    AllowHtml = false,                                          // raw HTML shown as text
+});
+
+var back = MarkdownWriter.Write(blocks);    // HtmlBlock list → GitHub-flavoured Markdown
+```
+
+A CommonMark reader written here rather than taken as a dependency, because the core packages have
+none. It ports the reference implementation's algorithm — the container/leaf block phase, then the
+delimiter stack for emphasis and links — rather than approximating the syntax, and the CommonMark
+specification's 652 examples are its test suite: all pass but one, which needs HTML5 entity names
+like `&HilbertSpace;` that the runtime's decoder does not know. GitHub's tables, strikethrough and
+bare URLs are on by default.
+
+`MarkdownWriter` is the other direction, writing the same `HtmlBlock`s that `HtmlWriter` writes. It
+escapes text that would read as syntax and checks itself against the reader: whatever it writes reads
+back as what it was given. [Word → Markdown](WordNet.md#word--markdown) and
+[Markdown → Word](WordNet.md#markdown--word) are built on the two.
+
 ## Two models, on purpose
 
 WordNet and ExcelNet are built differently, and the difference is deliberate:

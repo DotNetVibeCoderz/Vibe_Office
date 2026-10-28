@@ -24,8 +24,8 @@ public sealed class DocumentTools(Workspace workspace)
     [McpServerTool(Name = "convert", Title = "Convert a document", Destructive = true)]
     [Description(
         "Converts between formats, chosen by the two extensions: .docx/.xlsx/.pptx → .pdf, " +
-        ".docx → .html, .html → .docx or .pptx, .pdf → .docx (paragraphs, headings, tables " +
-        "reconstructed) or .xlsx (tables).")]
+        ".docx → .html or .md, .html → .docx or .pptx, .md → .docx, .txt → .docx (a paragraph per " +
+        "line), .pdf → .docx (paragraphs, headings, tables reconstructed) or .xlsx (tables).")]
     public string Convert(
         [Description("Workspace path of the source.")] string input,
         [Description("Workspace path of the result.")] string output) =>
@@ -46,8 +46,28 @@ public sealed class DocumentTools(Workspace workspace)
                     WordToHtml.Convert(source, target);
                     break;
 
+                case (".docx", ".md" or ".markdown"):
+                    WordToMarkdown.Convert(source, target);
+                    break;
+
                 case (".html" or ".htm", ".docx"):
-                    using (var document = HtmlToWord.CreateDocumentFromFile(source))
+                    using (var document = HtmlToWord.CreateDocumentFromFile(source, WordImages(source)))
+                    {
+                        document.Save(target);
+                    }
+
+                    break;
+
+                case (".md" or ".markdown", ".docx"):
+                    using (var document = MarkdownToWord.CreateDocumentFromFile(source, options: WordImages(source)))
+                    {
+                        document.Save(target);
+                    }
+
+                    break;
+
+                case (".txt", ".docx"):
+                    using (var document = TextToWord.CreateDocumentFromFile(source))
                     {
                         document.Save(target);
                     }
@@ -55,7 +75,12 @@ public sealed class DocumentTools(Workspace workspace)
                     break;
 
                 case (".html" or ".htm", ".pptx"):
-                    using (var deck = PowerPointNet.Html.HtmlToSlides.CreatePresentationFromFile(source))
+                    using (var deck = PowerPointNet.Html.HtmlToSlides.CreatePresentationFromFile(source,
+                               new PowerPointNet.Html.HtmlSlideOptions
+                               {
+                                   AllowFileAccess = false,
+                                   ImageResolver = workspace.ImageReader(Path.GetDirectoryName(source)!),
+                               }))
                     {
                         deck.Save(target);
                     }
@@ -73,11 +98,21 @@ public sealed class DocumentTools(Workspace workspace)
                 default:
                     throw new ArgumentException(
                         $"Converting {from} to {to} is not supported. Supported: docx/xlsx/pptx → pdf, " +
-                        "docx → html, html → docx/pptx, pdf → docx/xlsx.");
+                        "docx → html/md, html → docx/pptx, md/txt → docx, pdf → docx/xlsx.");
             }
 
             return $"Converted {workspace.Relative(source)} to {workspace.Relative(target)}.";
         });
+
+    /// <summary>
+    /// Pictures in an HTML or Markdown source come from beside it, inside the workspace, and the
+    /// converter is not allowed to open files on its own — see <see cref="Workspace.ImageReader"/>.
+    /// </summary>
+    private HtmlWordOptions WordImages(string source) => new()
+    {
+        AllowFileAccess = false,
+        ImageResolver = workspace.ImageReader(Path.GetDirectoryName(source)!),
+    };
 
     [McpServerTool(Name = "extract_text", Title = "Read a document's text", ReadOnly = true)]
     [Description("Returns the plain text of a .docx, .xlsx, .pptx or .pdf.")]

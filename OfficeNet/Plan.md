@@ -654,10 +654,16 @@ melengkapi.
   `ChartRenderer`, yang sudah dipindah ke PdfNet saat membuat server MCP. Ikut terbawa saat
   `AppendDocument`. Tool MCP `word_create` kini menerima blok `chart`. MuPDF me-render chart di
   PDF hasil ekspor dengan label, sumbu, dan legenda; python-docx mengenali part-nya.
-- [ ] **Markdown → DOCX dan DOCX → Markdown.** Lewat model blok yang sama dengan HTML
-  (`HtmlFlattener` masuk, penulis baru keluar), sehingga Markdown dan HTML sepakat tentang isinya.
-  Parser CommonMark ditulis sendiri atau Markdown dirender ke HTML dulu — keputusan yang harus
-  diambil dengan alasan dependensi, bukan selera. TXT → DOCX ikut sebagai kasus paling sederhana.
+- [x] **Markdown → DOCX dan DOCX → Markdown — selesai.** Keputusannya: parser CommonMark ditulis
+  sendiri di `OfficeNet.Core.Markdown` (paket inti tanpa dependensi), port algoritma implementasi
+  rujukan, lalu Markdown → HTML → `HtmlToWord`; keluar lewat `WordToHtml.ToBlocks` → `MarkdownWriter`.
+  Dialek GFM (tabel, coret, URL telanjang) bisa dimatikan. Rangkaian uji = 652 contoh spesifikasi
+  CommonMark 0.31.2: 651 lulus, satu (entitas khusus HTML5) dicatat. Round trip MD → DOCX → MD
+  menjadi titik tetap setelah satu putaran; markdown-it-py membaca hasilnya dengan struktur yang
+  sama. `TextToWord` untuk TXT. Ikut diperbaiki di jalur HTML: gambar di dalam `<p>` dulu hilang,
+  `<ol start>` diabaikan, spasi setelah `<br>` terbawa, `blockquote` berparagraf banyak tergabung
+  jadi satu — kini `HtmlBlock.Quote` dan gaya `Quote` Word, dua arah. `AllowFileAccess` baru untuk
+  HTML/Markdown yang tidak tepercaya.
 - [ ] **Ekspor PDF/A** (lihat PdfNet) sebagai opsi `PdfExportOptions.Conformance`.
 
 ### ExcelNet
@@ -877,8 +883,10 @@ Berikutnya, bila ada permintaan:
   proses milik pengguna sendiri.
 - [ ] **Resources dan prompts MCP** — dokumen di workspace sebagai resource yang bisa dibaca klien,
   dan prompt siap pakai ("buat laporan kuartal dari spreadsheet ini").
-- [ ] **Markdown sebagai input `word_create`** begitu Markdown → DOCX (v2.1) selesai: model menulis
-  Markdown dengan sangat fasih, dan blok terstruktur hanyalah jembatan sampai saat itu.
+- [x] **Markdown sebagai input `word_create` — selesai.** Blok `markdown` (juga di `word_append`),
+  bisa dicampur dengan blok lain; `convert` kini md/txt → docx dan docx → md. Gambar hanya lewat
+  `Workspace.ImageReader` dengan `AllowFileAccess = false` — sekaligus menutup celah lama di
+  `convert` html → docx/pptx, yang dulu membaca `img src` absolut atau `../` di luar workspace.
 
 ---
 

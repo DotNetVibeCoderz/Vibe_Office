@@ -340,6 +340,64 @@ public class EndToEndTests(ServerFixture server) : IClassFixture<ServerFixture>
     }
 
     [Fact]
+    public async Task MarkdownAndTextBecomeWordDocumentsAndWordBecomesMarkdown()
+    {
+        Directory.CreateDirectory(Full("md"));
+        File.WriteAllBytes(Full("md/titik.png"), TestImages.SolidPng(4, 4, 200, 30, 30));
+
+        // A picture outside the workspace, named three ways. None of them may end up in a document.
+        using var outside = new TempDirectory();
+        var secret = Path.Combine(outside.Path, "rahasia.png");
+        File.WriteAllBytes(secret, TestImages.SolidPng(4, 4, 0, 0, 0));
+        var climb = Path.GetRelativePath(Full("md"), secret).Replace('\\', '/');
+
+        (await Call("word_create", new
+        {
+            path = "md/dari-blok.docx",
+            blocks = new object[]
+            {
+                new { type = "markdown", text = $"# Laporan\n\n- satu\n- dua\n\n![titik](md/titik.png)\n\n![rahasia]({secret.Replace('\\', '/')})\n" },
+                new { type = "paragraph", text = "Blok biasa sesudahnya." },
+            },
+        })).Ok();
+
+        File.WriteAllText(Full("md/catatan.md"),
+            $"## Catatan\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n\n![titik](titik.png) ![naik]({climb}) ![abs](file:///{secret.Replace('\\', '/')})\n");
+        File.WriteAllText(Full("md/halaman.html"), $"<p>Teks</p><img src=\"{secret}\"><img src=\"titik.png\">");
+        File.WriteAllText(Full("md/polos.txt"), "# bukan judul\nbaris dua\n");
+
+        (await Call("convert", new { input = "md/catatan.md", output = "md/dari-md.docx" })).Ok();
+        (await Call("convert", new { input = "md/halaman.html", output = "md/dari-html.docx" })).Ok();
+        (await Call("convert", new { input = "md/polos.txt", output = "md/dari-txt.docx" })).Ok();
+        (await Call("convert", new { input = "md/dari-md.docx", output = "md/kembali.md" })).Ok();
+
+        foreach (var name in new[] { "dari-blok", "dari-md", "dari-html" })
+        {
+            AssertValidPackage(Full($"md/{name}.docx"));
+
+            // Exactly the one picture from inside the workspace.
+            using var archive = System.IO.Compression.ZipFile.OpenRead(Full($"md/{name}.docx"));
+            Assert.Single(archive.Entries, e => e.FullName.StartsWith("word/media/", StringComparison.Ordinal));
+        }
+
+        using (var document = WordDocument.Open(Full("md/dari-blok.docx")))
+        {
+            Assert.Equal("Heading1", document.Paragraphs[0].StyleId);
+            Assert.Equal(2, document.Paragraphs.Count(p => p.ListLevel == 0));
+            Assert.Equal("Blok biasa sesudahnya.", document.Paragraphs[^1].Text);
+        }
+
+        using (var text = WordDocument.Open(Full("md/dari-txt.docx")))
+        {
+            Assert.Equal(["# bukan judul", "baris dua"], text.Paragraphs.Select(p => p.Text));
+        }
+
+        var markdown = File.ReadAllText(Full("md/kembali.md"));
+        Assert.StartsWith("## Catatan\n\n| A | B |\n| --- | --- |\n| 1 | 2 |", markdown, StringComparison.Ordinal);
+        Assert.Contains("![titik](data:image/png;base64,", markdown, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task PdfsAreMergedSplitAndEncrypted()
     {
         foreach (var name in (string[])["satu", "dua"])

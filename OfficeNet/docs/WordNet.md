@@ -624,10 +624,11 @@ What maps, and to what:
 | HTML | Word |
 |---|---|
 | `h1`–`h6` | `Heading1`–`Heading6` |
-| `p`, `blockquote`, loose text | paragraphs |
-| `ul`, `ol` | real Word lists, nesting kept; each list numbered from one |
+| `p`, loose text | paragraphs |
+| `blockquote` | paragraphs in Word's `Quote` style, one per paragraph inside it |
+| `ul`, `ol` | real Word lists, nesting kept; each list numbered from its `start`, or one |
 | `table` | a table, header row included |
-| `img` | a picture, scaled down to `MaxImageWidth` if it would overflow |
+| `img` | a picture, scaled down to `MaxImageWidth` if it would overflow; one inside a paragraph follows the paragraph's text |
 | `pre` | one monospace paragraph that keeps its line breaks |
 | `hr` | an empty paragraph with a bottom border, which is what Word itself writes for a rule |
 | `b`, `i`, `u`, `s`, `a`, colour, font, size | the same, run for run |
@@ -650,6 +651,19 @@ HtmlToWord.CreateDocument(html, new HtmlWordOptions
 directly; a remote URL is fetched only through `ImageResolver`, and without one the image is skipped.
 A document conversion quietly becoming an outbound HTTP call is not something a caller should find
 out about from a firewall log.
+
+**HTML you did not write should not open files either.** An `img` whose `src` is an absolute path, or
+climbs out with `../`, copies whatever the process can read into the document it hands back. Turn
+`AllowFileAccess` off and local paths go to `ImageResolver` instead, which decides what may be read —
+this is how the [MCP server](Mcp.md) keeps pictures inside its workspace:
+
+```csharp
+HtmlToWord.CreateDocument(untrustedHtml, new HtmlWordOptions
+{
+    AllowFileAccess = false,
+    ImageResolver = src => mySandbox.TryRead(src),   // null to leave the picture out
+});
+```
 
 ### Structure, not layout
 
@@ -681,7 +695,9 @@ var fragment = WordToHtml.Convert(document, new WordHtmlOptions
 });
 ```
 
-Headings become `h1`–`h6` from their styles (`Title` is `h1`; Word's levels 7–9 become `h6`). Lists
+Headings become `h1`–`h6` from their styles (`Title` is `h1`; Word's levels 7–9 become `h6`).
+Paragraphs in the `Quote` or `IntenseQuote` style become one `blockquote`, and a paragraph in a code
+style or set entirely in a monospaced font becomes `pre`. Lists
 become `ul` and `ol` from their numbering definitions, nested inside the item they hang from, and a
 numbered list interrupted by a paragraph resumes at the right number with `start` rather than
 restarting at one. Tables keep their header row. Pictures are embedded as `data:` URIs, so the page is
@@ -700,12 +716,92 @@ browser, and HTML written from a document may well be served. Anything other tha
 - **Structure inside table cells.** A cell is written as its text: formatting inside it, merged
   cells and nested tables are flattened.
 - **Where a picture sits within its paragraph.** It follows the paragraph's text.
-- **`pre` as `pre`.** HTML → Word writes a code block as a monospace paragraph with line breaks, and
-  that is what comes back out: the text and its breaks survive the round trip, the element does not.
 
 Both directions go through the same block model in `OfficeNet.Core.Html` — `HtmlFlattener` on the
 way in, `HtmlWriter` on the way out — so a page taken into Word and back out has passed through one
 description of what a heading, a list and a link are, not two that happen to agree.
+
+## Markdown → Word
+
+```csharp
+using WordNet.Import;
+
+using var document = MarkdownToWord.CreateDocument("""
+    # Laporan Kuartal III
+
+    Penjualan **naik 32%** — [rinciannya](https://example.com/rincian).
+
+    3. Jakarta
+    4. Bandung
+
+    | Wilayah | Q3 |
+    | --- | ---: |
+    | Jakarta | 1.480 |
+
+    > Angka bersifat ilustratif.
+    """);
+
+// From a file, resolving pictures beside it:
+using var fromFile = MarkdownToWord.CreateDocumentFromFile("laporan.md");
+
+// Strict CommonMark instead of GitHub's dialect, with raw HTML shown as text:
+var strict = new MarkdownOptions { Tables = false, Strikethrough = false, Autolinks = false, AllowHtml = false };
+MarkdownToWord.Convert(existing, markdown, strict);
+```
+
+Markdown is defined by the HTML it produces, so that is the route: `MarkdownToHtml` in
+[`OfficeNet.Core`](Core.md#markdown), then [HTML → Word](#html--word) above. A Markdown heading, list
+or table becomes exactly what the same thing written in HTML becomes. Headings take Word's heading
+styles, `>` quotations the `Quote` style, code blocks a monospaced paragraph that keeps its line
+breaks, an ordered list keeps its starting number, and pictures resolve as they do for HTML — and
+`HtmlWordOptions`, `AllowFileAccess` included, is the third argument.
+
+The dialect is GitHub's — tables, `~~strikethrough~~` and bare URLs on top of CommonMark — and the
+reader passes all but one of the CommonMark specification's 652 examples (the exception is a handful
+of HTML5-only entity names like `&HilbertSpace;`).
+
+## Word → Markdown
+
+```csharp
+using WordNet.Export;
+
+var markdown = WordToMarkdown.Convert(document);
+WordToMarkdown.Convert("laporan.docx", "laporan.md");
+
+// Pictures as files beside the Markdown rather than data: URIs:
+var n = 0;
+WordToMarkdown.Convert(document, new WordMarkdownOptions
+{
+    ImageUrl = (bytes, alt) =>
+    {
+        var name = $"gambar-{++n}.png";
+        File.WriteAllBytes(Path.Combine("out", name), bytes);
+        return name;
+    },
+});
+```
+
+It reads the document exactly as Word → HTML does and writes the same blocks as Markdown, so the two
+exports cannot disagree. Headings, lists (nested, numbered, resuming after an interruption),
+tables, links, pictures, bold, italic, strikethrough, inline code, quotations and code blocks come
+through; superscript and subscript are written as `<sup>`/`<sub>`, which Markdown allows. Text that
+would read as syntax — `*`, a `#` or `1.` at the start of a line — is escaped, and two lists in a row
+get different markers, because a blank line alone would merge them into one.
+
+Colour, fonts, sizes, alignment, underline and merged cells have no Markdown syntax and are dropped.
+A table always has a header row in Markdown, so one without uses its first row. Markdown taken into
+Word and back out loses only what Word cannot hold — a code block's language, a column's alignment —
+and after one round trip, nothing changes any more.
+
+## Plain text → Word
+
+```csharp
+using var document = TextToWord.CreateDocument(File.ReadAllText("catatan.txt"));
+using var fromFile = TextToWord.CreateDocumentFromFile("log.txt", fontName: "Consolas");
+```
+
+One paragraph per line, blank lines kept, tabs as Word tabs. Nothing is interpreted: a line starting
+with `#` stays a line starting with `#`.
 
 ## Reading a document
 

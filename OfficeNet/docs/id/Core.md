@@ -145,6 +145,34 @@ PNG, JPEG, GIF, BMP, dan TIFF dikenali, lengkap dengan dimensi piksel dan DPI bi
 mencatatnya. DPI itulah yang mengubah piksel menjadi ukuran fisik, sehingga gambar yang disisipkan
 "pada ukuran aslinya" mendarat dengan benar alih-alih pada tebakan 96 DPI yang sembarang.
 
+## Markdown
+
+```csharp
+using OfficeNet.Core.Markdown;
+
+var html = MarkdownToHtml.Convert("# Judul\n\nTeks **tebal** dan ~~coret~~.");
+var strict = MarkdownToHtml.Convert(markdown, new MarkdownOptions
+{
+    Tables = false, Strikethrough = false, Autolinks = false,   // CommonMark saja
+    AllowHtml = false,                                          // HTML mentah ditampilkan sebagai teks
+});
+
+var back = MarkdownWriter.Write(blocks);    // daftar HtmlBlock → Markdown dialek GitHub
+```
+
+Pembaca CommonMark yang ditulis sendiri alih-alih diambil sebagai dependensi, karena paket inti tidak
+punya dependensi. Ia mem-port algoritma implementasi rujukan — fase blok container/leaf, lalu stack
+delimiter untuk penekanan dan tautan — alih-alih mengira-ngira sintaksnya, dan 652 contoh di
+spesifikasi CommonMark adalah rangkaian ujinya: semuanya lulus kecuali satu, yang membutuhkan nama
+entitas HTML5 seperti `&HilbertSpace;` yang tidak dikenal dekoder runtime. Tabel, coret, dan URL
+telanjang ala GitHub aktif secara bawaan.
+
+`MarkdownWriter` adalah arah sebaliknya, menulis `HtmlBlock` yang sama dengan yang ditulis
+`HtmlWriter`. Ia meng-escape teks yang akan terbaca sebagai sintaks dan memeriksa dirinya terhadap
+pembacanya: apa pun yang ditulisnya terbaca kembali sebagai apa yang diberikan kepadanya.
+[Word → Markdown](WordNet.md#word--markdown) dan [Markdown → Word](WordNet.md#markdown--word) dibangun
+di atas keduanya.
+
 ## Dua model yang disengaja
 
 WordNet dan ExcelNet dibangun berbeda, dan perbedaannya disengaja:

@@ -9,6 +9,8 @@ using ExcelNet.Validation;
 using ExcelNet;
 using OfficeNet.Core.Charts;
 using OfficeNet.Core.Drawing;
+using OfficeNet.Core.Html;
+using OfficeNet.Core.Markdown;
 using OfficeNet.Core.Packaging;
 using OfficeNet.Core;
 using OfficeNet.Rendering;
@@ -216,6 +218,152 @@ public class DocSamples : IDisposable
         });
 
         Assert.Equal(2, configured.Paragraphs.Count);
+    }
+
+    [Fact]
+    public void WordNet_HtmlWithoutFileAccess()
+    {
+        var untrustedHtml = "<p>Teks</p><img src=\"C:/Windows/win.ini\">";
+        var asked = new List<string>();
+
+        using var document = HtmlToWord.CreateDocument(untrustedHtml, new HtmlWordOptions
+        {
+            AllowFileAccess = false,
+            ImageResolver = src =>
+            {
+                asked.Add(src);
+                return null;   // null to leave the picture out
+            },
+        });
+
+        Assert.Equal(["C:/Windows/win.ini"], asked);
+        Assert.Single(document.Paragraphs);
+    }
+
+    [Fact]
+    public void WordNet_MarkdownToWord()
+    {
+        using var document = MarkdownToWord.CreateDocument("""
+            # Laporan Kuartal III
+
+            Penjualan **naik 32%** — [rinciannya](https://example.com/rincian).
+
+            3. Jakarta
+            4. Bandung
+
+            | Wilayah | Q3 |
+            | --- | ---: |
+            | Jakarta | 1.480 |
+
+            > Angka bersifat ilustratif.
+            """);
+
+        Assert.Equal("Heading1", document.Paragraphs[0].StyleId);
+        Assert.Single(document.Tables);
+        Assert.Contains(document.Paragraphs, p => p.StyleId == "Quote");
+
+        var file = Path.Combine(Path.GetTempPath(), $"officenet-{Guid.NewGuid():N}.md");
+        File.WriteAllText(file, "## Dari berkas");
+
+        try
+        {
+            using var fromFile = MarkdownToWord.CreateDocumentFromFile(file);
+            Assert.Equal("Heading2", fromFile.Paragraphs[0].StyleId);
+        }
+        finally
+        {
+            File.Delete(file);
+        }
+
+        using var existing = WordDocument.Create();
+        var markdown = "<b>bukan tag</b> dan | bukan | tabel |\n| --- | --- |";
+        var strict = new MarkdownOptions { Tables = false, Strikethrough = false, Autolinks = false, AllowHtml = false };
+        MarkdownToWord.Convert(existing, markdown, strict);
+
+        Assert.Empty(existing.Tables);
+        Assert.Contains("<b>bukan tag</b>", existing.ExtractText(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void WordNet_WordToMarkdown()
+    {
+        using var document = WordDocument.Create();
+        document.AddHeading("Laporan", 1);
+        document.AddPicture(OfficeNet.TestKit.TestImages.SolidPng(2, 2, 200, 30, 30));
+
+        var markdown = WordNet.Export.WordToMarkdown.Convert(document);
+        Assert.StartsWith("# Laporan", markdown, StringComparison.Ordinal);
+
+        var docx = Path.Combine(Path.GetTempPath(), $"officenet-{Guid.NewGuid():N}.docx");
+        var md = Path.ChangeExtension(docx, ".md");
+        var folder = Directory.CreateTempSubdirectory("officenet-");
+
+        try
+        {
+            document.Save(docx);
+            WordNet.Export.WordToMarkdown.Convert(docx, md);
+            Assert.Contains("data:image/png;base64,", File.ReadAllText(md), StringComparison.Ordinal);
+
+            // Pictures as files beside the Markdown rather than data: URIs.
+            var n = 0;
+            var withFiles = WordNet.Export.WordToMarkdown.Convert(document, new WordNet.Export.WordMarkdownOptions
+            {
+                ImageUrl = (bytes, alt) =>
+                {
+                    var name = $"gambar-{++n}.png";
+                    File.WriteAllBytes(Path.Combine(folder.FullName, name), bytes);
+                    return name;
+                },
+            });
+
+            Assert.Contains("](gambar-1.png)", withFiles, StringComparison.Ordinal);
+            Assert.True(File.Exists(Path.Combine(folder.FullName, "gambar-1.png")));
+        }
+        finally
+        {
+            File.Delete(docx);
+            File.Delete(md);
+            folder.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public void WordNet_TextToWord()
+    {
+        var file = Path.Combine(Path.GetTempPath(), $"officenet-{Guid.NewGuid():N}.txt");
+        File.WriteAllText(file, "baris satu\n\tbaris dua");
+
+        try
+        {
+            using var document = TextToWord.CreateDocument(File.ReadAllText(file));
+            using var fromFile = TextToWord.CreateDocumentFromFile(file, fontName: "Consolas");
+
+            Assert.Equal(2, document.Paragraphs.Count);
+            Assert.Equal("Consolas", fromFile.Paragraphs[0].Runs[0].Format.FontName);
+        }
+        finally
+        {
+            File.Delete(file);
+        }
+    }
+
+    [Fact]
+    public void Core_Markdown()
+    {
+        var html = MarkdownToHtml.Convert("# Judul\n\nTeks **tebal** dan ~~coret~~.");
+        Assert.Equal("<h1>Judul</h1>\n<p>Teks <strong>tebal</strong> dan <del>coret</del>.</p>\n", html);
+
+        var markdown = "<i>x</i> ~~y~~";
+        var strict = MarkdownToHtml.Convert(markdown, new MarkdownOptions
+        {
+            Tables = false, Strikethrough = false, Autolinks = false,
+            AllowHtml = false,
+        });
+        Assert.Equal("<p>&lt;i&gt;x&lt;/i&gt; ~~y~~</p>\n", strict);
+
+        List<HtmlBlock> blocks = [new() { Kind = HtmlBlockKind.Heading, HeadingLevel = 2, Spans = [new HtmlSpan("Judul", default, null)] }];
+        var back = MarkdownWriter.Write(blocks);
+        Assert.Equal("## Judul\n", back);
     }
 
     [Fact]

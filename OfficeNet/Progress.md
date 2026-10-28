@@ -613,7 +613,7 @@ memeriksa bagaimana pustaka memperlakukan `w:ins` sebelum menulis fitur track ch
 - [x] WordNet: watermark sebagai shape di header, bukan hanya opsi ekspor PDF; ekspor PDF ikut menggambarnya
 - [x] WordNet: chart di dokumen (memakai `ChartData`/`ChartXml` dari Core), digambar ekspor PDF;
       blok `chart` di tool MCP `word_create`
-- [ ] WordNet: Markdown ↔ DOCX, TXT → DOCX
+- [x] WordNet: Markdown ↔ DOCX, TXT → DOCX (parser CommonMark sendiri, 651/652 contoh spesifikasi)
 - [x] ExcelNet: named range (`definedNames`), termasuk dipakai mesin formula; area cetak dan judul
       cetak; `localSheetId` dihitung saat menyimpan (aman terhadap `MoveSheet` dan chartsheet)
 - [x] ExcelNet: Excel Table (`ListObject`) dengan referensi terstruktur dasar. Sekaligus memperbaiki:
@@ -663,7 +663,8 @@ Alasan dan keputusannya di [Plan.md](Plan.md#v22--server-mcp-untuk-asisten-ai).
 - [x] `tools/ScreenshotGen` sebagai klien MCP — lima screenshot dan satu kolase dari panggilan tool
 - [x] `ChartRenderer` dipindah ke PdfNet; **chart workbook kini tergambar di ekspor PDF Excel**
       (sebelumnya hilang); tanggal ISO di data template diformat sebagai tanggal
-- [ ] Transport HTTP, resources dan prompts MCP, Markdown sebagai input — lihat Plan
+- [x] MCP: Markdown sebagai input (`markdown` block), konversi md/txt ↔ docx, gambar hanya dari workspace
+- [ ] Transport HTTP, resources dan prompts MCP — lihat Plan
 
 ## CI merah setelah merge MCP — dan sebabnya
 

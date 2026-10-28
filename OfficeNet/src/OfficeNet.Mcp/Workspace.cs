@@ -92,6 +92,38 @@ public sealed class Workspace
         return full;
     }
 
+    /// <summary>
+    /// Reads the pictures an HTML or Markdown document refers to, from inside the workspace only.
+    /// </summary>
+    /// <remarks>
+    /// The converters would otherwise open an <c>img</c>'s path themselves, and a <c>src</c> of
+    /// <c>../../secret.png</c> or an absolute path would copy a file from outside the workspace into
+    /// the document. They are run with file access off and this as their only way in: relative to
+    /// <paramref name="baseDirectory"/>, through <see cref="Existing"/>, and never over the network.
+    /// </remarks>
+    public Func<string, byte[]?> ImageReader(string baseDirectory) => source =>
+    {
+        var remote = source.StartsWith("//", StringComparison.Ordinal) ||
+                     (source.Contains("://", StringComparison.Ordinal) &&
+                      !source.StartsWith("file:", StringComparison.OrdinalIgnoreCase));
+
+        if (remote)
+        {
+            return null;
+        }
+
+        try
+        {
+            var path = source.StartsWith("file:", StringComparison.OrdinalIgnoreCase) ? new Uri(source).LocalPath : source;
+            return File.ReadAllBytes(Existing(Path.GetFullPath(Uri.UnescapeDataString(path), baseDirectory)));
+        }
+        catch (Exception ex) when (ex is McpException or IOException or UnauthorizedAccessException or
+                                       ArgumentException or NotSupportedException or UriFormatException)
+        {
+            return null;
+        }
+    };
+
     /// <summary>A path relative to the root, with forward slashes, for showing back to the client.</summary>
     public string Relative(string fullPath) =>
         Path.GetRelativePath(Root, fullPath).Replace('\\', '/');

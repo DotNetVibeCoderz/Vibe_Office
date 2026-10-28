@@ -26,6 +26,17 @@ public sealed class HtmlWordOptions
     /// </remarks>
     public Func<string, byte[]?>? ImageResolver { get; set; }
 
+    /// <summary>
+    /// Whether a local image path is read from disk. Off, only <c>data:</c> URIs and the
+    /// <see cref="ImageResolver"/> supply images.
+    /// </summary>
+    /// <remarks>
+    /// Turn it off when the HTML is not trusted — on a server, say. An <c>img</c> whose
+    /// <c>src</c> is an absolute path or climbs out with <c>../</c> would otherwise copy any file
+    /// the process can read into the document it hands back.
+    /// </remarks>
+    public bool AllowFileAccess { get; set; } = true;
+
     /// <summary>The width a picture is scaled to when it would otherwise overflow the page.</summary>
     public Length MaxImageWidth { get; set; } = Length.FromCentimeters(15);
 
@@ -40,6 +51,7 @@ public sealed class HtmlWordOptions
         IncludeImages = IncludeImages,
         BaseDirectory = BaseDirectory,
         ImageResolver = ImageResolver,
+        AllowFileAccess = AllowFileAccess,
     };
 }
 
@@ -166,7 +178,7 @@ public static class HtmlToWord
     private static Paragraph WriteParagraph(WordDocument document, HtmlBlock block,
         HtmlWordOptions options)
     {
-        var paragraph = document.AddParagraph();
+        var paragraph = document.AddParagraph(string.Empty, block.Quote ? "Quote" : null);
 
         WriteSpans(paragraph, block, options, applyStyleFont: true);
         ApplyAlignment(paragraph, block);
@@ -180,7 +192,7 @@ public static class HtmlToWord
         var paragraph = document.AddParagraph();
 
         WriteSpans(paragraph, block, options, applyStyleFont: true);
-        paragraph.SetListItem(lists.IdFor(block.Numbered), Math.Clamp(block.ListLevel, 0, 8));
+        paragraph.SetListItem(lists.IdFor(block), Math.Clamp(block.ListLevel, 0, 8));
         ApplyAlignment(paragraph, block);
 
         return paragraph;
@@ -420,11 +432,15 @@ public static class HtmlToWord
             _numbered = null;
         }
 
-        public int IdFor(bool numbered)
+        public int IdFor(HtmlBlock item)
         {
-            if (numbered)
+            if (item.Numbered)
             {
-                return _numbered ??= document.Numbering.AddNumberedList();
+                // A list that starts at 3 — <ol start="3">, or "3." in Markdown — starts there in
+                // Word too. Only the outermost level's start is carried; Word restarts nested
+                // levels at one under each parent, as HTML does.
+                return _numbered ??= document.Numbering.AddNumberedList(
+                    startAt: item.ListLevel == 0 && item.ListNumber > 1 ? item.ListNumber : 1);
             }
 
             return _bulleted ??= document.Numbering.AddBulletList();

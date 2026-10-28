@@ -69,9 +69,21 @@ public static class HtmlWriter
         var list = blocks as IReadOnlyList<HtmlBlock> ?? blocks.ToList();
         var body = new StringBuilder();
         var lists = new ListWriter(body);
+        var quoting = false;
 
         foreach (var block in list)
         {
+            // A run of quoted blocks shares one blockquote, as consecutive Quote paragraphs in Word
+            // are one quotation.
+            var quoted = block.Quote && block.Kind != HtmlBlockKind.ListItem;
+
+            if (quoted != quoting)
+            {
+                lists.CloseAll();
+                body.Append(quoted ? "<blockquote>\n" : "</blockquote>\n");
+                quoting = quoted;
+            }
+
             if (block.Kind == HtmlBlockKind.ListItem)
             {
                 lists.Item(block);
@@ -81,6 +93,11 @@ public static class HtmlWriter
 
             lists.CloseAll();
             WriteBlock(body, block, options);
+        }
+
+        if (quoting)
+        {
+            body.Append("</blockquote>\n");
         }
 
         lists.CloseAll();
@@ -216,7 +233,7 @@ public static class HtmlWriter
     }
 
     /// <summary>The MIME type a browser will display, or <c>null</c> for one it will not.</summary>
-    private static string? MimeType(ImageFormat format) => format switch
+    internal static string? MimeType(ImageFormat format) => format switch
     {
         ImageFormat.Png => "image/png",
         ImageFormat.Jpeg => "image/jpeg",

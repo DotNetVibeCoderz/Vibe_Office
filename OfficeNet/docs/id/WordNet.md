@@ -632,10 +632,11 @@ Apa dipetakan ke apa:
 | HTML | Word |
 |---|---|
 | `h1`–`h6` | `Heading1`–`Heading6` |
-| `p`, `blockquote`, teks lepas | paragraf |
-| `ul`, `ol` | daftar Word sungguhan, tingkat bersarangnya dipertahankan; setiap daftar mulai dari satu |
+| `p`, teks lepas | paragraf |
+| `blockquote` | paragraf bergaya `Quote` milik Word, satu untuk setiap paragraf di dalamnya |
+| `ul`, `ol` | daftar Word sungguhan, tingkat bersarangnya dipertahankan; setiap daftar mulai dari `start`-nya, atau satu |
 | `table` | tabel, termasuk baris header |
-| `img` | gambar, diperkecil ke `MaxImageWidth` bila akan melebihi halaman |
+| `img` | gambar, diperkecil ke `MaxImageWidth` bila akan melebihi halaman; gambar di dalam paragraf ditulis setelah teks paragrafnya |
 | `pre` | satu paragraf monospace yang mempertahankan pemisah barisnya |
 | `hr` | paragraf kosong dengan garis bawah, yang memang ditulis Word sendiri untuk sebuah garis |
 | `b`, `i`, `u`, `s`, `a`, warna, font, ukuran | sama, run demi run |
@@ -658,6 +659,20 @@ HtmlToWord.CreateDocument(html, new HtmlWordOptions
 langsung; URL jarak jauh hanya diambil lewat `ImageResolver`, dan tanpanya gambar itu dilewati.
 Konversi dokumen yang diam-diam berubah menjadi panggilan HTTP keluar bukan hal yang pantas diketahui
 pemanggilnya dari log firewall.
+
+**HTML yang bukan Anda tulis juga sebaiknya tidak membuka berkas.** `img` dengan `src` berupa path
+absolut, atau yang keluar lewat `../`, menyalin apa pun yang bisa dibaca proses ke dokumen yang
+dikembalikannya. Matikan `AllowFileAccess` dan path lokal diserahkan ke `ImageResolver`, yang
+memutuskan apa yang boleh dibaca — begitulah [server MCP](Mcp.md) menjaga gambar tetap di dalam
+workspace-nya:
+
+```csharp
+HtmlToWord.CreateDocument(untrustedHtml, new HtmlWordOptions
+{
+    AllowFileAccess = false,
+    ImageResolver = src => mySandbox.TryRead(src),   // null untuk melewatkan gambarnya
+});
+```
 
 ### Struktur, bukan tata letak
 
@@ -690,7 +705,9 @@ var fragment = WordToHtml.Convert(document, new WordHtmlOptions
 });
 ```
 
-Heading menjadi `h1`–`h6` dari gayanya (`Title` menjadi `h1`; level 7–9 Word menjadi `h6`). Daftar
+Heading menjadi `h1`–`h6` dari gayanya (`Title` menjadi `h1`; level 7–9 Word menjadi `h6`).
+Paragraf bergaya `Quote` atau `IntenseQuote` menjadi satu `blockquote`, dan paragraf bergaya kode atau
+yang seluruhnya memakai font monospace menjadi `pre`. Daftar
 menjadi `ul` dan `ol` dari definisi penomorannya, bersarang di dalam butir tempatnya bergantung, dan
 daftar bernomor yang disela sebuah paragraf melanjutkan nomornya dengan `start` alih-alih mulai lagi
 dari satu. Tabel mempertahankan baris header-nya. Gambar disematkan sebagai URI `data:`, jadi
@@ -710,13 +727,92 @@ kehilangan tautannya.
 - **Struktur di dalam sel tabel.** Sel ditulis sebagai teksnya: format di dalamnya, sel gabungan, dan
   tabel bersarang diratakan.
 - **Posisi gambar di dalam paragrafnya.** Gambar ditulis setelah teks paragrafnya.
-- **`pre` sebagai `pre`.** HTML → Word menulis blok kode sebagai paragraf monospace dengan pemisah
-  baris, dan itulah yang keluar lagi: teks dan pemisah barisnya bertahan dalam round trip, elemennya
-  tidak.
 
 Kedua arah melewati model blok yang sama di `OfficeNet.Core.Html` — `HtmlFlattener` saat masuk,
 `HtmlWriter` saat keluar — jadi halaman yang dibawa ke Word lalu dikeluarkan lagi melewati satu
 deskripsi tentang apa itu heading, daftar, dan tautan, bukan dua deskripsi yang kebetulan sepakat.
+
+## Markdown → Word
+
+```csharp
+using WordNet.Import;
+
+using var document = MarkdownToWord.CreateDocument("""
+    # Laporan Kuartal III
+
+    Penjualan **naik 32%** — [rinciannya](https://example.com/rincian).
+
+    3. Jakarta
+    4. Bandung
+
+    | Wilayah | Q3 |
+    | --- | ---: |
+    | Jakarta | 1.480 |
+
+    > Angka bersifat ilustratif.
+    """);
+
+// Dari berkas, dengan gambar diselesaikan dari folder berkasnya:
+using var fromFile = MarkdownToWord.CreateDocumentFromFile("laporan.md");
+
+// CommonMark ketat alih-alih dialek GitHub, dengan HTML mentah ditampilkan sebagai teks:
+var strict = new MarkdownOptions { Tables = false, Strikethrough = false, Autolinks = false, AllowHtml = false };
+MarkdownToWord.Convert(existing, markdown, strict);
+```
+
+Markdown didefinisikan oleh HTML yang dihasilkannya, jadi itulah jalurnya: `MarkdownToHtml` di
+[`OfficeNet.Core`](Core.md#markdown), lalu [HTML → Word](#html--word) di atas. Heading, daftar, atau
+tabel Markdown menjadi persis apa yang dihasilkan hal yang sama bila ditulis dalam HTML. Heading
+memakai gaya heading Word, kutipan `>` memakai gaya `Quote`, blok kode menjadi paragraf monospace yang
+mempertahankan pemisah barisnya, daftar bernomor mempertahankan nomor awalnya, dan gambar diselesaikan
+seperti pada HTML — `HtmlWordOptions`, termasuk `AllowFileAccess`, adalah argumen ketiganya.
+
+Dialeknya milik GitHub — tabel, `~~coret~~`, dan URL telanjang di atas CommonMark — dan pembacanya
+lulus semua kecuali satu dari 652 contoh di spesifikasi CommonMark (pengecualiannya segelintir nama
+entitas khusus HTML5 seperti `&HilbertSpace;`).
+
+## Word → Markdown
+
+```csharp
+using WordNet.Export;
+
+var markdown = WordToMarkdown.Convert(document);
+WordToMarkdown.Convert("laporan.docx", "laporan.md");
+
+// Gambar sebagai berkas di samping Markdown-nya, bukan URI data:
+var n = 0;
+WordToMarkdown.Convert(document, new WordMarkdownOptions
+{
+    ImageUrl = (bytes, alt) =>
+    {
+        var name = $"gambar-{++n}.png";
+        File.WriteAllBytes(Path.Combine("out", name), bytes);
+        return name;
+    },
+});
+```
+
+Dokumen dibaca persis seperti Word → HTML dan blok yang sama ditulis sebagai Markdown, jadi kedua
+ekspor itu tidak mungkin berbeda pendapat. Heading, daftar (bersarang, bernomor, melanjutkan nomor
+setelah disela), tabel, tautan, gambar, tebal, miring, coret, kode inline, kutipan, dan blok kode
+terbawa; superskrip dan subskrip ditulis sebagai `<sup>`/`<sub>`, yang diperbolehkan Markdown. Teks
+yang akan terbaca sebagai sintaks — `*`, `#` atau `1.` di awal baris — di-escape, dan dua daftar
+berurutan diberi penanda berbeda, karena baris kosong saja akan menggabungkan keduanya.
+
+Warna, font, ukuran, perataan, garis bawah, dan sel gabungan tidak punya sintaks Markdown dan
+dibuang. Tabel Markdown selalu punya baris header, jadi tabel tanpa header memakai baris pertamanya.
+Markdown yang dibawa ke Word lalu dikeluarkan lagi hanya kehilangan apa yang tidak bisa ditampung
+Word — bahasa blok kode, perataan kolom — dan setelah satu round trip, tidak ada lagi yang berubah.
+
+## Teks polos → Word
+
+```csharp
+using var document = TextToWord.CreateDocument(File.ReadAllText("catatan.txt"));
+using var fromFile = TextToWord.CreateDocumentFromFile("log.txt", fontName: "Consolas");
+```
+
+Satu paragraf per baris, baris kosong dipertahankan, tab menjadi tab Word. Tidak ada yang
+ditafsirkan: baris yang diawali `#` tetap baris yang diawali `#`.
 
 ## Membaca dokumen
 

@@ -130,8 +130,14 @@ public static class WordToHtml
         var style = new CssStyle { Alignment = AlignmentOf(paragraph) };
         var hasText = spans.Any(s => s.Text.Trim().Length > 0);
         var level = HeadingLevel(paragraph.StyleId);
+        var quote = paragraph.StyleId is "Quote" or "IntenseQuote";
 
-        if (level > 0 && hasText)
+        if (level == 0 && hasText && IsCode(paragraph, spans))
+        {
+            numbering.EndRun();
+            blocks.Add(new HtmlBlock { Kind = HtmlBlockKind.Code, Spans = spans, Style = style, Quote = quote });
+        }
+        else if (level > 0 && hasText)
         {
             numbering.EndRun();
 
@@ -161,7 +167,7 @@ public static class WordToHtml
         else if (hasText)
         {
             numbering.EndRun();
-            blocks.Add(new HtmlBlock { Kind = HtmlBlockKind.Paragraph, Spans = spans, Style = style });
+            blocks.Add(new HtmlBlock { Kind = HtmlBlockKind.Paragraph, Spans = spans, Style = style, Quote = quote });
         }
         else if (images.Count == 0 && IsRule(paragraph))
         {
@@ -298,6 +304,18 @@ public static class WordToHtml
             ? Math.Min(level, 6)
             : 0;
     }
+
+    /// <summary>
+    /// Whether a paragraph is a code listing: in a code style, or set entirely in a monospaced font.
+    /// </summary>
+    /// <remarks>
+    /// A document has no other way of saying "this is code". A list item in a monospaced font is
+    /// still a list item.
+    /// </remarks>
+    private static bool IsCode(Paragraph paragraph, List<HtmlSpan> spans) =>
+        ListOf(paragraph) is null &&
+        (paragraph.StyleId is "HTMLPreformatted" or "Code" or "SourceCode" ||
+         spans.Where(s => s.Text.Trim().Length > 0).All(s => CssStyle.IsMonospace(s.Style.FontFamily)));
 
     private static TextAlign? AlignmentOf(Paragraph paragraph) => paragraph.Alignment switch
     {

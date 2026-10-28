@@ -363,12 +363,37 @@ public readonly record struct CssStyle
         _ => default,
     };
 
+    /// <summary>
+    /// Whether a font family is monospaced — how code is recognised in a document, which has no
+    /// other way of saying so.
+    /// </summary>
+    public static bool IsMonospace(string? fontFamily) =>
+        fontFamily is not null && MonospaceFamilies.Contains(fontFamily.Split(',')[0].Trim().Trim('"', '\''));
+
+    private static readonly HashSet<string> MonospaceFamilies = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "monospace", "Consolas", "Courier New", "Courier", "Lucida Console", "Lucida Sans Typewriter",
+        "Menlo", "Monaco", "Cascadia Code", "Cascadia Mono", "Source Code Pro", "Fira Code", "Fira Mono",
+        "JetBrains Mono", "DejaVu Sans Mono", "Liberation Mono", "Roboto Mono", "SF Mono", "Ubuntu Mono",
+    };
+
     /// <summary>Reads a node's own style: its tag's implied formatting plus its inline attribute.</summary>
     public static CssStyle Of(HtmlNode node)
     {
         ArgumentNullException.ThrowIfNull(node);
 
-        var style = ForTag(node.Name);
+        return ForTag(node.Name).Merge(OfAttributes(node));
+    }
+
+    /// <summary>
+    /// A node's style from its attributes alone — what the author wrote on it, without what its tag
+    /// implies.
+    /// </summary>
+    public static CssStyle OfAttributes(HtmlNode node)
+    {
+        ArgumentNullException.ThrowIfNull(node);
+
+        CssStyle style = default;
 
         // The presentational attributes predate CSS and still appear in exported HTML and email.
         if (node.Attribute("color") is { } color && ParseColor(color) is { } parsed)

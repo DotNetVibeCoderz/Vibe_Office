@@ -55,6 +55,30 @@ public class WorkspaceTests
     }
 
     [Fact]
+    public void PicturesAreReadFromInsideTheWorkspaceOnly()
+    {
+        using var root = new TempDirectory();
+        using var outside = new TempDirectory();
+        var workspace = new Workspace(root.Path);
+
+        Directory.CreateDirectory(Path.Combine(root.Path, "img"));
+        File.WriteAllBytes(Path.Combine(root.Path, "img", "titik.png"), [1, 2, 3]);
+        var secret = Path.Combine(outside.Path, "rahasia.png");
+        File.WriteAllBytes(secret, [9, 9, 9]);
+
+        var read = workspace.ImageReader(Path.Combine(root.Path, "img"));
+
+        Assert.Equal([1, 2, 3], read("titik.png"));
+        Assert.Equal([1, 2, 3], read("../img/titik.png"));
+        Assert.Null(read(secret));
+        Assert.Null(read(new Uri(secret).AbsoluteUri));
+        Assert.Null(read(Path.GetRelativePath(Path.Combine(root.Path, "img"), secret)));
+        Assert.Null(read("https://example.org/titik.png"));
+        Assert.Null(read("//example.org/titik.png"));
+        Assert.Null(read("tidak-ada.png"));
+    }
+
+    [Fact]
     public void TheRootItselfIsADirectoryButNotAFile()
     {
         using var root = new TempDirectory();

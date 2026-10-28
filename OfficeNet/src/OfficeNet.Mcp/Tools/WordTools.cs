@@ -5,6 +5,7 @@ using System.Text.Json;
 using ModelContextProtocol.Server;
 using OfficeNet.Core;
 using WordNet;
+using WordNet.Import;
 using WordNet.Merging;
 using WordNet.Protection;
 
@@ -16,9 +17,9 @@ public sealed class WordTools(Workspace workspace)
 {
     [McpServerTool(Name = "word_create", Title = "Create a Word document", Destructive = true)]
     [Description(
-        "Creates a .docx from a list of blocks (headings, paragraphs, lists, tables, images, page " +
-        "breaks, a table of contents). Overwrites the file if it exists. Paragraph text may use " +
-        "**bold** and *italic*.")]
+        "Creates a .docx from a list of blocks (headings, paragraphs, lists, tables, images, charts, " +
+        "page breaks, a table of contents, or Markdown). Overwrites the file if it exists. Paragraph " +
+        "text may use **bold** and *italic*; a markdown block takes a whole Markdown document.")]
     public string Create(
         [Description("Workspace path of the .docx to write, e.g. reports/q3.docx.")] string path,
         [Description("The document's content, in order.")] DocBlock[] blocks,
@@ -328,6 +329,17 @@ public sealed class WordTools(Workspace workspace)
                         block.WidthCm is { } chartWidth ? Length.FromCentimeters(chartWidth) : null);
                     break;
 
+                case "markdown":
+                    // Pictures resolve from the workspace root, like an image block's path, and
+                    // only through the workspace: the converter does not open files itself.
+                    MarkdownToWord.Convert(document, block.Text ?? throw new ArgumentException("A markdown block needs text."),
+                        options: new HtmlWordOptions
+                        {
+                            AllowFileAccess = false,
+                            ImageResolver = workspace.ImageReader(workspace.Root),
+                        });
+                    break;
+
                 case "pagebreak":
                     document.AddPageBreak();
                     break;
@@ -339,7 +351,7 @@ public sealed class WordTools(Workspace workspace)
                 default:
                     throw new ArgumentException(
                         $"Unknown block type '{block.Type}'. Use heading, paragraph, quote, bullets, " +
-                        "numbered, table, image, chart, pagebreak or toc.");
+                        "numbered, table, image, chart, markdown, pagebreak or toc.");
             }
         }
     }

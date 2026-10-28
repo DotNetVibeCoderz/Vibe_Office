@@ -41,6 +41,17 @@ public sealed class HtmlSlideOptions
     /// </remarks>
     public Func<string, byte[]?>? ImageResolver { get; set; }
 
+    /// <summary>
+    /// Whether a local image path is read from disk. Off, only <c>data:</c> URIs and the
+    /// <see cref="ImageResolver"/> supply images.
+    /// </summary>
+    /// <remarks>
+    /// Turn it off when the HTML is not trusted — on a server, say. An <c>img</c> whose
+    /// <c>src</c> is an absolute path or climbs out with <c>../</c> would otherwise copy any file
+    /// the process can read into the document it hands back.
+    /// </remarks>
+    public bool AllowFileAccess { get; set; } = true;
+
     /// <summary>The directory relative image paths are resolved against.</summary>
     public string? BaseDirectory { get; set; }
 
@@ -68,6 +79,7 @@ public sealed class HtmlSlideOptions
         IncludeImages = IncludeImages,
         BaseDirectory = BaseDirectory,
         ImageResolver = ImageResolver,
+        AllowFileAccess = AllowFileAccess,
     };
 }
 
@@ -392,7 +404,10 @@ public static class HtmlToSlides
                 }
 
                 var run = paragraph.AddRun(pieces[i]);
-                ApplyStyle(run, span.Style, block, options);
+
+                // A slide has no Quote style, so a quotation is drawn the way a browser draws one.
+                ApplyStyle(run, block.Quote ? CssStyle.ForTag("blockquote").Merge(span.Style) : span.Style,
+                    block, options);
 
                 if (span.Hyperlink is { Length: > 0 } href && IsLinkable(href))
                 {

@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 are both complete, and 1.3.0 is on NuGet**; v2.0 is in progress — the HTML engine now lives in
 `OfficeNet.Core.Html`, and `WordNet.Import.HtmlToWord` and `WordNet.Export.WordToHtml` exist. All six
 libraries build clean with zero warnings: `OfficeNet.Core`, `PdfNet`, `WordNet`, `ExcelNet`,
-`PowerPointNet`, `OfficeNet` (meta), `OfficeNet.Rendering`, and the MCP server `OfficeNet.Mcp`. **958 tests pass** across eight
+`PowerPointNet`, `OfficeNet` (meta), `OfficeNet.Rendering`, and the MCP server `OfficeNet.Mcp`. **1655 tests pass** across eight
 test projects.
 
 Everything the plan listed through v1.1 exists: the libraries, tests with independent structural
@@ -232,6 +232,20 @@ Every item here cost real debugging time. None are hypothetical.
   (`Values.Cell`, `Values.TemplateData`), or `:dd MMMM yyyy` formats nothing.
 - **Test through the process, not the classes.** `ServerFixture` launches the built server and
   talks stdio. The C# sample in `docs/Mcp.md` is compiled in `OfficeNet.Mcp.Tests`, not DocSamples.
+
+### HTML and Markdown
+
+- **Markdown goes through HTML on purpose.** `MarkdownToHtml` (a port of the CommonMark reference
+  algorithm, tested against the spec's 652 examples in `OfficeNet.Core.Tests`) then `HtmlToWord`;
+  out through `WordToHtml.ToBlocks` then `MarkdownWriter`. Do not write a second Markdown → Word path
+  — the point is that HTML and Markdown cannot disagree.
+- **Markdown puts every picture inside a `<p>`.** The flattener used to read only a paragraph's text,
+  so pictures in paragraphs vanished — from HTML too, unnoticed until Markdown made it the only case.
+- **The HTML converters open `img src` paths themselves** — absolute, or climbing out with `../`.
+  Anything converting untrusted input sets `AllowFileAccess = false` and supplies `ImageResolver`;
+  in the MCP server that is always `Workspace.ImageReader`. `convert` html → docx shipped without it.
+- **`HtmlBlock.Quote`** carries quotations both ways (`blockquote`, Word's `Quote` style, `>`). The
+  flattener does not apply the blockquote tag's italics; each writer gives a quotation its own look.
 
 ### Charts across formats
 

@@ -85,7 +85,9 @@ not left to the model's judgement:
 
 - **One workspace.** Every path is resolved against `--root` and refused if it lands outside —
   `..`, an absolute path elsewhere, a sibling that merely shares the prefix (`C:\work` never admits
-  `C:\workshop`), or a symbolic link inside the root that points out of it.
+  `C:\workshop`), or a symbolic link inside the root that points out of it. The same holds for
+  pictures *named inside* a document: an HTML `img` or a Markdown image is read through the
+  workspace too, so `../../secret.png` or an absolute path elsewhere is left out, not embedded.
 - **`--read-only`** refuses every tool that would create or change a file; reading, extracting and
   previewing still work. Use it when the assistant should only *look* at documents.
 - **Errors are explained, not dumped.** A mistake the model can fix — an unknown block type, a sheet
@@ -103,7 +105,7 @@ made for the purpose rather than your home directory.
 | Tool | What it does |
 |---|---|
 | **Word** | |
-| `word_create` | A `.docx` from blocks: `heading`, `paragraph`, `quote`, `bullets`, `numbered`, `table`, `image`, `pagebreak`, `toc`. Text may use `**bold**` and `*italic*`. |
+| `word_create` | A `.docx` from blocks: `heading`, `paragraph`, `quote`, `bullets`, `numbered`, `table`, `image`, `chart`, `markdown`, `pagebreak`, `toc`. Text may use `**bold**` and `*italic*`; a `markdown` block takes a whole Markdown document (GitHub-flavoured: tables, code, quotes, links, images by workspace path). |
 | `word_append` | Appends blocks to an existing document. |
 | `word_fill_template` | Fills `{{field}}`, `{{a.b}}`, `{{total:N0}}`, repeating `{{#items}}…{{/items}}` and inverted `{{^x}}…{{/x}}` from JSON, in a chosen culture. |
 | `word_replace_text` | Find and replace, including phrases Word split across runs. |
@@ -123,7 +125,7 @@ made for the purpose rather than your home directory.
 | `pdf_merge` / `pdf_split` | Concatenate; split into parts of N pages. |
 | `pdf_protect` | AES-256 encryption with a password. |
 | **Any format** | |
-| `convert` | `docx/xlsx/pptx → pdf`, `docx → html`, `html → docx/pptx`, `pdf → docx/xlsx`. |
+| `convert` | `docx/xlsx/pptx → pdf`, `docx → html/md`, `html → docx/pptx`, `md/txt → docx`, `pdf → docx/xlsx`. |
 | `extract_text` | Plain text, capped at 20 000 characters. |
 | `document_info` | Format, metadata, and structure — headings, sheets, slides, pages. |
 | `render_page` | One page as a PNG **image the model can see**, and optionally saved. |
