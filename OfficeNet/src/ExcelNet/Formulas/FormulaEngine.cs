@@ -113,6 +113,59 @@ public sealed class FormulaEngine
 
     internal CellValue ValueOf(Worksheet sheet, CellReference reference) => Evaluate(sheet, reference);
 
+    // ---- Names ---------------------------------------------------------------------------------
+
+    private int _nameDepth;
+
+    /// <summary>
+    /// What a defined name stands for, seen from <paramref name="sheet"/>: a sheet and range, or
+    /// the value of a constant or formula. <c>null</c> when no such name exists.
+    /// </summary>
+    /// <remarks>
+    /// A name may refer to another name. A chain that loops back on itself is a circular reference
+    /// and ends in <c>#REF!</c>, as a looping cell does, rather than in a stack overflow.
+    /// </remarks>
+    internal (Worksheet Sheet, CellRangeReference Range)? ResolveNamedRange(Worksheet sheet, string name)
+    {
+        if (_workbook.Names.Find(name, sheet) is not { } defined ||
+            !defined.TryGetRange(out var sheetName, out var range))
+        {
+            return null;
+        }
+
+        return (ResolveSheet(defined.Scope ?? sheet, sheetName), range);
+    }
+
+    internal CellValue? EvaluateName(Worksheet sheet, string name)
+    {
+        if (_workbook.Names.Find(name, sheet) is not { } defined)
+        {
+            return null;
+        }
+
+        if (ResolveNamedRange(sheet, name) is { } target)
+        {
+            // In a scalar position a range gives its first cell, as everywhere else in this engine.
+            return Evaluate(target.Sheet, target.Range.Start);
+        }
+
+        if (_nameDepth > 32)
+        {
+            return CellValue.FromError("#REF!");
+        }
+
+        _nameDepth++;
+
+        try
+        {
+            return Evaluate(defined.Scope ?? sheet, defined.RefersTo);
+        }
+        finally
+        {
+            _nameDepth--;
+        }
+    }
+
     internal Worksheet ResolveSheet(Worksheet current, string? name)
     {
         if (name is null)
@@ -577,6 +630,9 @@ public sealed class FormulaEngine
             {
                 "TRUE" => CellValue.FromBoolean(true),
                 "FALSE" => CellValue.FromBoolean(false),
+                // A defined name: only an unqualified word can be one here.
+                _ when sheetName is null && engine.EvaluateName(sheet, word) is { } named =>
+                    named.ValueType == CellValueType.Error ? throw new FormulaException(named.AsText()) : named,
                 _ => throw new FormulaException("#NAME?"),
             };
         }
@@ -670,6 +726,13 @@ public sealed class FormulaEngine
 
             var save = _position;
 
+            // A name standing for a range passes the whole range, as SUM(Penjualan) needs.
+            if (TryReadNamedRange(out var namedSheet, out var namedRange))
+            {
+                return new RangeArgument(ReadRangeValues(namedSheet, namedRange),
+                    namedRange.RowCount, namedRange.ColumnCount);
+            }
+
             // A bare range argument is recognised by scanning ahead for "REF:REF" before falling
             // back to the general expression parser.
             if (TryReadRange(out var target, out var range))
@@ -741,6 +804,37 @@ public sealed class FormulaEngine
 
                 _position++;
             }
+        }
+
+        /// <summary>
+        /// Reads a bare word that is a defined name for a range, and that is the whole argument.
+        /// </summary>
+        private bool TryReadNamedRange(out Worksheet target, out CellRangeReference range)
+        {
+            target = sheet;
+            range = default;
+
+            var save = _position;
+
+            while (_position < text.Length &&
+                   (char.IsAsciiLetterOrDigit(text[_position]) || text[_position] is '_' or '.' or '\\'))
+            {
+                _position++;
+            }
+
+            var word = text[save.._position];
+            SkipWhitespace();
+
+            if (word.Length > 0 && !CellReference.TryParse(word, out _) &&
+                _position < text.Length && text[_position] is ',' or ')' &&
+                engine.ResolveNamedRange(sheet, word) is { } resolved)
+            {
+                (target, range) = resolved;
+                return true;
+            }
+
+            _position = save;
+            return false;
         }
 
         private bool TryReadRange(out Worksheet target, out CellRangeReference range)

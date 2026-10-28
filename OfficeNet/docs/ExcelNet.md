@@ -255,6 +255,29 @@ foreach (var cell in range)
 }
 ```
 
+## Named ranges and print settings
+
+```csharp
+workbook.Names.Add("Penjualan", sheet, "B2:B100");          // 'Data'!$B$2:$B$100
+workbook.Names.Add("PPN", "0.11", comment: "VAT rate");     // a constant
+workbook.Names.Add("Target", "500", scope: sheet);          // local to one sheet
+
+summary["B1"].SetFormula("SUM(Penjualan)*(1+PPN)");          // names work in formulas
+
+sheet.PrintArea = "A1:F40";        // _xlnm.Print_Area
+sheet.PrintTitleRows = "1:1";      // repeat the header row on every printed page
+```
+
+A name can stand for a range, a constant or a formula, and the formula engine resolves it — as a whole
+range in `SUM(Penjualan)`, as a value in `Penjualan*2`. A name local to a sheet hides a workbook name
+of the same spelling on that sheet. Names follow Excel's rules: no spaces, no leading digit, and
+nothing that reads as a cell (`A1`, `R1C1`).
+
+**A sheet-local name points at its sheet by position in the file** (`localSheetId`). Here the scope
+is the sheet itself and the position is worked out on save, so `MoveSheet` cannot hand a print area
+to the sheet that took its slot. Renaming a sheet rewrites the names that refer to it; copying one
+copies its local names; removing one removes them.
+
 ## Layout
 
 ```csharp

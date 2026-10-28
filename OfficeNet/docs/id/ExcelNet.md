@@ -263,6 +263,29 @@ foreach (var cell in range)
 }
 ```
 
+## Named range dan pengaturan cetak
+
+```csharp
+workbook.Names.Add("Penjualan", sheet, "B2:B100");          // 'Data'!$B$2:$B$100
+workbook.Names.Add("PPN", "0.11", comment: "Tarif PPN");    // konstanta
+workbook.Names.Add("Target", "500", scope: sheet);          // lokal untuk satu sheet
+
+summary["B1"].SetFormula("SUM(Penjualan)*(1+PPN)");          // nama dipakai di formula
+
+sheet.PrintArea = "A1:F40";        // _xlnm.Print_Area
+sheet.PrintTitleRows = "1:1";      // baris header diulang di setiap halaman cetak
+```
+
+Sebuah nama bisa mewakili range, konstanta, atau formula, dan mesin formula meresolusinya — sebagai
+range utuh di `SUM(Penjualan)`, sebagai nilai di `Penjualan*2`. Nama lokal sebuah sheet menutupi nama
+workbook dengan ejaan sama di sheet itu. Nama mengikuti aturan Excel: tanpa spasi, tidak diawali
+angka, dan tidak boleh terbaca sebagai sel (`A1`, `R1C1`).
+
+**Nama lokal menunjuk sheet-nya menurut posisi di berkas** (`localSheetId`). Di sini cakupannya
+adalah sheet itu sendiri dan posisinya dihitung saat menyimpan, sehingga `MoveSheet` tidak bisa
+menyerahkan area cetak ke sheet yang menempati posisinya. Mengganti nama sheet menulis ulang nama
+yang merujuknya; menyalin sheet ikut menyalin nama lokalnya; menghapus sheet menghapusnya.
+
 ## Tata letak
 
 ```csharp

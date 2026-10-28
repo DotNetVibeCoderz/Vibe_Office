@@ -613,7 +613,8 @@ memeriksa bagaimana pustaka memperlakukan `w:ins` sebelum menulis fitur track ch
 - [x] WordNet: watermark sebagai shape di header, bukan hanya opsi ekspor PDF; ekspor PDF ikut menggambarnya
 - [ ] WordNet: chart di dokumen (memakai `ChartData`/`ChartXml` dari Core)
 - [ ] WordNet: Markdown ↔ DOCX, TXT → DOCX
-- [ ] ExcelNet: named range (`definedNames`), termasuk dipakai mesin formula
+- [x] ExcelNet: named range (`definedNames`), termasuk dipakai mesin formula; area cetak dan judul
+      cetak; `localSheetId` dihitung saat menyimpan (aman terhadap `MoveSheet` dan chartsheet)
 - [ ] ExcelNet: Excel Table (`ListObject`)
 - [ ] ExcelNet: rich text di sel — saat ini format dalam sel hilang saat buka-lalu-simpan
 - [ ] ExcelNet: sort range dengan urutan tipe Excel

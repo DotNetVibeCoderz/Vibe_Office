@@ -660,9 +660,18 @@ melengkapi.
 
 ### ExcelNet
 
-- [ ] **Named range** (`definedNames`). Tulis, baca, dan pakai di mesin formula (`=SUM(Penjualan)`).
-  Termasuk nama bawaan `_xlnm.Print_Area` dan `_xlnm.Print_Titles`, yang sekaligus membuka pintu ke
-  pengaturan cetak.
+- [x] **Named range — selesai.** `Workbook.Names` (global dan lokal per sheet, konstanta dan formula,
+  komentar), dipakai mesin formula sebagai range utuh (`SUM(Penjualan)`) maupun nilai, dengan nama
+  lokal menutupi nama global; `Worksheet.PrintArea` dan `PrintTitleRows` lewat `_xlnm.*`.
+
+  **`localSheetId` adalah posisi, bukan nama** — dan posisi itu menghitung chartsheet juga. Cakupan
+  disimpan sebagai objek sheet dan indeksnya dihitung saat menyimpan, sehingga `MoveSheet` tidak
+  memindahkan area cetak ke sheet lain; saat membaca, indeks dipetakan lewat urutan `<sheet>` asli
+  termasuk chartsheet (diuji dengan berkas tulisan tangan yang menaruh chartsheet di tengah).
+  Ganti nama, salin, dan hapus sheet menjaga nama tetap konsisten. Rantai nama yang berputar berakhir
+  `#REF!`; tanpa penjaganya proses tes mati karena stack overflow — mutasi itu tertangkap justru
+  karena crash. Sembilan mutasi, semuanya tertangkap; openpyxl membaca nama global, area cetak
+  setelah `MoveSheet`, dan nilai cache formulanya.
 - [ ] **Excel Table** (`ListObject`, part `xl/tables/tableN.xml`). Range bernama dengan header,
   gaya tabel, baris total, autofilter-nya sendiri. Referensi terstruktur (`Tabel1[Kolom]`) di mesin
   formula adalah langkah kedua yang terpisah.

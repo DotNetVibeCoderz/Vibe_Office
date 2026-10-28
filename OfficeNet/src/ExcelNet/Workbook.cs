@@ -46,7 +46,11 @@ public sealed class Workbook : OfficeDocument, IReadOnlyList<Worksheet>
     private Workbook(OpcPackage package, OpcPart workbookPart) : base(package)
     {
         _workbookPart = workbookPart;
+        Names = new DefinedNameCollection(this);
     }
+
+    /// <summary>The workbook's defined names — named ranges, print areas, constants.</summary>
+    public DefinedNameCollection Names { get; }
 
     /// <summary>The <c>xl/workbook.xml</c> part.</summary>
     public OpcPart WorkbookPart => _workbookPart;
@@ -182,10 +186,14 @@ public sealed class Workbook : OfficeDocument, IReadOnlyList<Worksheet>
         var root = _workbookPart.Xml.Root
             ?? throw new OfficeNetException("xl/workbook.xml is empty.");
 
+        // Every <sheet> by position, worksheet or not: localSheetId counts chartsheets too.
+        var byPosition = new List<Worksheet?>();
+
         foreach (var element in root.Element(Ns.S + "sheets")?.Elements(Ns.S + "sheet") ?? [])
         {
             var name = element.Attr("name");
             var relationshipId = element.Attr(Ns.R + "id");
+            byPosition.Add(null);
 
             if (name is null || relationshipId is null)
             {
@@ -209,6 +217,33 @@ public sealed class Workbook : OfficeDocument, IReadOnlyList<Worksheet>
             SheetXml.Read(sheet, part.GetBytes(), SharedStrings);
             SheetComments.Read(sheet);
             _sheets.Add(sheet);
+            byPosition[^1] = sheet;
+        }
+
+        foreach (var element in root.Element(Ns.S + "definedNames")?.Elements(Ns.S + "definedName") ?? [])
+        {
+            if (element.Attr("name") is not { } name)
+            {
+                continue;
+            }
+
+            Worksheet? scope = null;
+
+            if (element.Attr("localSheetId") is { } local)
+            {
+                // A name local to a sheet this library does not model (a chartsheet) cannot be
+                // re-pointed on save, so it is left out rather than attached to the wrong sheet.
+                if (!int.TryParse(local, out var index) || index < 0 || index >= byPosition.Count ||
+                    byPosition[index] is not { } owner)
+                {
+                    continue;
+                }
+
+                scope = owner;
+            }
+
+            Names.Load(name, element.Value, scope,
+                XmlUtil.OoxmlBool(element.Attr("hidden")) == true, element.Attr("comment"));
         }
 
         if (_sheets.Count > 0 && !_sheets.Any(s => s.IsSelected))
@@ -288,6 +323,7 @@ public sealed class Workbook : OfficeDocument, IReadOnlyList<Worksheet>
         }
 
         _sheets.Remove(sheet);
+        Names.SheetRemoved(sheet);
         Package.RemovePart(sheet.Part.Name);
         Package.MarkDirty();
 
@@ -348,6 +384,7 @@ public sealed class Workbook : OfficeDocument, IReadOnlyList<Worksheet>
         target.AutoFilter = source.AutoFilter;
         target.ShowGridLines = source.ShowGridLines;
         target.TabColor = source.TabColor;
+        Names.SheetCopied(source, target);
 
         return target;
     }
@@ -484,9 +521,60 @@ public sealed class Workbook : OfficeDocument, IReadOnlyList<Worksheet>
         views.Add(new XElement(Ns.S + "workbookView",
             new XAttribute("activeTab", activeIndex)));
 
+        WriteDefinedNames(root, sheets);
         WritePivotCaches(root);
 
         Package.MarkDirty();
+    }
+
+    /// <summary>
+    /// Writes <c>definedNames</c> after <c>sheets</c>, with each local name's <c>localSheetId</c>
+    /// worked out now from its sheet's position.
+    /// </summary>
+    /// <remarks>
+    /// CT_Workbook puts <c>definedNames</c> after <c>sheets</c>, <c>functionGroups</c> and
+    /// <c>externalReferences</c>, and before <c>calcPr</c> and <c>pivotCaches</c>.
+    /// </remarks>
+    private void WriteDefinedNames(XElement root, XElement sheets)
+    {
+        root.Elements(Ns.S + "definedNames").Remove();
+
+        if (Names.Count == 0)
+        {
+            return;
+        }
+
+        var element = new XElement(Ns.S + "definedNames");
+
+        foreach (var name in Names)
+        {
+            var defined = new XElement(Ns.S + "definedName", new XAttribute("name", name.Name));
+
+            if (name.Comment is not null)
+            {
+                defined.SetAttributeValue("comment", name.Comment);
+            }
+
+            if (name.Scope is { } scope)
+            {
+                defined.SetAttributeValue("localSheetId", _sheets.IndexOf(scope));
+            }
+
+            if (name.Hidden)
+            {
+                defined.SetAttributeValue("hidden", "1");
+            }
+
+            defined.Value = name.RefersTo;
+            element.Add(defined);
+        }
+
+        var anchor = root.Elements()
+            .LastOrDefault(e => e.Name == Ns.S + "sheets" || e.Name == Ns.S + "functionGroups" ||
+                                e.Name == Ns.S + "externalReferences")
+            ?? sheets;
+
+        anchor.AddAfterSelf(element);
     }
 
     /// <summary>

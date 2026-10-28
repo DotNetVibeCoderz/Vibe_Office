@@ -382,8 +382,59 @@ public sealed class Worksheet
         set
         {
             ValidateName(value);
+
+            if (field is not null && field != value)
+            {
+                Workbook.Names.SheetRenamed(field, value);
+            }
+
             field = value;
             Workbook.Package.MarkDirty();
+        }
+    }
+
+    /// <summary>
+    /// The range printed, <c>A1:F40</c>, or <c>null</c> for the whole used range
+    /// (<c>_xlnm.Print_Area</c>).
+    /// </summary>
+    public string? PrintArea
+    {
+        get => Workbook.Names.GetBuiltIn(this, "Print_Area") is { } refersTo &&
+               DefinedNameCollection.TryParseReference(refersTo, out _, out var range)
+            ? range.A1
+            : null;
+        set => Workbook.Names.SetBuiltIn(this, "Print_Area", value is null
+            ? null
+            : DefinedNameCollection.Qualified(Name, CellRangeReference.Parse(value)));
+    }
+
+    /// <summary>
+    /// Rows repeated at the top of every printed page, as a one-based range such as <c>1:2</c>
+    /// (<c>_xlnm.Print_Titles</c>), or <c>null</c>.
+    /// </summary>
+    public string? PrintTitleRows
+    {
+        get => Workbook.Names.GetBuiltIn(this, "Print_Titles") is { } refersTo
+            ? refersTo[(refersTo.LastIndexOf('!') + 1)..].Replace("$", "", StringComparison.Ordinal)
+            : null;
+        set
+        {
+            if (value is null)
+            {
+                Workbook.Names.SetBuiltIn(this, "Print_Titles", null);
+                return;
+            }
+
+            var parts = value.Split(':');
+
+            if (parts.Length != 2 || !int.TryParse(parts[0], out var first) || !int.TryParse(parts[1], out var last) ||
+                first < 1 || last < first)
+            {
+                throw new ArgumentException($"'{value}' is not a row range such as 1:2.", nameof(value));
+            }
+
+            Workbook.Names.SetBuiltIn(this, "Print_Titles",
+                $"{DefinedNameCollection.Quote(Name)}!${first}:${last}");
         }
     }
 

@@ -664,6 +664,28 @@ public class DocSamples : IDisposable
     }
 
     [Fact]
+    public void ExcelNet_NamedRangesAndPrintSettings()
+    {
+        using var workbook = Workbook.Create("Data");
+        var sheet = workbook["Data"];
+        var summary = workbook.AddSheet("Ringkasan");
+        sheet.WriteColumn("B2", 100, 200, 300);
+
+        workbook.Names.Add("Penjualan", sheet, "B2:B100");
+        workbook.Names.Add("PPN", "0.11", comment: "VAT rate");
+        workbook.Names.Add("Target", "500", scope: sheet);
+
+        summary["B1"].SetFormula("SUM(Penjualan)*(1+PPN)");
+
+        sheet.PrintArea = "A1:F40";
+        sheet.PrintTitleRows = "1:1";
+
+        workbook.Recalculate();
+        Assert.Equal(666, summary["B1"].Number, 6);
+        Assert.Equal("A1:F40", sheet.PrintArea);
+    }
+
+    [Fact]
     public void ExcelNet_Lookups()
     {
         using var workbook = Workbook.Create("Data");
