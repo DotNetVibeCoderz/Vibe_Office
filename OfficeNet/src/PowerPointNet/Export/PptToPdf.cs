@@ -139,6 +139,13 @@ public static class PptToPdf
     private static void RenderShape(Presentation presentation, PdfCanvas canvas, Shape shape,
         Layouts.SlideLayout? layout, SlidePdfOptions options)
     {
+        // A line's box may be zero wide or zero high, so it is drawn before that check.
+        if (shape is Connector connector)
+        {
+            RenderConnector(canvas, connector);
+            return;
+        }
+
         var bounds = ResolveBounds(shape, layout);
 
         if (bounds is not { } box)
@@ -197,17 +204,25 @@ public static class PptToPdf
             return;
         }
 
+        // The shape's own geometry — an ellipse, a chevron — not its bounding box, which is what
+        // every shape used to be drawn as.
+        var preset = shape.Element.Element(Ns.P + "spPr")?.Element(Ns.A + "prstGeom");
+        var geometry = preset?.Attr("prst") ?? "rect";
+        var adjust = Adjustment(preset);
+
         if (shape.FillColor is { } fill)
         {
             canvas.SetFillColor(fill);
-            canvas.Rectangle(left, top, width, height).Fill();
+            TraceDiagramShape(canvas, geometry, left, top, width, height, adjust);
+            canvas.Fill();
         }
 
         if (shape.LineColor is { } line)
         {
             canvas.SetStrokeColor(line);
             canvas.SetLineWidth(Math.Max(0.5, shape.LineWidth.Points));
-            canvas.Rectangle(left, top, width, height).Stroke();
+            TraceDiagramShape(canvas, geometry, left, top, width, height, adjust);
+            canvas.Stroke();
         }
 
         var frame = shape.TextFrame;
@@ -218,6 +233,134 @@ public static class PptToPdf
         }
 
         RenderTextFrame(presentation, canvas, frame, shape, layout, left, top, width, height);
+    }
+
+    /// <summary>
+    /// Draws a line or connector: straight, elbow or curved, dashed or not, with its arrowheads.
+    /// </summary>
+    /// <remarks>
+    /// An arrowhead is drawn along the direction the line arrives in, so an elbow's head points the
+    /// way its last segment runs rather than along the diagonal between its ends.
+    /// </remarks>
+    private static void RenderConnector(PdfCanvas canvas, Connector connector)
+    {
+        var color = connector.LineColor;
+
+        if (color is null)
+        {
+            return;
+        }
+
+        var (sx, sy) = (connector.Start.X.Points, connector.Start.Y.Points);
+        var (ex, ey) = (connector.End.X.Points, connector.End.Y.Points);
+        var width = Math.Max(0.5, connector.LineWidth.Points);
+
+        canvas.Save();
+        canvas.SetStrokeColor(color.Value);
+        canvas.SetFillColor(color.Value);
+        canvas.SetLineWidth(width);
+
+        canvas.SetDash(connector.Dash switch
+        {
+            LineDash.Dash => [width * 4, width * 3],
+            LineDash.Dot => [width, width * 2],
+            LineDash.DashDot => [width * 4, width * 2, width, width * 2],
+            LineDash.LongDash => [width * 8, width * 3],
+            LineDash.LongDashDotDot => [width * 8, width * 2, width, width * 2, width, width * 2],
+            _ => [],
+        });
+
+        // The direction each end is approached from, for its arrowhead.
+        (double X, double Y) leaving, arriving;
+
+        switch (connector.Type)
+        {
+            case ConnectorType.Elbow:
+                var middle = (sx + ex) / 2;
+                canvas.MoveTo(sx, sy).LineTo(middle, sy).LineTo(middle, ey).LineTo(ex, ey);
+                leaving = (middle == sx ? sx : middle, middle == sx ? ey : sy);
+                arriving = (middle == ex ? ex : middle, middle == ex ? sy : ey);
+                break;
+
+            case ConnectorType.Curved:
+                var bend = (sx + ex) / 2;
+                canvas.MoveTo(sx, sy).CurveTo(bend, sy, bend, ey, ex, ey);
+                leaving = (bend, sy);
+                arriving = (bend, ey);
+                break;
+
+            default:
+                canvas.MoveTo(sx, sy).LineTo(ex, ey);
+                leaving = (ex, ey);
+                arriving = (sx, sy);
+                break;
+        }
+
+        canvas.Stroke();
+        canvas.SetDash([]);
+
+        DrawArrowHead(canvas, connector.StartArrow, (sx, sy), leaving, width);
+        DrawArrowHead(canvas, connector.EndArrow, (ex, ey), arriving, width);
+
+        canvas.Restore();
+    }
+
+    /// <summary>An arrowhead with its tip at <paramref name="tip"/>, pointing away from <paramref name="from"/>.</summary>
+    private static void DrawArrowHead(PdfCanvas canvas, ArrowHead head, (double X, double Y) tip,
+        (double X, double Y) from, double lineWidth)
+    {
+        if (head == ArrowHead.None)
+        {
+            return;
+        }
+
+        var dx = tip.X - from.X;
+        var dy = tip.Y - from.Y;
+        var length = Math.Sqrt(dx * dx + dy * dy);
+
+        if (length < 1e-6)
+        {
+            return;
+        }
+
+        // A medium head, as PowerPoint sizes it: about three times the line's width each way.
+        var size = Math.Max(5, lineWidth * 3.5);
+        var (ux, uy) = (dx / length, dy / length);
+        var (px, py) = (-uy, ux);
+
+        var back = (X: tip.X - ux * size, Y: tip.Y - uy * size);
+        var left = (X: back.X + px * size * 0.5, Y: back.Y + py * size * 0.5);
+        var right = (X: back.X - px * size * 0.5, Y: back.Y - py * size * 0.5);
+
+        switch (head)
+        {
+            case ArrowHead.Arrow:
+                canvas.MoveTo(left.X, left.Y).LineTo(tip.X, tip.Y).LineTo(right.X, right.Y).Stroke();
+                break;
+
+            case ArrowHead.Stealth:
+                var notch = (X: tip.X - ux * size * 0.6, Y: tip.Y - uy * size * 0.6);
+                canvas.MoveTo(tip.X, tip.Y).LineTo(left.X, left.Y).LineTo(notch.X, notch.Y).LineTo(right.X, right.Y)
+                    .ClosePath().Fill();
+                break;
+
+            case ArrowHead.Diamond:
+                var centre = (X: tip.X - ux * size * 0.5, Y: tip.Y - uy * size * 0.5);
+                canvas.MoveTo(tip.X, tip.Y)
+                    .LineTo(centre.X + px * size * 0.5, centre.Y + py * size * 0.5)
+                    .LineTo(back.X, back.Y)
+                    .LineTo(centre.X - px * size * 0.5, centre.Y - py * size * 0.5)
+                    .ClosePath().Fill();
+                break;
+
+            case ArrowHead.Oval:
+                canvas.Ellipse(tip.X - size / 2, tip.Y - size / 2, size, size).Fill();
+                break;
+
+            default:
+                canvas.MoveTo(tip.X, tip.Y).LineTo(left.X, left.Y).LineTo(right.X, right.Y).ClosePath().Fill();
+                break;
+        }
     }
 
     /// <summary>

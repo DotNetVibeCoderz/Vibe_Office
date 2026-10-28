@@ -1368,6 +1368,32 @@ public class DocSamples : IDisposable
     }
 
     [Fact]
+    public void PowerPointNet_Connectors()
+    {
+        using var deck = Presentation.Create();
+        var slide = deck.AddSlide(3);
+        var start = slide.AddShape(ShapeGeometry.Rectangle, Units.Inches(1), Units.Inches(1), Units.Inches(2), Units.Inches(1));
+        var finish = slide.AddShape(ShapeGeometry.Rectangle, Units.Inches(5), Units.Inches(2), Units.Inches(2), Units.Inches(1));
+
+        var arrow = slide.AddConnector(start, finish, ConnectorType.Elbow);
+        arrow.EndArrow = ArrowHead.Triangle;
+        arrow.Dash = LineDash.Dash;
+
+        var line = slide.AddLine(Units.Inches(1), Units.Inches(4), Units.Inches(6), Units.Inches(3),
+            OfficeColor.FromRgb(0xC0, 0, 0), Units.Pt(3));
+
+        foreach (var c in slide.Connectors)
+        {
+            var (x, y) = c.Start;
+            Assert.True(x.Points > 0 && y.Points > 0);
+        }
+
+        Assert.Equal(start.Id, arrow.StartShapeId);
+        Assert.Equal(2, slide.Connectors.Count());
+        Assert.Equal(ArrowHead.None, line.EndArrow);
+    }
+
+    [Fact]
     public void PowerPointNet_SlidesToHtml()
     {
         using var deck = Presentation.Create();

@@ -130,6 +130,34 @@ slide.AddShape(ShapeGeometry.Ellipse, /* … */)
 Metode efeknya adalah extension generik yang mengembalikan bentuk yang diberikan, jadi bisa
 dirangkai dan berlaku untuk gambar dan tabel, bukan hanya autoshape.
 
+### Garis dan konektor
+
+```csharp
+var start = slide.AddShape(ShapeGeometry.Rectangle, /* … */);
+var finish = slide.AddShape(ShapeGeometry.Rectangle, /* … */);
+
+var arrow = slide.AddConnector(start, finish, ConnectorType.Elbow);   // atau Straight, Curved
+arrow.EndArrow = ArrowHead.Triangle;      // None, Triangle, Arrow, Stealth, Diamond, Oval
+arrow.Dash = LineDash.Dash;
+
+var line = slide.AddLine(Units.Inches(1), Units.Inches(4), Units.Inches(6), Units.Inches(3),
+    OfficeColor.FromRgb(0xC0, 0, 0), Units.Pt(3));
+
+foreach (var c in slide.Connectors) { var (x, y) = c.Start; /* … */ }
+```
+
+`AddConnector` menghubungkan sisi yang saling berhadapan dan menempelkan ujungnya (`stCxn`/`endCxn`),
+jadi konektor ikut bergerak saat shape-nya dipindah di PowerPoint. Hanya shape yang titik sambungnya
+empat titik persegi panjang yang ditempel; ujung di elips diletakkan di sisinya dan dibiarkan bebas,
+karena penomoran titiknya berbeda. Garis yang digambar dari kanan ke kiri disimpan seperti cara
+PowerPoint menyimpannya — kotak dengan `flipH` — dan `Start`/`End` membaca ujungnya kembali seperti
+yang diberikan. Ekspor PDF menggambar jalur lurus, siku, dan lengkung, pola garis putus, dan setiap
+kepala panah diputar mengikuti segmen tempatnya berakhir; python-pptx membaca ujung dan tempelan yang
+sama.
+
+Ekspor PDF kini juga menggambar setiap shape dengan geometrinya sendiri — elips, chevron, panah — yang
+dulu digambar sebagai kotak pembatasnya.
+
 ## Tabel
 
 ```csharp

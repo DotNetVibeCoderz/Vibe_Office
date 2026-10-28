@@ -155,6 +155,7 @@ public sealed class Slide
                     "pic" when Media.SlideMedia.DetectKind(element, Part) is { } mediaKind =>
                         new Media.SlideMedia(_presentation, element, mediaKind),
                     "pic" => new Picture(_presentation, element),
+                    "cxnSp" => new Connector(_presentation, element),
                     "graphicFrame" when IsTable(element) => new SlideTable(_presentation, element),
                     "graphicFrame" when SlideChart.IsChart(element) =>
                         ResolveChart(element),
@@ -323,6 +324,44 @@ public sealed class Slide
     }
 
     // ---- Adding shapes ---------------------------------------------------------------------------
+
+    /// <summary>The slide's lines and connectors.</summary>
+    public IEnumerable<Connector> Connectors => Shapes.OfType<Connector>();
+
+    /// <summary>Adds a line from one point to another.</summary>
+    /// <remarks>Arrowheads and a dash pattern are set on the result.</remarks>
+    public Connector AddLine(Length x1, Length y1, Length x2, Length y2, OfficeColor? color = null,
+        Length? width = null)
+    {
+        var element = Connector.Build(NextShapeId(), (x1, y1), (x2, y2), ConnectorType.Straight,
+            color ?? OfficeColor.FromRgb(0x40, 0x40, 0x40), width ?? Length.FromPoints(1.5), null, null);
+
+        ShapeTree.Add(element);
+        _presentation.Touch();
+        return new Connector(_presentation, element);
+    }
+
+    /// <summary>
+    /// Joins two shapes with a connector from the sides that face each other — glued, so it follows
+    /// them when they move in PowerPoint.
+    /// </summary>
+    public Connector AddConnector(Shape from, Shape to, ConnectorType type = ConnectorType.Straight,
+        OfficeColor? color = null, Length? width = null)
+    {
+        ArgumentNullException.ThrowIfNull(from);
+        ArgumentNullException.ThrowIfNull(to);
+        Connector.ThrowIfSame(from, to);
+
+        var (start, startSite, end, endSite) = Connector.Facing(from, to);
+
+        var element = Connector.Build(NextShapeId(), start, end, type,
+            color ?? OfficeColor.FromRgb(0x40, 0x40, 0x40), width ?? Length.FromPoints(1.5),
+            startSite is { } s ? (from.Id, s) : null, endSite is { } e ? (to.Id, e) : null);
+
+        ShapeTree.Add(element);
+        _presentation.Touch();
+        return new Connector(_presentation, element);
+    }
 
     /// <summary>Adds a text box.</summary>
     public Shape AddTextBox(string text, Length left, Length top, Length width, Length height)

@@ -130,6 +130,33 @@ slide.AddShape(ShapeGeometry.Ellipse, /* … */)
 The effect methods are generic extensions that return the shape they were given, so they chain and
 work on pictures and tables as well as autoshapes.
 
+### Lines and connectors
+
+```csharp
+var start = slide.AddShape(ShapeGeometry.Rectangle, /* … */);
+var finish = slide.AddShape(ShapeGeometry.Rectangle, /* … */);
+
+var arrow = slide.AddConnector(start, finish, ConnectorType.Elbow);   // or Straight, Curved
+arrow.EndArrow = ArrowHead.Triangle;      // None, Triangle, Arrow, Stealth, Diamond, Oval
+arrow.Dash = LineDash.Dash;
+
+var line = slide.AddLine(Units.Inches(1), Units.Inches(4), Units.Inches(6), Units.Inches(3),
+    OfficeColor.FromRgb(0xC0, 0, 0), Units.Pt(3));
+
+foreach (var c in slide.Connectors) { var (x, y) = c.Start; /* … */ }
+```
+
+`AddConnector` joins the sides that face each other and glues the ends (`stCxn`/`endCxn`), so the
+connector follows the shapes when they are moved in PowerPoint. Only shapes whose connection sites
+are a rectangle's four are glued; an ellipse's end is placed at its side and left free, because its
+sites are numbered differently. A line drawn right to left is stored as PowerPoint stores it — a box
+with `flipH` — and `Start`/`End` read the ends back as they were given. The PDF export draws the
+straight, elbow and curved paths, the dash, and each arrowhead turned along the segment it ends;
+python-pptx reads the same ends and glue.
+
+The PDF export also draws every shape in its own geometry — an ellipse, a chevron, an arrow — where
+it used to draw each one's bounding box.
+
 ## Tables
 
 ```csharp

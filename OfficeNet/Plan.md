@@ -781,8 +781,10 @@ melengkapi.
 
 ### PowerPointNet
 
-- [ ] **Garis, panah, dan konektor** (`p:cxnSp`, `a:headEnd`/`a:tailEnd`, konektor yang terhubung
-  ke shape lewat `stCxn`/`endCxn`). Dibaca sebagai `ShapeKind.Connector` tapi tidak bisa dibuat.
+- [x] **Garis, panah, dan konektor — selesai.** `AddLine`, `AddConnector` (lurus, siku, lengkung; ditempel
+  lewat `stCxn`/`endCxn` ke sisi yang berhadapan), `Connector` dengan panah, pola garis, `Start`/`End`
+  yang membaca flip. Digambar di ekspor PDF; python-pptx membaca ujung dan tempelannya. Ikut
+  diperbaiki: shape biasa di ekspor PDF selalu digambar sebagai kotak, kini dengan geometrinya.
 - [ ] **Custom geometry** (`a:custGeom`) — API path (moveTo/lineTo/cubicBezTo/close) untuk shape
   bebas, dan ikut digambar di ekspor PDF.
 - [ ] **Objek tersemat (OLE)** — sematkan .xlsx/.docx/.pdf sebagai `p:oleObj` dengan gambar
