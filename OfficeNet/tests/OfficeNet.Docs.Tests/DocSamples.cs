@@ -710,6 +710,29 @@ public class DocSamples : IDisposable
     }
 
     [Fact]
+    public void ExcelNet_ConditionalFormattingRules()
+    {
+        using var workbook = Workbook.Create();
+        var sheet = workbook[0];
+        sheet.WriteColumn("A2", "a", "b", "a");
+
+        var highlight = CellStyle.Default.WithBackground(OfficeColor.FromRgb(0xFF, 0xC7, 0xCE)).Bold();
+
+        sheet.AddDuplicateValues("A2:A100", highlight);
+        sheet.AddUniqueValues("B2:B100", highlight);
+        sheet.AddTopRule("C2:C100", 10, highlight);
+        sheet.AddTopRule("C2:C100", 5, highlight, percent: true, bottom: true);
+        sheet.AddAverageRule("D2:D100", highlight, below: true);
+        sheet.AddTextContains("E2:E100", "lunas", highlight);
+        sheet.AddFormulaRule("A2:F100", "$F2>1000000", highlight);
+        sheet.AddIconSet("F2:F100", "3Arrows");
+
+        IReadOnlyList<CellReference> repeated = sheet.FindDuplicates("A2:A100");
+        Assert.Equal(2, repeated.Count);
+        Assert.Equal(8, sheet.ConditionalRules.Count);
+    }
+
+    [Fact]
     public void ExcelNet_Lookups()
     {
         using var workbook = Workbook.Create("Data");

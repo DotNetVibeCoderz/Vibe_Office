@@ -696,9 +696,27 @@ melengkapi.
   Sembilan mutasi; satu lolos — sort tak stabil — karena `List.Sort` memakai insertion sort, yang
   kebetulan stabil, untuk array ≤ 16 elemen. Tes empat baris tidak mungkin membedakannya; tes 200
   baris penuh nilai kembar kini menangkapnya.
-- [ ] **Conditional formatting lanjutan.** `duplicateValues`/`uniqueValues` (deteksi duplikat dari
-  `reference.md`), `top10`, `aboveAverage`, `containsText`, `expression`, dan icon set. Plus
-  `FindDuplicates(range)` di sisi API untuk yang butuh hasilnya, bukan warnanya.
+- [x] **Conditional formatting lanjutan — selesai, dan memperbaiki tiga cacat yang lebih besar.**
+  `AddDuplicateValues`, `AddUniqueValues`, `AddTopRule`, `AddAverageRule`, `AddTextContains`,
+  `AddFormulaRule`, `AddIconSet`, dan `FindDuplicates`.
+
+  **Aturan bergaya tidak pernah menyorot apa pun.** Stylesheet tidak punya tabel `dxfs` dan penulis
+  aturan tak pernah menulis `dxfId`, jadi `AddConditionalFormat(range, ">", style)` menghasilkan
+  aturan yang dievaluasi Excel lalu tidak menerapkan format apa-apa. Kini ada tabel `dxfs` dengan
+  dedup — dan di `dxf` warna isian solid ada di **`bgColor`**, kebalikan dari format sel.
+
+  **Buka-lalu-simpan merusak CF yang sudah ada.** Pembaca hanya menyimpan jenis dan formula: `dxfId`,
+  warna color scale dan data bar, serta icon set hilang, dan `sqref` berisi beberapa range gagal
+  di-parse sehingga aturannya hilang seluruhnya. Kini aturan dari berkas disimpan mentah dan ditulis
+  kembali, `dxfs` dibaca berurutan sehingga `dxfId` lamanya tetap sah.
+
+  **Blok kedua bisa dilompati.** `XNode.ReadFrom` meninggalkan reader di node *setelah* blok, dan
+  `Read()` di loop utama melompatinya — dengan XML tanpa spasi seperti tulisan Excel, itu blok
+  `conditionalFormatting` berikutnya. Jebakan yang sama dengan `ReadElementContentAsString` di
+  CLAUDE.md. Tes pertamanya memakai fixture berbaris baru dan lulus melawan pembaca yang rusak;
+  fixture kini tanpa spasi. Sembilan mutasi tertangkap; validator kini memeriksa urutan anak
+  `styleSheet` dan bahwa setiap `dxfId` menunjuk `dxf` yang ada. openpyxl membaca aturan beserta
+  isian dan tebal dari `dxf`-nya.
 - [x] **Fungsi finansial — selesai.** `PMT`, `PV`, `FV`, `NPER`, `RATE`, `NPV`, `IRR`, `XNPV`,
   `XIRR`, diuji terhadap **contoh di halaman resmi Microsoft** — nilai yang dihitung Excel — bukan
   terhadap rumus yang diturunkan ulang. Yang iteratif memakai Newton dan menjawab `#NUM!` bila tidak

@@ -343,6 +343,30 @@ sheet.AddConditionalFormat(CellRangeReference.Parse("F2:F15"), "greaterThan",
     "1000000");   // the operands come last, so a rule can take two of them
 ```
 
+```csharp
+var highlight = CellStyle.Default.WithBackground(OfficeColor.FromRgb(0xFF, 0xC7, 0xCE)).Bold();
+
+sheet.AddDuplicateValues("A2:A100", highlight);
+sheet.AddUniqueValues("B2:B100", highlight);
+sheet.AddTopRule("C2:C100", 10, highlight);                         // top 10
+sheet.AddTopRule("C2:C100", 5, highlight, percent: true, bottom: true);
+sheet.AddAverageRule("D2:D100", highlight, below: true);
+sheet.AddTextContains("E2:E100", "lunas", highlight);
+sheet.AddFormulaRule("A2:F100", "$F2>1000000", highlight);          // whole rows
+sheet.AddIconSet("F2:F100", "3Arrows");
+
+IReadOnlyList<CellReference> repeated = sheet.FindDuplicates("A2:A100");
+```
+
+A rule's style is written as a **differential format** (`dxf`) in the stylesheet, which is what Excel
+applies when the rule matches. Rules made with a style used to be written without one, so the
+condition was evaluated and nothing was ever highlighted.
+
+**Rules in a file you open are kept as written** — icon sets with custom thresholds, data bars with
+extensions, several ranges in one block — and their formats with them; adding a rule never disturbs
+the ones already there. Earlier versions kept only the rule's type and formula, so an open and save
+lost every highlight colour.
+
 ## Charts
 
 A chart on a worksheet is the same DrawingML part a PowerPoint chart uses — the model lives in

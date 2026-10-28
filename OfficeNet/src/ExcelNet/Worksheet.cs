@@ -340,6 +340,22 @@ public sealed record ConditionalRule(
 
     /// <summary>The bar colour of a data-bar rule.</summary>
     public OfficeColor? BarColor { get; init; }
+
+    /// <summary>The icon set of an icon-set rule, e.g. <c>3Arrows</c> or <c>3TrafficLights1</c>.</summary>
+    public string? IconSet { get; init; }
+
+    /// <summary>Extra <c>cfRule</c> attributes: <c>rank</c>, <c>percent</c>, <c>bottom</c>, <c>aboveAverage</c>, <c>text</c>.</summary>
+    public IReadOnlyDictionary<string, string>? Attributes { get; init; }
+
+    /// <summary>
+    /// The rule exactly as read from a file, written back as it was. Rules come in more shapes than
+    /// this record models — icon sets with custom thresholds, data bars with extensions — and a
+    /// round trip must not reduce them to the shapes it does.
+    /// </summary>
+    internal System.Xml.Linq.XElement? Raw { get; init; }
+
+    /// <summary>The range list as read, which may name several ranges (<c>A1:A10 C1:C10</c>).</summary>
+    internal string? Sqref { get; init; }
 }
 
 /// <summary>Where a sheet's panes are frozen.</summary>
@@ -946,6 +962,123 @@ public sealed class Worksheet
             _conditionalRules.Count + 1)
         {
             ScaleColors = colors,
+        };
+
+        _conditionalRules.Add(rule);
+        Workbook.Package.MarkDirty();
+        return rule;
+    }
+
+    /// <summary>Highlights every value that appears more than once in the range.</summary>
+    public ConditionalRule AddDuplicateValues(string range, CellStyle style) =>
+        AddRule(range, "duplicateValues", style);
+
+    /// <summary>Highlights every value that appears exactly once in the range.</summary>
+    public ConditionalRule AddUniqueValues(string range, CellStyle style) =>
+        AddRule(range, "uniqueValues", style);
+
+    /// <summary>Highlights the top (or bottom) <paramref name="count"/> values, or percent of values.</summary>
+    public ConditionalRule AddTopRule(string range, int count, CellStyle style, bool percent = false,
+        bool bottom = false)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(count, 1);
+
+        var attributes = new Dictionary<string, string> { ["rank"] = count.ToString(CultureInfo.InvariantCulture) };
+
+        if (percent)
+        {
+            attributes["percent"] = "1";
+        }
+
+        if (bottom)
+        {
+            attributes["bottom"] = "1";
+        }
+
+        return AddRule(range, "top10", style, attributes: attributes);
+    }
+
+    /// <summary>Highlights values above (or below) the range's average.</summary>
+    public ConditionalRule AddAverageRule(string range, CellStyle style, bool below = false) =>
+        AddRule(range, "aboveAverage", style,
+            attributes: below ? new Dictionary<string, string> { ["aboveAverage"] = "0" } : null);
+
+    /// <summary>Highlights cells whose text contains <paramref name="text"/>, ignoring case.</summary>
+    /// <remarks>
+    /// Excel stores the text twice — as an attribute for its dialog and as the formula it actually
+    /// evaluates — and a rule with only the attribute matches nothing.
+    /// </remarks>
+    public ConditionalRule AddTextContains(string range, string text, CellStyle style)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(text);
+
+        var topLeft = CellRangeReference.Parse(range).Start.A1;
+        var escaped = text.Replace("\"", "\"\"", StringComparison.Ordinal);
+
+        return AddRule(range, "containsText", style, "containsText",
+            [$"NOT(ISERROR(SEARCH(\"{escaped}\",{topLeft})))"],
+            new Dictionary<string, string> { ["text"] = text });
+    }
+
+    /// <summary>
+    /// Highlights cells for which a formula is true, written for the range's top-left cell:
+    /// <c>AddFormulaRule("A2:E100", "$E2&gt;1000000", style)</c> shades whole rows.
+    /// </summary>
+    public ConditionalRule AddFormulaRule(string range, string formula, CellStyle style)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(formula);
+        return AddRule(range, "expression", style, formulas: [formula.TrimStart('=')]);
+    }
+
+    /// <summary>
+    /// Adds an icon set — <c>3Arrows</c>, <c>3TrafficLights1</c>, <c>3Symbols</c>, <c>4Rating</c>,
+    /// <c>5Arrows</c> and the rest of Excel's names — split into equal percent bands.
+    /// </summary>
+    public ConditionalRule AddIconSet(string range, string iconSet = "3TrafficLights1")
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(iconSet);
+
+        if (iconSet[0] is not ('3' or '4' or '5'))
+        {
+            throw new ArgumentException($"'{iconSet}' is not an Excel icon set name, such as 3Arrows.", nameof(iconSet));
+        }
+
+        var rule = new ConditionalRule(CellRangeReference.Parse(range), "iconSet", null, [], null,
+            _conditionalRules.Count + 1)
+        {
+            IconSet = iconSet,
+        };
+
+        _conditionalRules.Add(rule);
+        Workbook.Package.MarkDirty();
+        return rule;
+    }
+
+    /// <summary>The cells in a range whose value appears more than once, text compared ignoring case.</summary>
+    /// <remarks>
+    /// The same test as <see cref="AddDuplicateValues"/>, for code that wants the cells rather than
+    /// a highlight. Blank cells are never duplicates.
+    /// </remarks>
+    public IReadOnlyList<CellReference> FindDuplicates(string range)
+    {
+        var cells = Range(range)
+            .Where(c => !c.Value.IsEmpty)
+            .Select(c => (c.Reference, Key: c.Value.ValueType == CellValueType.Text
+                ? "t:" + c.Value.AsText().ToUpperInvariant()
+                : "n:" + c.Value.AsNumber().ToString("R", CultureInfo.InvariantCulture)))
+            .ToList();
+
+        var repeated = cells.GroupBy(c => c.Key).Where(g => g.Count() > 1).Select(g => g.Key).ToHashSet();
+        return [.. cells.Where(c => repeated.Contains(c.Key)).Select(c => c.Reference)];
+    }
+
+    private ConditionalRule AddRule(string range, string type, CellStyle? style, string? comparison = null,
+        IReadOnlyList<string>? formulas = null, IReadOnlyDictionary<string, string>? attributes = null)
+    {
+        var rule = new ConditionalRule(CellRangeReference.Parse(range), type, comparison, formulas ?? [],
+            style, _conditionalRules.Count + 1)
+        {
+            Attributes = attributes,
         };
 
         _conditionalRules.Add(rule);

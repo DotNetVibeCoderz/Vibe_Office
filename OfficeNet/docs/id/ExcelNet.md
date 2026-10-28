@@ -353,6 +353,30 @@ sheet.AddConditionalFormat(CellRangeReference.Parse("F2:F15"), "greaterThan",
     "1000000");   // operand di akhir, supaya satu aturan bisa menerima dua operand
 ```
 
+```csharp
+var highlight = CellStyle.Default.WithBackground(OfficeColor.FromRgb(0xFF, 0xC7, 0xCE)).Bold();
+
+sheet.AddDuplicateValues("A2:A100", highlight);
+sheet.AddUniqueValues("B2:B100", highlight);
+sheet.AddTopRule("C2:C100", 10, highlight);                         // 10 teratas
+sheet.AddTopRule("C2:C100", 5, highlight, percent: true, bottom: true);
+sheet.AddAverageRule("D2:D100", highlight, below: true);
+sheet.AddTextContains("E2:E100", "lunas", highlight);
+sheet.AddFormulaRule("A2:F100", "$F2>1000000", highlight);          // seluruh baris
+sheet.AddIconSet("F2:F100", "3Arrows");
+
+IReadOnlyList<CellReference> repeated = sheet.FindDuplicates("A2:A100");
+```
+
+Gaya sebuah aturan ditulis sebagai **differential format** (`dxf`) di stylesheet, yaitu yang
+diterapkan Excel saat aturannya terpenuhi. Aturan yang dibuat dengan gaya sebelumnya ditulis tanpa
+itu, sehingga kondisinya dievaluasi tetapi tidak pernah ada yang disorot.
+
+**Aturan di berkas yang dibuka dipertahankan apa adanya** — icon set dengan ambang kustom, data bar
+dengan ekstensi, beberapa range dalam satu blok — beserta formatnya; menambah aturan tidak pernah
+mengganggu yang sudah ada. Versi sebelumnya hanya menyimpan jenis dan formula aturan, sehingga
+buka-lalu-simpan menghapus setiap warna sorotan.
+
 ## Chart
 
 Chart di worksheet adalah part DrawingML yang sama dengan chart PowerPoint — modelnya ada di

@@ -35,6 +35,98 @@ public sealed class Stylesheet
     private readonly List<CellStyle> _cellFormats = [];
     private readonly Dictionary<CellStyle, int> _index = [];
 
+    // Differential formats: what a conditional-formatting rule applies on top of a cell's own
+    // format. Kept as elements, read ones verbatim, so a rule's dxfId keeps meaning what it meant.
+    private readonly List<XElement> _differentials = [];
+    private readonly Dictionary<string, int> _differentialIndex = new(StringComparer.Ordinal);
+
+    /// <summary>The number of differential formats (<c>dxfs</c>).</summary>
+    public int DifferentialCount => _differentials.Count;
+
+    /// <summary>
+    /// Returns the index of a differential format for <paramref name="style"/>, adding it when new.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Only what differs from an ordinary cell is written — bold, italic, strike, underline, font
+    /// colour, background, number format — because a dxf applies on top of the cell's own format.
+    /// </para>
+    /// <para>
+    /// <b>A dxf puts a solid fill's colour in <c>bgColor</c></b>, the opposite of a cell format,
+    /// whose solid fill uses <c>fgColor</c>. Using the cell convention here produces a highlight
+    /// rule that highlights nothing.
+    /// </para>
+    /// </remarks>
+    public int AddDifferential(CellStyle style)
+    {
+        var dxf = new XElement(S + "dxf");
+        var font = style.Font;
+        var fontElement = new XElement(S + "font");
+
+        if (font.Bold)
+        {
+            fontElement.Add(new XElement(S + "b"));
+        }
+
+        if (font.Italic)
+        {
+            fontElement.Add(new XElement(S + "i"));
+        }
+
+        if (font.Strike)
+        {
+            fontElement.Add(new XElement(S + "strike"));
+        }
+
+        if (font.Color is { } color)
+        {
+            fontElement.Add(new XElement(S + "color", new XAttribute("rgb", "FF" + color.ToHex())));
+        }
+
+        if (font.Underline)
+        {
+            fontElement.Add(new XElement(S + "u"));
+        }
+
+        if (fontElement.HasElements)
+        {
+            dxf.Add(fontElement);
+        }
+
+        // CT_Dxf: font, numFmt, fill, alignment, protection, border.
+        if (style.NumberFormat is { } format && format != "General")
+        {
+            // A custom code needs its own id here too, or it would claim id 0, which is General.
+            if (NumberFormats.BuiltInId(format) is null && !_customFormats.Contains(format))
+            {
+                _customFormats.Add(format);
+            }
+
+            dxf.Add(new XElement(S + "numFmt",
+                new XAttribute("numFmtId", NumberFormatId(format)),
+                new XAttribute("formatCode", format)));
+        }
+
+        if (style.BackgroundColor is { } background)
+        {
+            dxf.Add(new XElement(S + "fill",
+                new XElement(S + "patternFill",
+                    new XAttribute("patternType", "solid"),
+                    new XElement(S + "bgColor", new XAttribute("rgb", "FF" + background.ToHex())))));
+        }
+
+        var key = dxf.ToString(SaveOptions.DisableFormatting);
+
+        if (_differentialIndex.TryGetValue(key, out var existing))
+        {
+            return existing;
+        }
+
+        _differentials.Add(dxf);
+        _differentialIndex[key] = _differentials.Count - 1;
+        return _differentials.Count - 1;
+    }
+
     private Stylesheet()
     {
     }
@@ -134,6 +226,15 @@ public sealed class Stylesheet
             .Where(kv => kv.Key >= FirstCustomNumberFormatId)
             .OrderBy(kv => kv.Key)
             .Select(kv => kv.Value));
+
+        // Read verbatim and in order, so every dxfId in the workbook's rules still points at the
+        // format it was written for.
+        foreach (var dxf in root.Element(S + "dxfs")?.Elements(S + "dxf") ?? [])
+        {
+            var copy = new XElement(dxf);
+            sheet._differentials.Add(copy);
+            sheet._differentialIndex.TryAdd(copy.ToString(SaveOptions.DisableFormatting), sheet._differentials.Count - 1);
+        }
 
         return sheet;
     }
@@ -427,6 +528,14 @@ public sealed class Stylesheet
                 new XAttribute("name", "Normal"),
                 new XAttribute("xfId", 0),
                 new XAttribute("builtinId", 0))));
+
+        // dxfs follows cellStyles in the CT_Stylesheet sequence.
+        if (_differentials.Count > 0)
+        {
+            root.Add(new XElement(S + "dxfs",
+                new XAttribute("count", _differentials.Count),
+                _differentials.Select(d => new XElement(d))));
+        }
 
         return XmlUtil.NewDocument(root);
     }

@@ -620,8 +620,9 @@ memeriksa bagaimana pustaka memperlakukan `w:ins` sebelum menulis fitur track ch
       memperbaiki bacaan fonetik (`rPh`) yang ikut terbaca sebagai teks
 - [x] ExcelNet: sort range dengan urutan tipe Excel; formula yang berpindah ikut menggeser
       referensi baris relatifnya (`FormulaText.ShiftRows`)
-- [ ] ExcelNet: conditional formatting `duplicateValues`, `top10`, `aboveAverage`, `expression`,
-      icon set; `FindDuplicates`
+- [x] ExcelNet: conditional formatting `duplicateValues`, `top10`, `aboveAverage`, `expression`,
+      icon set; `FindDuplicates`. Sekaligus memperbaiki: aturan bergaya **tak pernah menyorot**
+      (tidak ada `dxfs`), dan buka-lalu-simpan menghapus format CF yang sudah ada
 - [x] ExcelNet: fungsi finansial `PMT`, `PV`, `FV`, `NPER`, `RATE`, `NPV`, `IRR`, `XNPV`, `XIRR` —
       diuji terhadap contoh resmi Microsoft; parser kini menerima argumen yang dikosongkan
 - [ ] ExcelNet: XLSX ↔ HTML

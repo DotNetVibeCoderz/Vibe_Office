@@ -48,8 +48,15 @@ internal static class SheetXml
             DtdProcessing = DtdProcessing.Prohibit,
         });
 
-        while (reader.Read())
+        // A handler that reads a whole element with XNode.ReadFrom leaves the reader on the node
+        // after it. Calling Read() then would skip that node — and when it is the next
+        // conditionalFormatting block, its rules would vanish. Such handlers clear this flag.
+        var advance = true;
+
+        while (!advance || reader.Read())
         {
+            advance = true;
+
             if (reader.NodeType != XmlNodeType.Element)
             {
                 continue;
@@ -94,7 +101,7 @@ internal static class SheetXml
                     break;
 
                 case "conditionalFormatting":
-                    ReadConditionalFormatting(sheet, reader);
+                    advance = !ReadConditionalFormatting(sheet, reader);
                     break;
 
                 case "sheetProtection":
@@ -616,54 +623,46 @@ internal static class SheetXml
         }
     }
 
-    private static void ReadConditionalFormatting(Worksheet sheet, XmlReader reader)
+    /// <summary>
+    /// Reads one <c>conditionalFormatting</c> block, keeping each rule as written.
+    /// </summary>
+    /// <remarks>
+    /// Rules used to be reduced to a type, an operator and formulas: the dxfId that gives a rule its
+    /// colour was dropped, colour scales and data bars lost their colours, icon sets their icons,
+    /// and a block covering several ranges (<c>sqref="A1:A10 C1:C10"</c>) failed to parse and lost
+    /// its rules entirely. Now the rule element itself is kept and written back; the stylesheet's
+    /// dxfs are kept in order too, so its dxfId still points at the right format.
+    /// </remarks>
+    /// <returns>True when the reader was moved past the block, onto the node after it.</returns>
+    private static bool ReadConditionalFormatting(Worksheet sheet, XmlReader reader)
     {
-        if (!CellRangeReference.TryParse(reader.GetAttribute("sqref"), out var range) ||
-            reader.IsEmptyElement)
+        var sqref = reader.GetAttribute("sqref");
+
+        if (string.IsNullOrWhiteSpace(sqref) || reader.IsEmptyElement)
         {
-            return;
+            return false;
         }
 
-        using var subtree = reader.ReadSubtree();
-        subtree.Read();
+        var block = (XElement)XNode.ReadFrom(reader);
 
-        while (subtree.Read())
+        // The first range stands for the block in the API; the full list is kept for writing.
+        CellRangeReference.TryParse(sqref.Split(' ', StringSplitOptions.RemoveEmptyEntries)[0], out var range);
+
+        foreach (var rule in block.Elements(S + "cfRule"))
         {
-            if (subtree.NodeType != XmlNodeType.Element || subtree.LocalName != "cfRule")
-            {
-                continue;
-            }
+            var formulas = rule.Elements(S + "formula").Select(f => f.Value).ToList();
 
-            var type = subtree.GetAttribute("type") ?? "cellIs";
-            var comparison = subtree.GetAttribute("operator");
-            var priority = ParseInt(subtree.GetAttribute("priority"));
-
-            var formulas = new List<string>();
-
-            if (!subtree.IsEmptyElement)
-            {
-                var ruleDepth = subtree.Depth;
-
-                while (subtree.Read())
-                {
-                    if (subtree.NodeType == XmlNodeType.EndElement && subtree.Depth == ruleDepth)
-                    {
-                        break;
-                    }
-
-                    if (subtree is { NodeType: XmlNodeType.Element, LocalName: "formula" })
-                    {
-                        formulas.Add(ReadElementText(subtree));
-                    }
-                }
-            }
-
-            // The differential format a rule applies lives in the stylesheet's dxfs table, which
-            // this library does not round-trip; the rule is preserved with no style so the
-            // condition survives even though the formatting has to be re-specified.
             sheet.AddConditionalRuleUnchecked(
-                new ConditionalRule(range, type, comparison, formulas, null, priority));
+                new ConditionalRule(range, rule.Attr("type") ?? "cellIs", rule.Attr("operator"), formulas, null,
+                    ParseInt(rule.Attr("priority")))
+                {
+                    Raw = new XElement(rule),
+                    Sqref = sqref,
+                    IconSet = rule.Element(S + "iconSet")?.Attr("iconSet"),
+                });
         }
+
+        return true;
     }
 
     private static int ParseInt(string? text) =>
@@ -1012,15 +1011,38 @@ internal static class SheetXml
         foreach (var rule in sheet.ConditionalRules)
         {
             writer.WriteStartElement("conditionalFormatting", S.NamespaceName);
-            writer.WriteAttributeString("sqref", rule.Range.A1);
+            writer.WriteAttributeString("sqref", rule.Sqref ?? rule.Range.A1);
+
+            // A rule read from a file goes back exactly as it came; its dxfId is still valid
+            // because the stylesheet keeps the dxfs table in order.
+            if (rule.Raw is { } raw)
+            {
+                raw.WriteTo(writer);
+                writer.WriteEndElement();
+                continue;
+            }
 
             writer.WriteStartElement("cfRule", S.NamespaceName);
             writer.WriteAttributeString("type", rule.Type);
+
+            // Without a dxfId a highlight rule highlights nothing: the condition is evaluated and
+            // no format is applied. Every rule made with a style used to be written that way.
+            if (rule.Style is { } style)
+            {
+                writer.WriteAttributeString("dxfId",
+                    sheet.Workbook.Styles.AddDifferential(style).ToString(CultureInfo.InvariantCulture));
+            }
+
             writer.WriteAttributeString("priority", rule.Priority.ToString(CultureInfo.InvariantCulture));
 
             if (rule.Operator is not null)
             {
                 writer.WriteAttributeString("operator", rule.Operator);
+            }
+
+            foreach (var (name, value) in rule.Attributes ?? new Dictionary<string, string>())
+            {
+                writer.WriteAttributeString(name, value);
             }
 
             foreach (var formula in rule.Formulas)
@@ -1075,6 +1097,25 @@ internal static class SheetXml
                 writer.WriteStartElement("color", S.NamespaceName);
                 writer.WriteAttributeString("rgb", "FF" + barColor.ToHex());
                 writer.WriteEndElement();
+
+                writer.WriteEndElement();
+            }
+
+            if (rule.IconSet is { } iconSet)
+            {
+                // One threshold per icon, evenly spaced in percent: 0/33/67 for three icons.
+                var icons = iconSet[0] - '0';
+
+                writer.WriteStartElement("iconSet", S.NamespaceName);
+                writer.WriteAttributeString("iconSet", iconSet);
+
+                for (var i = 0; i < icons; i++)
+                {
+                    writer.WriteStartElement("cfvo", S.NamespaceName);
+                    writer.WriteAttributeString("type", "percent");
+                    writer.WriteAttributeString("val", (i * 100 / icons).ToString(CultureInfo.InvariantCulture));
+                    writer.WriteEndElement();
+                }
 
                 writer.WriteEndElement();
             }

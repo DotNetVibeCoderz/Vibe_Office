@@ -84,6 +84,30 @@ internal static class XlsxValidator
                     $"[{string.Join(", ", fills.Take(2))}].");
             }
 
+            if (OpcValidator.CheckChildOrder(root, "numFmts", "fonts", "fills", "borders", "cellStyleXfs",
+                    "cellXfs", "cellStyles", "dxfs", "tableStyles", "colors", "extLst") is { } order)
+            {
+                problems.Add("xl/styles.xml: " + order);
+            }
+
+            // Every conditional-formatting rule's dxfId must name a dxf that exists; one that does
+            // not is a rule Excel repairs away.
+            var dxfCount = root.Element(Ns.S + "dxfs")?.Elements(Ns.S + "dxf").Count() ?? 0;
+
+            foreach (var entry in archive.Entries.Where(e =>
+                         e.FullName.StartsWith("xl/worksheets/sheet", StringComparison.Ordinal)))
+            {
+                using var sheetStream = entry.Open();
+
+                foreach (var rule in XDocument.Load(sheetStream).Descendants(Ns.S + "cfRule"))
+                {
+                    if (rule.Attribute("dxfId") is { } dxf && int.Parse(dxf.Value) >= dxfCount)
+                    {
+                        problems.Add($"{entry.FullName}: cfRule dxfId {dxf.Value} but styles.xml has {dxfCount} dxfs.");
+                    }
+                }
+            }
+
             foreach (var required in (string[])["fonts", "borders", "cellStyleXfs", "cellXfs"])
             {
                 if (root.Element(Ns.S + required) is null)
