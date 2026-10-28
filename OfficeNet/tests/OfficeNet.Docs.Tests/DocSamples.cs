@@ -642,6 +642,28 @@ public class DocSamples : IDisposable
     }
 
     [Fact]
+    public void ExcelNet_FinancialFunctions()
+    {
+        using var workbook = Workbook.Create("Kredit");
+        var sheet = workbook["Kredit"];
+        sheet.WriteColumn("A1", -70000, 12000, 15000, 18000, 21000, 26000);
+        sheet.WriteColumn("C1", -10000, 2750, 4250, 3250, 2750);
+        sheet.WriteColumn("D1", new DateTime(2008, 1, 1), new DateTime(2008, 3, 1),
+            new DateTime(2008, 10, 30), new DateTime(2009, 2, 15), new DateTime(2009, 4, 1));
+
+        sheet["B1"].SetFormula("PMT(8%/12, 10, 10000)");
+        sheet["B2"].SetFormula("PV(0.08/12, 12*20, 500, , 0)");
+        sheet["B3"].SetFormula("NPV(10%, -10000, 3000, 4200, 6800)");
+        sheet["B4"].SetFormula("IRR(A1:A6)");
+        sheet["B5"].SetFormula("XIRR(C1:C5, D1:D5)");
+        workbook.Recalculate();
+
+        Assert.Equal(-1037.03, sheet["B1"].Number, 2);
+        Assert.Equal(0.0866, sheet["B4"].Number, 4);
+        Assert.Equal(0.3734, sheet["B5"].Number, 4);
+    }
+
+    [Fact]
     public void ExcelNet_Lookups()
     {
         using var workbook = Workbook.Create("Data");

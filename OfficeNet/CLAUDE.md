@@ -254,6 +254,12 @@ Release first.
 
 ## Commands
 
+**Verify with the CI command, built from scratch:**
+`dotnet build OfficeNet.sln -c Release --no-restore --no-incremental -warnaserror`. An incremental
+build after `dotnet test` does not re-report analyzer warnings, so it can look clean while CI fails
+on xUnit1051 — that shipped to main once.
+
+
 ```powershell
 dotnet build OfficeNet.sln -c Release
 dotnet build src/ExcelNet/ExcelNet.csproj -v q --nologo    # one project, quiet

@@ -675,10 +675,18 @@ melengkapi.
 - [ ] **Conditional formatting lanjutan.** `duplicateValues`/`uniqueValues` (deteksi duplikat dari
   `reference.md`), `top10`, `aboveAverage`, `containsText`, `expression`, dan icon set. Plus
   `FindDuplicates(range)` di sisi API untuk yang butuh hasilnya, bukan warnanya.
-- [ ] **Fungsi finansial.** `PMT`, `PV`, `FV`, `NPER`, `RATE`, `NPV`, `IRR`, `XNPV`, `XIRR`.
-  `IRR`/`RATE` iteratif (Newton dengan fallback bisection), dengan tebakan awal dan batas iterasi
-  Excel, mengembalikan `#NUM!` bila tidak konvergen — bukan angka terakhir yang kebetulan ada.
-  Diuji terhadap nilai yang dihitung Excel/LibreOffice, bukan terhadap rumus yang sama.
+- [x] **Fungsi finansial — selesai.** `PMT`, `PV`, `FV`, `NPER`, `RATE`, `NPV`, `IRR`, `XNPV`,
+  `XIRR`, diuji terhadap **contoh di halaman resmi Microsoft** — nilai yang dihitung Excel — bukan
+  terhadap rumus yang diturunkan ulang. Yang iteratif memakai Newton dan menjawab `#NUM!` bila tidak
+  konvergen, bukan iterasi terakhir.
+
+  **Parser formula tidak menerima argumen yang dikosongkan** (`PV(r, n, pmt, , 0)`), bentuk yang
+  dipakai contoh Microsoft sendiri: seluruh formula gagal. Kini argumen kosong bernilai kosong dan
+  fungsinya memakai default. Delapan mutasi; dua lolos karena fixture-nya tidak bisa membedakan —
+  contoh IRR hanya punya satu akar sehingga tebakan awal tak berpengaruh, dan teks di *akhir* range
+  NPV tidak menggeser apa pun — lalu ditambah arus kas dengan dua IRR eksak (10% dan 20%) dan teks
+  di tengah range. Satu mutasi ekuivalen dan dicatat: pemeriksaan tanda arus kas di IRR hanyalah
+  jalan pintas, karena Newton tanpa akar tetap berakhir `#NUM!`.
 - [ ] **Chart kombinasi** (batang + garis, sumbu sekunder) di `ChartData`/`ChartXml` — berlaku
   sekaligus untuk ExcelNet, PowerPointNet, dan chart Word di atas.
 - [ ] **Enkripsi workbook** (ECMA-376 Agile Encryption, AES-256 + SHA-512). Berkas terenkripsi

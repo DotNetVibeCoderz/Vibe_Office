@@ -661,6 +661,13 @@ public sealed class FormulaEngine
         {
             SkipWhitespace();
 
+            // An omitted argument — PV(r, n, pmt, , 0) — is empty, and the function applies its
+            // default. Parsing it as an expression used to fail, and the whole formula with it.
+            if (_position < text.Length && text[_position] is ',' or ')')
+            {
+                return [CellValue.Empty];
+            }
+
             var save = _position;
 
             // A bare range argument is recognised by scanning ahead for "REF:REF" before falling
@@ -919,6 +926,19 @@ public sealed class FormulaEngine
                     ? arguments[index][0]
                     : CellValue.Empty;
 
+            // An optional numeric argument: its default when omitted or empty, as Excel treats
+            // PMT(r, n, pv) and PMT(r, n, pv, , ) alike.
+            double Num(int index, double fallback = 0) =>
+                index < arguments.Count && !Arg(index).IsEmpty ? Arg(index).AsNumber() : fallback;
+
+            // The numbers of one argument, a range or a list; text and logicals in it are skipped,
+            // which is how NPV and IRR read their cash flows.
+            List<double> Series(int index) =>
+                index < arguments.Count
+                    ? [.. arguments[index].Where(v => v.ValueType is CellValueType.Number or CellValueType.DateTime)
+                        .Select(v => v.AsNumber())]
+                    : [];
+
             return name switch
             {
                 "SUM" => CellValue.FromNumber(numbers.Sum()),
@@ -1005,6 +1025,16 @@ public sealed class FormulaEngine
                 "MINUTE" => CellValue.FromNumber(Arg(0).AsDateTime().Minute),
                 "SECOND" => CellValue.FromNumber(Arg(0).AsDateTime().Second),
                 "WEEKDAY" => CellValue.FromNumber((int)Arg(0).AsDateTime().DayOfWeek + 1),
+
+                "PMT" => FinancialFunctions.Pmt(Num(0), Num(1), Num(2), Num(3), Num(4)),
+                "FV" => FinancialFunctions.Fv(Num(0), Num(1), Num(2), Num(3), Num(4)),
+                "PV" => FinancialFunctions.Pv(Num(0), Num(1), Num(2), Num(3), Num(4)),
+                "NPER" => FinancialFunctions.Nper(Num(0), Num(1), Num(2), Num(3), Num(4)),
+                "RATE" => FinancialFunctions.Rate(Num(0), Num(1), Num(2), Num(3), Num(4), Num(5, 0.1)),
+                "NPV" => FinancialFunctions.Npv(Num(0), [.. Enumerable.Range(1, Math.Max(0, arguments.Count - 1)).SelectMany(Series)]),
+                "IRR" => FinancialFunctions.Irr(Series(0), Num(1, 0.1)),
+                "XNPV" => FinancialFunctions.Xnpv(Num(0), Series(1), Series(2)),
+                "XIRR" => FinancialFunctions.Xirr(Series(0), Series(1), Num(2, 0.1)),
 
                 "SUMIF" => Conditional(arguments, sum: true),
                 "COUNTIF" => Conditional(arguments, sum: false),

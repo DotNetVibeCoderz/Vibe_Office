@@ -411,7 +411,7 @@ Perintah yang setara dengan CI adalah:
 
 ```powershell
 dotnet restore OfficeNet.sln -p:Configuration=Release
-dotnet build OfficeNet.sln -c Release --no-restore -warnaserror
+dotnet build OfficeNet.sln -c Release --no-restore --no-incremental -warnaserror
 dotnet test OfficeNet.sln -c Release --no-build
 ```
 
@@ -619,7 +619,8 @@ memeriksa bagaimana pustaka memperlakukan `w:ins` sebelum menulis fitur track ch
 - [ ] ExcelNet: sort range dengan urutan tipe Excel
 - [ ] ExcelNet: conditional formatting `duplicateValues`, `top10`, `aboveAverage`, `expression`,
       icon set; `FindDuplicates`
-- [ ] ExcelNet: fungsi finansial `PMT`, `PV`, `FV`, `NPER`, `RATE`, `NPV`, `IRR`, `XNPV`, `XIRR`
+- [x] ExcelNet: fungsi finansial `PMT`, `PV`, `FV`, `NPER`, `RATE`, `NPV`, `IRR`, `XNPV`, `XIRR` —
+      diuji terhadap contoh resmi Microsoft; parser kini menerima argumen yang dikosongkan
 - [ ] ExcelNet: XLSX ↔ HTML
 - [ ] ExcelNet: round-trip XLSM terverifikasi (content type macro-enabled bertahan)
 - [ ] Core: chart kombinasi + sumbu sekunder
@@ -657,6 +658,15 @@ Alasan dan keputusannya di [Plan.md](Plan.md#v22--server-mcp-untuk-asisten-ai).
 - [x] `ChartRenderer` dipindah ke PdfNet; **chart workbook kini tergambar di ekspor PDF Excel**
       (sebelumnya hilang); tanggal ISO di data template diformat sebagai tanggal
 - [ ] Transport HTTP, resources dan prompts MCP, Markdown sebagai input — lihat Plan
+
+## CI merah setelah merge MCP — dan sebabnya
+
+Commit MCP lolos build lokal dengan `-warnaserror`, lalu gagal di CI pada xUnit1051 (token
+pembatalan tidak diteruskan di satu tes). Build lokalnya bukan bohong, tapi **incremental**:
+`dotnet test` sudah lebih dulu membangun proyek itu tanpa `-warnaserror`, dan build berikutnya
+tidak melaporkan ulang peringatan analyzer untuk proyek yang sudah mutakhir. CI selalu membangun
+dari nol. Perintah setara CI di atas kini memakai `--no-incremental`; ini kegagalan keempat dengan
+pola yang sama — verifikasi lokal yang bukan perintah CI.
 
 ## Yang masih tersisa
 

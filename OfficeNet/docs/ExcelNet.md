@@ -143,6 +143,29 @@ sheet["A1"].SetFormula("1/0");                 // #DIV/0!
 sheet["A2"].SetFormula("IFERROR(A1,\"n/a\")"); // "n/a"
 ```
 
+### Financial functions
+
+```csharp
+sheet["B1"].SetFormula("PMT(8%/12, 10, 10000)");          // -1,037.03: a payment is money out
+sheet["B2"].SetFormula("PV(0.08/12, 12*20, 500, , 0)");   // omitted arguments take their default
+sheet["B3"].SetFormula("NPV(10%, -10000, 3000, 4200, 6800)");
+sheet["B4"].SetFormula("IRR(A1:A6)");
+sheet["B5"].SetFormula("XIRR(C1:C5, D1:D5)");             // cash flows and their dates
+```
+
+`PMT`, `PV`, `FV`, `NPER`, `RATE`, `NPV`, `IRR`, `XNPV` and `XIRR` follow Excel exactly, and are
+tested against the worked examples on Microsoft's own pages rather than against formulas re-derived
+here. Two conventions matter:
+
+- **Signs are cash flow.** Money paid out is negative, so the payment on a loan you receive is
+  negative. Taking the magnitude "because that is the payment" flips every formula downstream.
+- **The iterative ones say `#NUM!` instead of guessing.** `RATE`, `IRR` and `XIRR` solve for a rate.
+  When that does not settle — cash flows that never change sign, a guess far from any root — the
+  answer is `#NUM!`, as in Excel. A cash flow with two rates returns the one nearest the guess.
+
+`NPV` discounts its first value one period, unlike `IRR`; text and logical values inside its range are
+skipped, so the values after them keep their periods.
+
 ### Lookups
 
 ```csharp

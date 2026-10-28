@@ -146,6 +146,31 @@ sheet["A1"].SetFormula("1/0");                 // #DIV/0!
 sheet["A2"].SetFormula("IFERROR(A1,\"n/a\")"); // "n/a"
 ```
 
+### Fungsi finansial
+
+```csharp
+sheet["B1"].SetFormula("PMT(8%/12, 10, 10000)");          // -1.037,03: pembayaran adalah uang keluar
+sheet["B2"].SetFormula("PV(0.08/12, 12*20, 500, , 0)");   // argumen yang dikosongkan memakai nilai bawaan
+sheet["B3"].SetFormula("NPV(10%, -10000, 3000, 4200, 6800)");
+sheet["B4"].SetFormula("IRR(A1:A6)");
+sheet["B5"].SetFormula("XIRR(C1:C5, D1:D5)");             // arus kas dan tanggalnya
+```
+
+`PMT`, `PV`, `FV`, `NPER`, `RATE`, `NPV`, `IRR`, `XNPV`, dan `XIRR` mengikuti Excel persis, dan diuji
+terhadap contoh di halaman resmi Microsoft, bukan terhadap rumus yang diturunkan ulang di sini. Dua
+konvensi yang penting:
+
+- **Tanda adalah arah arus kas.** Uang keluar bernilai negatif, jadi cicilan pinjaman yang Anda
+  terima bernilai negatif. Mengambil nilai mutlaknya "karena itu cicilannya" membalik setiap formula
+  sesudahnya.
+- **Yang iteratif menjawab `#NUM!`, bukan menebak.** `RATE`, `IRR`, dan `XIRR` mencari suku bunga.
+  Bila tidak konvergen — arus kas yang tak pernah berganti tanda, tebakan yang jauh dari akar mana
+  pun — jawabannya `#NUM!`, seperti di Excel. Arus kas dengan dua suku bunga menghasilkan yang
+  terdekat dengan tebakan.
+
+`NPV` mendiskonto nilai pertamanya satu periode, berbeda dari `IRR`; teks dan nilai logika di dalam
+range-nya dilewati, sehingga nilai sesudahnya tetap pada periodenya.
+
 ### Lookup
 
 ```csharp
