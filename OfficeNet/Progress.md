@@ -551,6 +551,18 @@ Yang baru bagi pemakainya, secara garis besar:
 | Rendering | TIFF multi-halaman |
 | MCP | 23 tool lewat stdio, dokumen workspace sebagai resource, tiga prompt |
 
+**Dibuktikan setelah terbit.** Workflow rilis menjalankan seluruh tes lalu mendorong 16 berkas
+("Your package was pushed" untuk masing-masing). Sebuah proyek yang `NuGet.config`-nya hanya menyebut
+nuget.org, dengan cache paket tersendiri, memasang `[2.0.0]` dan menjalankan delapan pemeriksaan:
+versinya 2.0.0, workbook terenkripsi terdeteksi dan terbuka kembali, Markdown bolak-balik, chart
+kombinasi dan objek tersemat terbaca kembali, formulir PDF/A dengan font tersemat tersimpan, dan meta
+package tidak menyeret SkiaSharp. Kedelapannya lulus; `dotnet tool install Gravicode.OfficeNet.Mcp`
+dari nuget.org memasang `officenet-mcp` yang berjalan.
+
+Seperti sebelumnya indeksnya tertinggal: `v3-flatcontainer` sudah menyebut 2.0.0 sementara restore
+masih melihat tiga versi — karena cache HTTP NuGet lokal, bukan nuget.org. `--no-http-cache`
+menyelesaikannya.
+
 ## Rilis v1.3.0
 
 Tujuh paket beserta paket simbolnya, dirilis lewat tag `officenet-v1.3.0`. Isinya seluruh v1.2
