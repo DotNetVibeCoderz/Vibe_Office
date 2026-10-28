@@ -1,5 +1,6 @@
 // OfficeNet - Dibuat oleh Gravicode Studios, dipimpin oleh Kang Fadhil.
 
+using System.Formats.Asn1;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Security.Cryptography.Pkcs;
@@ -371,20 +372,30 @@ public static class PdfSignatures
     /// Removes the zero padding from a <c>/Contents</c> string.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// The hole is reserved before the signature exists, so it is always larger than the signature
-    /// that goes into it, and the remainder is zeros. A DER parser reads the structure's own length
-    /// and stops, but some reject trailing bytes, so they are cut here.
+    /// that goes into it, and the remainder is zeros. <see cref="SignedCms.Decode(byte[])"/> rejects
+    /// trailing bytes, so they are cut here.
+    /// </para>
+    /// <para>
+    /// The cut is where the encoding says the structure ends, never "after the last non-zero byte".
+    /// The signature value is the last field, so one signature in 256 ends in a genuine zero byte,
+    /// and a BER signature with an indefinite length always ends in two. Stripping zeros cut those
+    /// short and they failed to verify.
+    /// </para>
     /// </remarks>
     private static byte[] Trim(byte[] contents)
     {
-        var end = contents.Length;
-
-        while (end > 0 && contents[end - 1] == 0)
+        try
         {
-            end--;
+            AsnDecoder.ReadEncodedValue(contents, AsnEncodingRules.BER, out _, out _, out var consumed);
+            return consumed == contents.Length ? contents : contents[..consumed];
         }
-
-        return end == contents.Length ? contents : contents[..end];
+        catch (AsnContentException)
+        {
+            // Not a well-formed structure; Decode reports that better than a guess here would.
+            return contents;
+        }
     }
 }
 

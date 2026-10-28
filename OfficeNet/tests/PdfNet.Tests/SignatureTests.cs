@@ -1,5 +1,6 @@
 // OfficeNet - Dibuat oleh Gravicode Studios, dipimpin oleh Kang Fadhil.
 
+using System.Formats.Asn1;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using OfficeNet.Core;
@@ -318,5 +319,67 @@ public class SignatureTests
         using var final = PdfDocument.Open(new MemoryStream(twice, writable: false));
 
         Assert.Equal(2, PdfSignatures.Find(final).Count);
+    }
+
+    /// <summary>The signature as written, without the zero padding after it.</summary>
+    private static byte[] Der(byte[] signed)
+    {
+        using var reopened = PdfDocument.Open(new MemoryStream(signed, writable: false));
+        var contents = Assert.Single(PdfSignatures.Find(reopened)).Contents;
+
+        AsnDecoder.ReadEncodedValue(contents, AsnEncodingRules.BER, out _, out _, out var consumed);
+        return contents[..consumed];
+    }
+
+    [Fact]
+    public void ASignatureEndingInAZeroByteStillVerifies()
+    {
+        // The RSA signature is the last thing in the CMS, so about one in 256 ends in a zero byte —
+        // which looks exactly like the padding after it. Found by signing until one does, so the
+        // test does not depend on luck.
+        using var certificate = Certificate();
+
+        for (var attempt = 0; attempt < 5000; attempt++)
+        {
+            using var pdf = Document($"Laporan nomor {attempt}.");
+            var signed = PdfSigner.Sign(pdf, certificate);
+
+            if (Der(signed)[^1] != 0)
+            {
+                continue;
+            }
+
+            var verification = Assert.Single(PdfSignatures.VerifyAll(signed));
+            Assert.Null(verification.Problem);
+            Assert.True(verification.IsIntact);
+            return;
+        }
+
+        Assert.Fail("No signature ending in a zero byte in 5000 attempts.");
+    }
+
+    [Fact]
+    public void ABerSignatureWithAnIndefiniteLengthVerifies()
+    {
+        // Some signers write the outer SEQUENCE with an indefinite length: 30 80 ... 00 00. That is
+        // exactly as long as the definite 30 82 LL LL form, so it fits the same hole and the byte
+        // range is untouched.
+        using var certificate = Certificate();
+        using var pdf = Document();
+        var signed = PdfSigner.Sign(pdf, certificate);
+
+        var der = Der(signed);
+        Assert.Equal([0x30, 0x82], der[..2]);
+
+        byte[] ber = [0x30, 0x80, .. der[4..], 0x00, 0x00];
+
+        var hex = System.Text.Encoding.ASCII.GetBytes(Convert.ToHexString(der));
+        var at = signed.AsSpan().IndexOf(hex);
+        Assert.True(at > 0);
+        System.Text.Encoding.ASCII.GetBytes(Convert.ToHexString(ber)).CopyTo(signed, at);
+
+        var verification = Assert.Single(PdfSignatures.VerifyAll(signed));
+        Assert.Null(verification.Problem);
+        Assert.True(verification.IsIntact);
     }
 }

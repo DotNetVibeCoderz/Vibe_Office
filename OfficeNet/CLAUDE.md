@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 are both complete, and 1.3.0 is on NuGet**; v2.0 is in progress — the HTML engine now lives in
 `OfficeNet.Core.Html`, and `WordNet.Import.HtmlToWord` and `WordNet.Export.WordToHtml` exist. All six
 libraries build clean with zero warnings: `OfficeNet.Core`, `PdfNet`, `WordNet`, `ExcelNet`,
-`PowerPointNet`, `OfficeNet` (meta), `OfficeNet.Rendering`, and the MCP server `OfficeNet.Mcp`. **854 tests pass** across eight
+`PowerPointNet`, `OfficeNet` (meta), `OfficeNet.Rendering`, and the MCP server `OfficeNet.Mcp`. **958 tests pass** across eight
 test projects.
 
 Everything the plan listed through v1.1 exists: the libraries, tests with independent structural
@@ -146,6 +146,10 @@ Every item here cost real debugging time. None are hypothetical.
 - **Objects inside an object stream are not individually encrypted** — the container already was.
   Decrypting twice yields garbage that still parses.
 - **An XRef stream is never encrypted.**
+- **A signature's `/Contents` padding is cut where the DER says the structure ends, never by
+  stripping zeros.** The RSA value is the last field, so one signature in 256 ends in a real `00`,
+  and a BER indefinite length always ends in `00 00`. Stripping zeros made 1 in 256 of our own
+  signatures fail to verify — it showed up as a flaky test.
 - **`/Predictor` on a Flate stream is not optional.** Ignoring it inflates cleanly and gives
   completely wrong bytes; in an xref stream that means every object offset is garbage.
 - **A composite font with no `/ToUnicode` genuinely cannot be decoded.** Emitting the raw code
