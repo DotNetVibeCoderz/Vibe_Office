@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 are both complete, and 1.3.0 is on NuGet**; v2.0 is in progress — the HTML engine now lives in
 `OfficeNet.Core.Html`, and `WordNet.Import.HtmlToWord` and `WordNet.Export.WordToHtml` exist. All six
 libraries build clean with zero warnings: `OfficeNet.Core`, `PdfNet`, `WordNet`, `ExcelNet`,
-`PowerPointNet`, `OfficeNet` (meta), `OfficeNet.Rendering`, and the MCP server `OfficeNet.Mcp`. **1780 tests** (four veraPDF checks skip unless `VERAPDF` is set) across eight
+`PowerPointNet`, `OfficeNet` (meta), `OfficeNet.Rendering`, and the MCP server `OfficeNet.Mcp`. **1784 tests** (four veraPDF checks skip unless `VERAPDF` is set) across eight
 test projects.
 
 Everything the plan listed through v1.1 exists: the libraries, tests with independent structural
@@ -255,6 +255,8 @@ Every item here cost real debugging time. None are hypothetical.
   exceptions and argument errors; anything else is reported generically by the SDK, on purpose.
 - **JSON has no dates.** ISO date strings are turned into `DateTime` for cells and template data
   (`Values.Cell`, `Values.TemplateData`), or `:dd MMMM yyyy` formats nothing.
+- **A resource template's `{+path}` arrives already percent-decoded.** Decoding it again turned a
+  file named `kode%41.docx` into `kodeA.docx`. Resources go through `Workspace.Existing` like tools.
 - **Test through the process, not the classes.** `ServerFixture` launches the built server and
   talks stdio. The C# sample in `docs/Mcp.md` is compiled in `OfficeNet.Mcp.Tests`, not DocSamples.
 

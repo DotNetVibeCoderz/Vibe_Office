@@ -138,6 +138,35 @@ direktori home.
 dipakai asisten untuk memeriksa hasil kerjanya sendiri: membuat dokumen, melihatnya, lalu
 membetulkan yang salah.
 
+## Resource dan prompt
+
+Dokumen di workspace juga tersedia sebagai **resource**, sehingga klien bisa mendaftarnya dan
+melampirkan salah satunya ke percakapan tanpa panggilan tool. Masing-masing dibaca sebagai teks yang
+bisa dipakai model:
+
+| Dokumen | Dibaca sebagai |
+| --- | --- |
+| `.docx` | Markdown — heading, daftar, tabel, tautan |
+| `.xlsx` | setiap sheet sebagai CSV, masing-masing di bawah `# NamaSheet` |
+| `.pptx`, `.pdf` | teks biasa |
+
+URI-nya `officenet://workspace/` ditambah path-nya, tiap segmen di-percent-encode
+(`officenet://workspace/laporan%202026/ringkasan.docx`); template-nya
+`officenet://workspace/{+path}`. Pembacaan melewati batas workspace yang sama dengan setiap tool,
+sehingga URI yang keluar — `../`, di-encode atau tidak — ditolak. Paling banyak 500 dokumen didaftar
+dan 200.000 karakter dikembalikan.
+
+Tiga **prompt** adalah rencana siap pakai yang ditulis dengan tool-tool ini, yang bisa ditawarkan
+klien sebagai perintah:
+
+| Prompt | Argumen | Fungsinya |
+| --- | --- | --- |
+| `report_from_spreadsheet` | `spreadsheet`, `output?` | membaca workbook, menulis laporan Word berisi temuan, tabel, dan chart, lalu memeriksanya |
+| `summarize_document` | `path`, `length?` | membaca dokumen dan meringkasnya, angka sesuai yang tertulis |
+| `deck_from_document` | `source`, `output?`, `slides?` | mengubah dokumen menjadi deck singkat dan memeriksa slide yang meluap |
+
+Prompt hanya menghasilkan teks; tidak ada yang dijalankan sampai model memanggil tool-nya.
+
 ## Memanggil dari kode
 
 Ini server MCP biasa, jadi pustaka klien MCP apa pun bisa mengendalikannya. Dengan SDK C# resmi:

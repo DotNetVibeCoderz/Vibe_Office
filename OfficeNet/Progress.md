@@ -665,7 +665,8 @@ Alasan dan keputusannya di [Plan.md](Plan.md#v22--server-mcp-untuk-asisten-ai).
 - [x] `ChartRenderer` dipindah ke PdfNet; **chart workbook kini tergambar di ekspor PDF Excel**
       (sebelumnya hilang); tanggal ISO di data template diformat sebagai tanggal
 - [x] MCP: Markdown sebagai input (`markdown` block), konversi md/txt ↔ docx, gambar hanya dari workspace
-- [ ] Transport HTTP, resources dan prompts MCP — lihat Plan
+- [x] Resources dan prompts MCP
+- [ ] Transport HTTP MCP — sengaja ditunda, lihat Plan
 
 ## CI merah setelah merge MCP — dan sebabnya
 

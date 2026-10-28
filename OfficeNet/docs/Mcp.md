@@ -134,6 +134,34 @@ made for the purpose rather than your home directory.
 `render_page` is what turns this from a file generator into something an assistant can check its
 own work with: it creates a document, looks at it, and fixes what is wrong.
 
+## Resources and prompts
+
+The workspace's documents are also **resources**, so a client can list them and attach one to a
+conversation without a tool call. Each is read as text a model can use:
+
+| Document | Read as |
+| --- | --- |
+| `.docx` | Markdown — headings, lists, tables, links |
+| `.xlsx` | every sheet as CSV, each under `# SheetName` |
+| `.pptx`, `.pdf` | plain text |
+
+URIs are `officenet://workspace/` plus the path, each segment percent-encoded
+(`officenet://workspace/laporan%202026/ringkasan.docx`); the template is
+`officenet://workspace/{+path}`. Reading goes through the same workspace boundary as every tool, so a
+URI that climbs out — `../`, encoded or not — is refused. At most 500 documents are listed and
+200 000 characters returned.
+
+Three **prompts** are ready-made plans written in terms of the tools, which a client can offer as
+commands:
+
+| Prompt | Arguments | Does |
+| --- | --- | --- |
+| `report_from_spreadsheet` | `spreadsheet`, `output?` | reads the workbook, writes a Word report with findings, a table and a chart, then looks at it |
+| `summarize_document` | `path`, `length?` | reads a document and summarises it, figures as written |
+| `deck_from_document` | `source`, `output?`, `slides?` | turns a document into a short deck and checks the slides for overflow |
+
+A prompt only produces text; it runs nothing until the model calls the tools.
+
 ## Calling it from code
 
 The server is an ordinary MCP server, so any MCP client library can drive it. With the official C#

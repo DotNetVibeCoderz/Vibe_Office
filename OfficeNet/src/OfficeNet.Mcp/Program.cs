@@ -53,14 +53,19 @@ builder.Services
         options.ServerInstructions =
             "Creates, edits, converts and previews Word (.docx), Excel (.xlsx), PowerPoint (.pptx) " +
             "and PDF files inside one workspace directory. Paths are relative to that directory. " +
-            "Use render_page to look at a result after creating it.";
+            "Use render_page to look at a result after creating it. The workspace's documents are also " +
+            "resources (officenet://workspace/<path>, read as text), and the prompts are ready-made plans.";
     })
     .WithStdioServerTransport()
     .WithTools<WordTools>()
     .WithTools<ExcelTools>()
     .WithTools<PowerPointTools>()
     .WithTools<PdfTools>()
-    .WithTools<DocumentTools>();
+    .WithTools<DocumentTools>()
+    .WithResources<WorkspaceResources>()
+    .WithListResourcesHandler((request, _) =>
+        ValueTask.FromResult(new WorkspaceResources(request.Services!.GetRequiredService<Workspace>()).List()))
+    .WithPrompts<OfficePrompts>();
 
 await builder.Build().RunAsync();
 return 0;

@@ -936,8 +936,12 @@ Berikutnya, bila ada permintaan:
   dijangkau lewat jaringan, ia butuh autentikasi dan otorisasi per pengguna, dan "satu workspace"
   berubah menjadi "satu workspace per pengguna". stdio menghindari semua itu karena server adalah
   proses milik pengguna sendiri.
-- [ ] **Resources dan prompts MCP** — dokumen di workspace sebagai resource yang bisa dibaca klien,
-  dan prompt siap pakai ("buat laporan kuartal dari spreadsheet ini").
+- [x] **Resources dan prompts MCP — selesai.** Dokumen workspace didaftar sebagai resource
+  (`officenet://workspace/{+path}`) dan dibaca sebagai teks: .docx sebagai Markdown, tiap sheet .xlsx
+  sebagai CSV, .pptx/.pdf sebagai teks. Lewat `Workspace.Existing`, jadi URI yang keluar ditolak; path
+  didekode sekali saja (SDK sudah mendekodenya — dekode kedua membuat `kode%41.docx` menjadi
+  `kodeA.docx`). Tiga prompt: `report_from_spreadsheet`, `summarize_document`, `deck_from_document`;
+  tes memastikan setiap tool yang disebut prompt memang ada.
 - [x] **Markdown sebagai input `word_create` — selesai.** Blok `markdown` (juga di `word_append`),
   bisa dicampur dengan blok lain; `convert` kini md/txt → docx dan docx → md. Gambar hanya lewat
   `Workspace.ImageReader` dengan `AllowFileAccess = false` — sekaligus menutup celah lama di
