@@ -324,6 +324,13 @@ public sealed class Workbook : OfficeDocument, IReadOnlyList<Worksheet>
 
         _sheets.Remove(sheet);
         Names.SheetRemoved(sheet);
+
+        // Its tables go with it; left behind they are parts nothing points at.
+        foreach (var table in sheet.Tables)
+        {
+            Package.RemovePart(table.Part.Name);
+        }
+
         Package.RemovePart(sheet.Part.Name);
         Package.MarkDirty();
 
@@ -440,6 +447,13 @@ public sealed class Workbook : OfficeDocument, IReadOnlyList<Worksheet>
 
         foreach (var sheet in _sheets)
         {
+            // A table whose column names drifted from its header cells is one Excel deletes, so
+            // the names are taken from the cells now — before the cells themselves are written.
+            foreach (var table in sheet.Tables)
+            {
+                table.SynchroniseColumns();
+            }
+
             // Comments go first: they decide whether the sheet has a legacyDrawing to point at.
             SheetComments.Write(sheet, ref nextVmlBlock);
             sheet.Part.SetBytes(SheetXml.Write(sheet, SharedStrings));

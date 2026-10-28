@@ -696,6 +696,26 @@ public class DocSamples : IDisposable
     }
 
     [Fact]
+    public void ExcelNet_Tables()
+    {
+        using var workbook = Workbook.Create("Data");
+        var sheet = workbook["Data"];
+        var summary = workbook.AddSheet("Ringkasan");
+
+        sheet.WriteHeader("A1", ["Wilayah", "Nilai", "Qty"]);
+        sheet.WriteRow("A2", "Jakarta", 1480, 12);
+        sheet.WriteRow("A3", "Bandung", 1150, 9);
+        var table = sheet.AddTable("A1:C20", "Penjualan", "TableStyleMedium2");
+
+        summary["B1"].SetFormula("SUM(Penjualan[Nilai])");
+        summary["B2"].SetFormula("COUNTA(Penjualan)");
+        workbook.Recalculate();
+
+        Assert.Equal("Penjualan", table.Name);
+        Assert.Equal(2630, summary["B1"].Number);
+    }
+
+    [Fact]
     public void ExcelNet_Sorting()
     {
         using var workbook = Workbook.Create();

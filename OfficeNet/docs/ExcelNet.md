@@ -295,6 +295,31 @@ is the sheet itself and the position is worked out on save, so `MoveSheet` canno
 to the sheet that took its slot. Renaming a sheet rewrites the names that refer to it; copying one
 copies its local names; removing one removes them.
 
+## Tables
+
+```csharp
+sheet.WriteHeader("A1", ["Wilayah", "Nilai", "Qty"]);
+// ... data rows ...
+var table = sheet.AddTable("A1:C20", "Penjualan", "TableStyleMedium2");
+
+summary["B1"].SetFormula("SUM(Penjualan[Nilai])");   // one column's data
+summary["B2"].SetFormula("COUNTA(Penjualan)");       // the whole data body
+```
+
+An Excel table (a ListObject) is a named range with a header row, banded styling and a filter of
+its own. Header cells become unique text — an empty one becomes `Column3`, a repeat `Nilai2` —
+because Excel deletes a table whose column names do not match its header cells, and the names are
+taken from the cells again on every save, so editing a header later is safe. Names and ids are
+unique across the workbook and may not clash with a defined name. The AutoFilter `WriteHeader` puts
+on a header row becomes the table's own; one that reaches outside the table is refused, as are
+overlapping tables and merged cells.
+
+Formulas understand `Table[Column]` and a bare `Table`. The special items (`[#Headers]`,
+`[@Column]`, `[[A]:[B]]`) are not supported and give `#NAME?`; there is no totals row yet.
+
+**Tables in a file you open now survive the save.** The sheet is rewritten from the model, and
+before tables were modelled the rewrite dropped `tableParts`, so Excel lost every table.
+
 ## Sorting
 
 ```csharp

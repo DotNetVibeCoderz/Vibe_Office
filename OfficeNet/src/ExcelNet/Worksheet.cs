@@ -969,6 +969,30 @@ public sealed class Worksheet
         return rule;
     }
 
+    // ---- Tables --------------------------------------------------------------------------------
+
+    /// <summary>The Excel tables (ListObjects) on this sheet.</summary>
+    public IReadOnlyList<ExcelTable> Tables =>
+        [.. Part.RelatedPartsByType(RelationshipTypes.Table).Select(p => new ExcelTable(this, p))];
+
+    /// <summary>
+    /// Turns a range into an Excel table: header row, banded style, its own filter, and a name
+    /// formulas can use — <c>SUM(Penjualan[Nilai])</c>.
+    /// </summary>
+    /// <param name="range">The table including its header row, e.g. <c>A1:D20</c>.</param>
+    /// <param name="name">Unique in the workbook; <c>Table1</c>, <c>Table2</c>… when omitted.</param>
+    /// <param name="style">One of Excel's table styles, e.g. <c>TableStyleMedium2</c> or <c>TableStyleLight9</c>.</param>
+    /// <remarks>
+    /// Header cells become text, and an empty or repeated header is given a unique name
+    /// (<c>Column3</c>, <c>Nilai2</c>), because Excel deletes a table whose column names do not match
+    /// its header cells exactly.
+    /// </remarks>
+    /// <exception cref="OfficeNetException">
+    /// The name is taken, or the range overlaps another table, the sheet's AutoFilter, or merged cells.
+    /// </exception>
+    public ExcelTable AddTable(string range, string? name = null, string style = "TableStyleMedium2") =>
+        ExcelTable.Create(this, CellRangeReference.Parse(range), name, style);
+
     /// <summary>Highlights every value that appears more than once in the range.</summary>
     public ConditionalRule AddDuplicateValues(string range, CellStyle style) =>
         AddRule(range, "duplicateValues", style);

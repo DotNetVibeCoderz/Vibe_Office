@@ -672,9 +672,21 @@ melengkapi.
   `#REF!`; tanpa penjaganya proses tes mati karena stack overflow — mutasi itu tertangkap justru
   karena crash. Sembilan mutasi, semuanya tertangkap; openpyxl membaca nama global, area cetak
   setelah `MoveSheet`, dan nilai cache formulanya.
-- [ ] **Excel Table** (`ListObject`, part `xl/tables/tableN.xml`). Range bernama dengan header,
-  gaya tabel, baris total, autofilter-nya sendiri. Referensi terstruktur (`Tabel1[Kolom]`) di mesin
-  formula adalah langkah kedua yang terpisah.
+- [x] **Excel Table — selesai, dan memperbaiki tabel yang hilang saat buka-lalu-simpan.**
+  `Worksheet.AddTable`, `Tables`, `ExcelTable` (nama, range, kolom, gaya), dan referensi terstruktur
+  dasar di mesin formula (`SUM(Penjualan[Nilai])`, `COUNTA(Penjualan)`) — dikerjakan sekaligus,
+  bukan langkah terpisah.
+
+  **Setiap tabel di berkas yang dibuka hilang saat disimpan**: sheet ditulis ulang dari model tanpa
+  `tableParts`, sehingga part tabelnya tak dirujuk dan Excel membuangnya. Excel juga menghapus tabel
+  bila nama kolom tidak sama persis dengan sel header atau berulang, jadi header dijadikan teks unik
+  dan nama kolom disinkronkan dari sel setiap kali menyimpan. Nama dan id unik se-workbook, tak boleh
+  bentrok dengan defined name. AutoFilter yang dipasang `WriteHeader` diserap menjadi filter tabel —
+  versi pertama menolaknya, dan itu justru pola pemakaian paling umum; yang menjulur keluar tabel
+  tetap ditolak. Delapan mutasi tertangkap; openpyxl membaca tabel, gaya, kolom, dan nilai cache
+  formula terstrukturnya.
+
+  Belum: baris total, item khusus (`[#Headers]`, `[@Kolom]`), dan menyalin tabel saat `CopySheet`.
 - [x] **Rich text di sel — selesai.** `Cell.WithRichText(...)` dan `Cell.RichText`; tabel shared
   string kini menyimpan run per entri dan menulisnya kembali, termasuk `rPr` mentah untuk properti
   yang tidak dimodelkan (superskrip, skema font), sehingga buka-lalu-simpan tidak lagi meratakan

@@ -615,7 +615,8 @@ memeriksa bagaimana pustaka memperlakukan `w:ins` sebelum menulis fitur track ch
 - [ ] WordNet: Markdown ↔ DOCX, TXT → DOCX
 - [x] ExcelNet: named range (`definedNames`), termasuk dipakai mesin formula; area cetak dan judul
       cetak; `localSheetId` dihitung saat menyimpan (aman terhadap `MoveSheet` dan chartsheet)
-- [ ] ExcelNet: Excel Table (`ListObject`)
+- [x] ExcelNet: Excel Table (`ListObject`) dengan referensi terstruktur dasar. Sekaligus memperbaiki:
+      tabel di berkas yang dibuka **hilang** saat disimpan (`tableParts` tak ditulis ulang)
 - [x] ExcelNet: rich text di sel — tulis, baca, dan pertahankan `rPr` yang tidak dimodelkan; sekaligus
       memperbaiki bacaan fonetik (`rPh`) yang ikut terbaca sebagai teks
 - [x] ExcelNet: sort range dengan urutan tipe Excel; formula yang berpindah ikut menggeser

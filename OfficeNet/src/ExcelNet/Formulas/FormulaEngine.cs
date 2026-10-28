@@ -127,13 +127,42 @@ public sealed class FormulaEngine
     /// </remarks>
     internal (Worksheet Sheet, CellRangeReference Range)? ResolveNamedRange(Worksheet sheet, string name)
     {
-        if (_workbook.Names.Find(name, sheet) is not { } defined ||
-            !defined.TryGetRange(out var sheetName, out var range))
+        if (_workbook.Names.Find(name, sheet) is { } defined && defined.TryGetRange(out var sheetName, out var range))
+        {
+            return (ResolveSheet(defined.Scope ?? sheet, sheetName), range);
+        }
+
+        // A table's name on its own means its data rows, as in SUM(Penjualan).
+        return ResolveStructured(name, null);
+    }
+
+    /// <summary>
+    /// A structured reference: <c>Penjualan[Nilai]</c> is the data cells of one column, and
+    /// <c>Penjualan</c> (column <c>null</c>) the data rows of the whole table.
+    /// </summary>
+    internal (Worksheet Sheet, CellRangeReference Range)? ResolveStructured(string table, string? column)
+    {
+        var found = ExcelTable.AllTables(_workbook)
+            .FirstOrDefault(t => string.Equals(t.Name, table, StringComparison.OrdinalIgnoreCase));
+
+        if (found is null)
         {
             return null;
         }
 
-        return (ResolveSheet(defined.Scope ?? sheet, sheetName), range);
+        if (column is null)
+        {
+            return (found.Sheet, found.DataRange);
+        }
+
+        try
+        {
+            return (found.Sheet, found.ColumnRange(column));
+        }
+        catch (KeyNotFoundException)
+        {
+            throw new FormulaException("#REF!");
+        }
     }
 
     internal CellValue? EvaluateName(Worksheet sheet, string name)
@@ -586,6 +615,19 @@ public sealed class FormulaEngine
 
             var word = text[start.._position];
 
+            // Table[Column] in a scalar position: its first data cell, as with any range here.
+            if (sheetName is null && _position < text.Length && text[_position] == '[')
+            {
+                _position = start;
+
+                if (TryReadStructured(out var tableSheet, out var tableRange))
+                {
+                    return engine.ValueOf(tableSheet, tableRange.Start);
+                }
+
+                throw new FormulaException("#NAME?");
+            }
+
             SkipWhitespace();
 
             // An unquoted sheet-qualified reference: Sheet1!A1.
@@ -726,6 +768,20 @@ public sealed class FormulaEngine
 
             var save = _position;
 
+            // Table1[Column]: one column of a table's data, as a whole range.
+            if (TryReadStructured(out var tableSheet, out var tableRange))
+            {
+                SkipWhitespace();
+
+                if (_position < text.Length && text[_position] is ',' or ')')
+                {
+                    return new RangeArgument(ReadRangeValues(tableSheet, tableRange),
+                        tableRange.RowCount, tableRange.ColumnCount);
+                }
+
+                _position = save;
+            }
+
             // A name standing for a range passes the whole range, as SUM(Penjualan) needs.
             if (TryReadNamedRange(out var namedSheet, out var namedRange))
             {
@@ -804,6 +860,45 @@ public sealed class FormulaEngine
 
                 _position++;
             }
+        }
+
+        /// <summary>
+        /// Reads <c>Table[Column]</c>. Only the simple form is understood; the special items
+        /// (<c>[#Headers]</c>, <c>[@Column]</c>, <c>[[A]:[B]]</c>) give <c>#NAME?</c> as before.
+        /// </summary>
+        private bool TryReadStructured(out Worksheet target, out CellRangeReference range)
+        {
+            target = sheet;
+            range = default;
+
+            var save = _position;
+
+            while (_position < text.Length && (char.IsAsciiLetterOrDigit(text[_position]) || text[_position] is '_' or '.'))
+            {
+                _position++;
+            }
+
+            var table = text[save.._position];
+
+            if (table.Length == 0 || _position >= text.Length || text[_position] != '[')
+            {
+                _position = save;
+                return false;
+            }
+
+            var close = text.IndexOf(']', _position);
+            var column = close < 0 ? "" : text[(_position + 1)..close];
+
+            if (close < 0 || column.Length == 0 || column[0] is '[' or '#' or '@' ||
+                engine.ResolveStructured(table, column) is not { } resolved)
+            {
+                _position = save;
+                return false;
+            }
+
+            _position = close + 1;
+            (target, range) = resolved;
+            return true;
         }
 
         /// <summary>

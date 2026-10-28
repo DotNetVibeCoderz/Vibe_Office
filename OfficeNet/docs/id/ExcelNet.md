@@ -303,6 +303,32 @@ adalah sheet itu sendiri dan posisinya dihitung saat menyimpan, sehingga `MoveSh
 menyerahkan area cetak ke sheet yang menempati posisinya. Mengganti nama sheet menulis ulang nama
 yang merujuknya; menyalin sheet ikut menyalin nama lokalnya; menghapus sheet menghapusnya.
 
+## Tabel
+
+```csharp
+sheet.WriteHeader("A1", ["Wilayah", "Nilai", "Qty"]);
+// ... baris data ...
+var table = sheet.AddTable("A1:C20", "Penjualan", "TableStyleMedium2");
+
+summary["B1"].SetFormula("SUM(Penjualan[Nilai])");   // data satu kolom
+summary["B2"].SetFormula("COUNTA(Penjualan)");       // seluruh badan data
+```
+
+Tabel Excel (ListObject) adalah range bernama dengan baris header, gaya berselang-seling, dan
+filternya sendiri. Sel header dijadikan teks yang unik — yang kosong menjadi `Column3`, yang berulang
+`Nilai2` — karena Excel menghapus tabel yang nama kolomnya tidak sama dengan sel header, dan nama itu
+diambil lagi dari sel setiap kali menyimpan, jadi mengubah header belakangan aman. Nama dan id unik
+se-workbook dan tidak boleh bentrok dengan defined name. AutoFilter yang dipasang `WriteHeader` di
+baris header menjadi filter tabel itu sendiri; yang menjulur keluar tabel ditolak, begitu pula tabel
+yang tumpang tindih dan sel gabungan.
+
+Formula memahami `Tabel[Kolom]` dan `Tabel` saja. Item khusus (`[#Headers]`, `[@Kolom]`,
+`[[A]:[B]]`) belum didukung dan menghasilkan `#NAME?`; baris total belum ada.
+
+**Tabel di berkas yang dibuka kini bertahan saat disimpan.** Sheet ditulis ulang dari model, dan
+sebelum tabel dimodelkan penulisan ulang itu membuang `tableParts`, sehingga Excel kehilangan setiap
+tabel.
+
 ## Mengurutkan
 
 ```csharp

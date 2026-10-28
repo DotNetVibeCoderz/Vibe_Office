@@ -708,6 +708,7 @@ internal static class SheetXml
             WritePageMargins(writer);
             WriteDrawing(writer, sheet);
             WriteLegacyDrawing(writer, sheet);
+            WriteTableParts(writer, sheet);
 
             writer.WriteEndElement();
             writer.WriteEndDocument();
@@ -1184,6 +1185,36 @@ internal static class SheetXml
 
         writer.WriteStartElement("drawing", S.NamespaceName);
         writer.WriteAttributeString("id", Ns.R.NamespaceName, relationship.Id);
+        writer.WriteEndElement();
+    }
+
+    /// <summary>
+    /// Writes <c>tableParts</c>, which near the end of the worksheet sequence names each table.
+    /// </summary>
+    /// <remarks>
+    /// The sheet is rewritten from the model on every save. Without this element the table parts
+    /// are still in the package but nothing points at them, and Excel drops the tables — which is
+    /// what opening and saving a workbook with tables did before they were modelled.
+    /// </remarks>
+    private static void WriteTableParts(XmlWriter writer, Worksheet sheet)
+    {
+        var tables = sheet.Part.RelationshipsByType(RelationshipTypes.Table).ToList();
+
+        if (tables.Count == 0)
+        {
+            return;
+        }
+
+        writer.WriteStartElement("tableParts", S.NamespaceName);
+        writer.WriteAttributeString("count", tables.Count.ToString(CultureInfo.InvariantCulture));
+
+        foreach (var relationship in tables)
+        {
+            writer.WriteStartElement("tablePart", S.NamespaceName);
+            writer.WriteAttributeString("id", Ns.R.NamespaceName, relationship.Id);
+            writer.WriteEndElement();
+        }
+
         writer.WriteEndElement();
     }
 
