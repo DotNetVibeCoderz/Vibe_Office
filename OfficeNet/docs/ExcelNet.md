@@ -89,6 +89,23 @@ sheet.WriteColumn("F1", "Jan", "Feb", "Mar");
 sheet.WriteRange("A5", rows);     // IEnumerable<IEnumerable<object?>>
 ```
 
+### Rich text
+
+```csharp
+sheet["A1"].WithRichText(
+    new RichTextRun("Status: "),
+    new RichTextRun("LUNAS") { Bold = true, Color = OfficeColor.FromRgb(0x00, 0x80, 0x00) },
+    new RichTextRun(" (dicek)") { Italic = true, SizePoints = 9 });
+
+string text = sheet["A1"].Text;                      // "Status: LUNAS (dicek)"
+IReadOnlyList<RichTextRun>? runs = sheet["A1"].RichText;
+```
+
+A run that sets nothing takes the cell's font. Formatting inside cells written by Excel survives an
+open and save, including what `RichTextRun` does not model, such as superscript; until this existed
+it was flattened away. Setting an ordinary value replaces the runs. The PDF export draws the text in
+the cell's own font.
+
 ### Comments and hyperlinks
 
 ```csharp

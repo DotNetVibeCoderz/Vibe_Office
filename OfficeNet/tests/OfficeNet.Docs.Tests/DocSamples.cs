@@ -609,6 +609,16 @@ public class DocSamples : IDisposable
         sheet.WriteColumn("F1", "Jan", "Feb", "Mar");
         sheet.WriteRange("A20", new object?[][] { ["a", 1], ["b", 2] });
 
+        sheet["A30"].WithRichText(
+            new RichTextRun("Status: "),
+            new RichTextRun("LUNAS") { Bold = true, Color = OfficeColor.FromRgb(0x00, 0x80, 0x00) },
+            new RichTextRun(" (dicek)") { Italic = true, SizePoints = 9 });
+
+        string richText = sheet["A30"].Text;
+        IReadOnlyList<RichTextRun>? runs = sheet["A30"].RichText;
+        Assert.Equal("Status: LUNAS (dicek)", richText);
+        Assert.Equal(3, runs!.Count);
+
         sheet["B2"].Set(42).WithComment("Angka sementara, menunggu audit");
         sheet["A1"].WithHyperlink("https://example.org/laporan");
         sheet["A2"].WithHyperlink("#Ringkasan!B2");

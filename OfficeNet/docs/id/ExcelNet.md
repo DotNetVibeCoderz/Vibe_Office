@@ -91,6 +91,23 @@ sheet.WriteColumn("F1", "Jan", "Feb", "Mar");
 sheet.WriteRange("A5", rows);     // IEnumerable<IEnumerable<object?>>
 ```
 
+### Rich text
+
+```csharp
+sheet["A1"].WithRichText(
+    new RichTextRun("Status: "),
+    new RichTextRun("LUNAS") { Bold = true, Color = OfficeColor.FromRgb(0x00, 0x80, 0x00) },
+    new RichTextRun(" (dicek)") { Italic = true, SizePoints = 9 });
+
+string text = sheet["A1"].Text;                      // "Status: LUNAS (dicek)"
+IReadOnlyList<RichTextRun>? runs = sheet["A1"].RichText;
+```
+
+Run yang tidak menyetel apa pun memakai font sel. Format di dalam sel yang ditulis Excel bertahan
+saat dibuka lalu disimpan, termasuk yang tidak dimodelkan `RichTextRun` seperti superskrip;
+sebelumnya format itu diratakan hilang. Menyetel nilai biasa menggantikan run-nya. Ekspor PDF
+menggambar teksnya dengan font sel itu sendiri.
+
 ### Komentar dan hyperlink
 
 ```csharp

@@ -675,9 +675,17 @@ melengkapi.
 - [ ] **Excel Table** (`ListObject`, part `xl/tables/tableN.xml`). Range bernama dengan header,
   gaya tabel, baris total, autofilter-nya sendiri. Referensi terstruktur (`Tabel1[Kolom]`) di mesin
   formula adalah langkah kedua yang terpisah.
-- [ ] **Rich text di sel.** `SharedStrings` saat ini menggabungkan run rich text jadi teks polos
-  saat membaca, jadi membuka lalu menyimpan berkas **menghapus** format dalam selnya. Model run
-  (`CellRichText`) yang ditulis kembali utuh.
+- [x] **Rich text di sel — selesai.** `Cell.WithRichText(...)` dan `Cell.RichText`; tabel shared
+  string kini menyimpan run per entri dan menulisnya kembali, termasuk `rPr` mentah untuk properti
+  yang tidak dimodelkan (superskrip, skema font), sehingga buka-lalu-simpan tidak lagi meratakan
+  format di dalam sel. Pembacaan tetap streaming: hanya `<r>` yang dimuat sebagai elemen.
+
+  **Bug lain yang terungkap: bacaan fonetik ikut menjadi teks.** Pembaca lama menggabungkan setiap
+  `<t>` di dalam `<si>`, termasuk yang di dalam `<rPh>`, jadi sel "東京" berfurigana terbaca
+  "東京トウキョウ". Mutasi yang mengembalikan perilaku lama itu menggagalkan tiga tes. Tujuh mutasi
+  lain tertangkap setelah dua tes dipertajam: atribut `xml:space` diperiksa langsung di XML, karena
+  pembaca .NET menyimpan spasi tepi meski tanpa atribut itu sedangkan Excel tidak. openpyxl membaca
+  ketiga run beserta formatnya. Ekspor PDF masih menggambar teks dengan font sel.
 - [ ] **Sort range.** Menurut satu atau beberapa kolom, naik/turun, dengan urutan tipe Excel (angka
   < teks < boolean < error, kosong selalu terakhir) dan perbandingan teks tak peka huruf besar.
   Formula yang ikut berpindah **tidak** ditulis ulang referensinya di versi pertama — dicatat.

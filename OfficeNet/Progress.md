@@ -616,7 +616,8 @@ memeriksa bagaimana pustaka memperlakukan `w:ins` sebelum menulis fitur track ch
 - [x] ExcelNet: named range (`definedNames`), termasuk dipakai mesin formula; area cetak dan judul
       cetak; `localSheetId` dihitung saat menyimpan (aman terhadap `MoveSheet` dan chartsheet)
 - [ ] ExcelNet: Excel Table (`ListObject`)
-- [ ] ExcelNet: rich text di sel — saat ini format dalam sel hilang saat buka-lalu-simpan
+- [x] ExcelNet: rich text di sel — tulis, baca, dan pertahankan `rPr` yang tidak dimodelkan; sekaligus
+      memperbaiki bacaan fonetik (`rPh`) yang ikut terbaca sebagai teks
 - [ ] ExcelNet: sort range dengan urutan tipe Excel
 - [ ] ExcelNet: conditional formatting `duplicateValues`, `top10`, `aboveAverage`, `expression`,
       icon set; `FindDuplicates`

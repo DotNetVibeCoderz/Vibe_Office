@@ -24,6 +24,7 @@ namespace ExcelNet;
 public sealed class SharedStrings
 {
     private readonly List<string> _strings = [];
+    private readonly List<IReadOnlyList<RichTextRun>?> _runs = [];
     private readonly Dictionary<string, int> _index = new(StringComparer.Ordinal);
 
     /// <summary>How many distinct strings the table holds.</summary>
@@ -48,9 +49,39 @@ public sealed class SharedStrings
 
         var index = _strings.Count;
         _strings.Add(value);
+        _runs.Add(null);
         _index[value] = index;
         return index;
     }
+
+    /// <summary>Returns the index of a rich-text string, adding it when it is new.</summary>
+    /// <remarks>
+    /// Keyed by the runs as well as the text: "LUNAS" in bold and "LUNAS" plain are two entries,
+    /// and a rich key starts with NUL, which no cell text read from or written to XML can contain.
+    /// </remarks>
+    public int AddRich(IReadOnlyList<RichTextRun> runs)
+    {
+        ArgumentNullException.ThrowIfNull(runs);
+
+        TotalReferences++;
+
+        var key = "\u0000" + string.Join("\u0002", runs.Select(r => r.Key()));
+
+        if (_index.TryGetValue(key, out var existing))
+        {
+            return existing;
+        }
+
+        var index = _strings.Count;
+        _strings.Add(string.Concat(runs.Select(r => r.Text)));
+        _runs.Add(runs);
+        _index[key] = index;
+        return index;
+    }
+
+    /// <summary>The runs of a rich-text entry, or <c>null</c> for plain text.</summary>
+    public IReadOnlyList<RichTextRun>? GetRuns(int index) =>
+        index >= 0 && index < _runs.Count ? _runs[index] : null;
 
     /// <summary>
     /// The string at an index, or the empty string when the index is out of range.
@@ -91,71 +122,79 @@ public sealed class SharedStrings
                 continue;
             }
 
-            table.AddRaw(ReadStringItem(reader));
+            var (text, runs) = ReadStringItem(reader);
+            table.AddRaw(text, runs);
         }
 
         return table;
     }
 
-    private void AddRaw(string value)
+    private void AddRaw(string value, IReadOnlyList<RichTextRun>? runs)
     {
         var index = _strings.Count;
         _strings.Add(value);
+        _runs.Add(runs);
         // Only the first occurrence is indexed; a file may legally contain duplicate entries and
         // cells point at specific indices, so the later ones must keep their positions.
-        _index.TryAdd(value, index);
+        _index.TryAdd(runs is null ? value : "\u0000" + string.Join("\u0002", runs.Select(r => r.Key())), index);
     }
 
     /// <summary>
-    /// Reads one <c>si</c> element, concatenating the runs of a rich-text string.
+    /// Reads one <c>si</c> element: plain text, or the runs of a rich-text string.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// A cell whose text is partly bold is stored as several <c>r</c> runs, each with its own
     /// <c>t</c>. Reading only the first <c>t</c> — the obvious implementation — silently truncates
-    /// every such string to its first formatting change.
+    /// every such string to its first formatting change. Reading only the text, as this table did
+    /// until the runs were kept, made every open-and-save strip the formatting inside cells.
+    /// </para>
+    /// <para>
+    /// Only an <c>r</c> is materialised as an element; plain entries stay streamed, so a table of
+    /// a million plain strings costs what it did. A phonetic reading (<c>rPh</c>) is not text and
+    /// is skipped.
+    /// </para>
     /// </remarks>
-    private static string ReadStringItem(XmlReader reader)
+    private static (string Text, IReadOnlyList<RichTextRun>? Runs) ReadStringItem(XmlReader reader)
     {
         if (reader.IsEmptyElement)
         {
-            return string.Empty;
+            return (string.Empty, null);
         }
 
         var builder = new System.Text.StringBuilder();
+        List<RichTextRun>? runs = null;
         var depth = reader.Depth;
 
-        // The reader is left on each <t>'s end tag rather than advanced past it, so the outer loop
-        // sees the next run of a rich-text string instead of skipping it.
-        while (reader.Read())
+        reader.Read();
+
+        while (!reader.EOF && !(reader.NodeType == XmlNodeType.EndElement && reader.Depth == depth))
         {
-            if (reader.NodeType == XmlNodeType.EndElement && reader.Depth == depth)
+            if (reader.NodeType == XmlNodeType.Element && reader.Depth == depth + 1)
             {
-                break;
-            }
-
-            if (reader is not { NodeType: XmlNodeType.Element, LocalName: "t" } || reader.IsEmptyElement)
-            {
-                continue;
-            }
-
-            var textDepth = reader.Depth;
-
-            while (reader.Read())
-            {
-                if (reader.NodeType == XmlNodeType.EndElement && reader.Depth == textDepth)
+                switch (reader.LocalName)
                 {
-                    break;
-                }
+                    case "t":
+                        // Leaves the reader on the node after </t>, so no Read() follows.
+                        builder.Append(reader.ReadElementContentAsString());
+                        continue;
 
-                if (reader.NodeType is XmlNodeType.Text or XmlNodeType.CDATA or
-                    XmlNodeType.SignificantWhitespace or XmlNodeType.Whitespace)
-                {
-                    builder.Append(reader.Value);
+                    case "r":
+                        var run = RichTextRun.Read((System.Xml.Linq.XElement)System.Xml.Linq.XNode.ReadFrom(reader));
+                        (runs ??= []).Add(run);
+                        builder.Append(run.Text);
+                        continue;
+
+                    default:
+                        reader.Skip();
+                        continue;
                 }
             }
+
+            reader.Read();
         }
 
-        return builder.ToString();
+        return (builder.ToString(), runs);
     }
 
     /// <summary>Serialises the table as an <c>xl/sharedStrings.xml</c> part.</summary>
@@ -178,9 +217,22 @@ public sealed class SharedStrings
             writer.WriteAttributeString("count", TotalReferences.ToString(CultureInfo.InvariantCulture));
             writer.WriteAttributeString("uniqueCount", _strings.Count.ToString(CultureInfo.InvariantCulture));
 
-            foreach (var value in _strings)
+            for (var i = 0; i < _strings.Count; i++)
             {
+                var value = _strings[i];
                 writer.WriteStartElement("si", Ns.S.NamespaceName);
+
+                if (_runs[i] is { } runs)
+                {
+                    foreach (var run in runs)
+                    {
+                        run.Write(writer);
+                    }
+
+                    writer.WriteEndElement();
+                    continue;
+                }
+
                 writer.WriteStartElement("t", Ns.S.NamespaceName);
 
                 // Leading or trailing whitespace is lost on the round trip without this, exactly

@@ -21,6 +21,9 @@ internal struct CellData
     public int StyleIndex;
     public string? Comment;
     public string? HyperlinkTarget;
+
+    /// <summary>The runs of a rich-text value; <c>null</c> for plain text.</summary>
+    public IReadOnlyList<RichTextRun>? Rich;
 }
 
 /// <summary>A handle to one cell of a worksheet.</summary>
@@ -147,6 +150,26 @@ public readonly struct Cell
     public Cell WithNumberFormat(string format)
     {
         Style = Style.WithNumberFormat(format);
+        return this;
+    }
+
+    /// <summary>
+    /// The runs of a cell whose text is partly formatted, or <c>null</c> when it is plain.
+    /// </summary>
+    public IReadOnlyList<RichTextRun>? RichText => _sheet.GetRichText(Reference);
+
+    /// <summary>
+    /// Sets text made of differently formatted runs:
+    /// <c>WithRichText(new("Status: "), new("LUNAS") { Bold = true })</c>.
+    /// </summary>
+    /// <remarks>
+    /// The cell's value becomes the runs' text joined, so reading <see cref="Text"/> still works.
+    /// Setting an ordinary value afterwards replaces the runs.
+    /// </remarks>
+    public Cell WithRichText(params RichTextRun[] runs)
+    {
+        ArgumentNullException.ThrowIfNull(runs);
+        _sheet.SetRichText(Reference, runs);
         return this;
     }
 
@@ -547,6 +570,9 @@ public sealed class Worksheet
             data.Formula = null;
         }
 
+        // And whatever rich text was there: the runs described the old text, not this value.
+        data.Rich = null;
+
         // A date needs a number format, or it shows as the serial number. The style is only
         // supplied when the cell has none, so an explicit format is never overwritten.
         if (value.ValueType == CellValueType.DateTime && data.StyleIndex == 0)
@@ -631,6 +657,19 @@ public sealed class Worksheet
             .GetValueRefOrAddDefault(_cells, reference, out _);
 
         data.HyperlinkTarget = target;
+    }
+
+    internal IReadOnlyList<RichTextRun>? GetRichText(CellReference reference) =>
+        _cells.TryGetValue(reference, out var data) ? data.Rich : null;
+
+    internal void SetRichText(CellReference reference, IReadOnlyList<RichTextRun> runs)
+    {
+        SetValue(reference, CellValue.FromText(string.Concat(runs.Select(r => r.Text))));
+
+        ref var data = ref System.Runtime.InteropServices.CollectionsMarshal
+            .GetValueRefOrAddDefault(_cells, reference, out _);
+
+        data.Rich = runs.Count == 0 ? null : runs;
     }
 
     internal string? GetHyperlink(CellReference reference) =>

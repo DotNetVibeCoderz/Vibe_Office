@@ -498,6 +498,9 @@ internal static class SheetXml
                 Value = value,
                 Formula = string.IsNullOrWhiteSpace(formula) ? null : formula,
                 StyleIndex = styleIndex,
+                Rich = type == "s" && int.TryParse(rawValue, out var sharedIndex)
+                    ? sharedStrings.GetRuns(sharedIndex)
+                    : null,
             });
         }
     }
@@ -918,7 +921,12 @@ internal static class SheetXml
             case CellValueType.Text when data.Formula is null:
             {
                 writer.WriteAttributeString("t", "s");
-                var index = sharedStrings.Add(value.AsText());
+
+                // The runs are kept only while they still spell the value; anything that replaced
+                // the text without going through SetValue must not resurrect stale formatting.
+                var index = data.Rich is { } runs && string.Concat(runs.Select(r => r.Text)) == value.AsText()
+                    ? sharedStrings.AddRich(runs)
+                    : sharedStrings.Add(value.AsText());
                 writer.WriteElementString("v", S.NamespaceName,
                     index.ToString(CultureInfo.InvariantCulture));
                 break;
