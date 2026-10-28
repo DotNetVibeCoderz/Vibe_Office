@@ -873,8 +873,14 @@ daftar bernomor dan berbutir, tabel dengan warna dan garis, gambar inline, heade
 halaman, watermark, ukuran halaman dan margin, section.
 
 **Yang tidak:** objek mengambang dengan `wrap="square"` (digambar inline), catatan kaki, komentar,
-text box, serta hifenasi dan kerning persis seperti Word. Daftar bernomor digambar dengan butir, belum
-dengan nomornya. Lihat [Plan.md](../../Plan.md).
+text box, serta hifenasi dan kerning persis seperti Word. Lihat [Plan.md](../../Plan.md).
+
+Daftar bernomor membawa nomor yang akan ditampilkan Word: format tiap level (`1`, `a`, `iv`, `01`) dan
+teksnya (`%1.`, `%1.%2`), nomor awal, daftar yang melanjutkan nomor setelah disela paragraf, level
+bersarang yang mulai lagi di bawah tiap induknya, dan daftar yang di-restart menghitung dari awalnya
+sendiri. Level menjorok sesuai definisi penomorannya, dan label yang lebih lebar daripada hanging
+indent-nya mendorong teks ke kanan alih-alih menabraknya. Butir dari font Symbol — butir bawaan Word,
+karakter private-use — digambar sebagai `•`.
 
 ### Arsip: PDF/A
 

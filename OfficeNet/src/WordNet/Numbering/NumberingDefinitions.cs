@@ -291,6 +291,135 @@ public sealed class NumberingDefinitions
                ?? 1;
     }
 
+    /// <summary>
+    /// The label Word shows in front of a list item: the level's text with each <c>%n</c> replaced
+    /// by that level's count, in that level's format — "3.", "2.1", "b)", "iv." — or its bullet.
+    /// </summary>
+    /// <param name="numberingId">The list's <c>w:numId</c>.</param>
+    /// <param name="level">The item's level, from zero.</param>
+    /// <param name="counters">The current count at every level, outermost first.</param>
+    /// <remarks>
+    /// A bullet defined in the Symbol or Wingdings font is a private-use character that means
+    /// nothing in any other font, so it is drawn as the bullet it almost always is.
+    /// </remarks>
+    internal string Label(int numberingId, int level, IReadOnlyList<int> counters)
+    {
+        var definition = LevelDefinition(numberingId, level);
+        var format = definition?.Element(Ns.W + "numFmt")?.Attribute(Ns.W + "val")?.Value ?? "bullet";
+        var text = definition?.Element(Ns.W + "lvlText")?.Attribute(Ns.W + "val")?.Value;
+
+        if (format == "bullet")
+        {
+            return text is { Length: > 0 } bullet && !(bullet[0] >= '\uE000' && bullet[0] <= '\uF8FF') ? bullet : "•";
+        }
+
+        if (format == "none" || text is null)
+        {
+            return text ?? string.Empty;
+        }
+
+        var builder = new System.Text.StringBuilder();
+
+        for (var i = 0; i < text.Length; i++)
+        {
+            if (text[i] == '%' && i + 1 < text.Length && text[i + 1] is >= '1' and <= '9')
+            {
+                var referenced = text[i + 1] - '1';
+                var referencedFormat = referenced == level
+                    ? format
+                    : LevelDefinition(numberingId, referenced)?.Element(Ns.W + "numFmt")?.Attribute(Ns.W + "val")?.Value ?? "decimal";
+
+                builder.Append(FormatNumber(referenced < counters.Count ? counters[referenced] : 1, referencedFormat));
+                i++;
+            }
+            else
+            {
+                builder.Append(text[i]);
+            }
+        }
+
+        return builder.ToString();
+    }
+
+    /// <summary>
+    /// The indentation a list level gives its paragraphs, in points: where the text starts, and how
+    /// far the label hangs to the left of it. <c>null</c> when the level says nothing.
+    /// </summary>
+    /// <remarks>
+    /// It is how a nested item sits further right than its parent, and it outranks the indentation
+    /// of the paragraph's style — Word applies the style, then the numbering, then the paragraph.
+    /// </remarks>
+    internal (double Left, double Hanging)? LevelIndent(int numberingId, int level)
+    {
+        if (LevelDefinition(numberingId, level)?.Element(Ns.W + "pPr")?.Element(Ns.W + "ind") is not { } indent)
+        {
+            return null;
+        }
+
+        static double Points(string? twips) =>
+            double.TryParse(twips, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var value)
+                ? value / 20
+                : 0;
+
+        var left = Points(indent.Attribute(Ns.W + "left")?.Value ?? indent.Attribute(Ns.W + "start")?.Value);
+        var hanging = indent.Attribute(Ns.W + "hanging") is { } h ? Points(h.Value)
+            : indent.Attribute(Ns.W + "firstLine") is { } f ? -Points(f.Value)
+            : 0;
+
+        return (left, Math.Max(0, hanging));
+    }
+
+    /// <summary>A count in one of Word's number formats; an unknown format is decimal.</summary>
+    public static string FormatNumber(int value, string format) => format switch
+    {
+        "lowerLetter" => Letters(value),
+        "upperLetter" => Letters(value).ToUpperInvariant(),
+        "lowerRoman" => Roman(value).ToLowerInvariant(),
+        "upperRoman" => Roman(value),
+        "decimalZero" => value.ToString("00", System.Globalization.CultureInfo.InvariantCulture),
+        "none" => string.Empty,
+        _ => value.ToString(System.Globalization.CultureInfo.InvariantCulture),
+    };
+
+    /// <summary>a…z, then aa…zz, then aaa: Word repeats the letter rather than counting in base 26.</summary>
+    private static string Letters(int value)
+    {
+        if (value < 1)
+        {
+            return value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        var letter = (char)('a' + (value - 1) % 26);
+        return new string(letter, (value - 1) / 26 + 1);
+    }
+
+    private static string Roman(int value)
+    {
+        if (value is < 1 or > 3999)
+        {
+            return value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        (int Value, string Symbol)[] numerals =
+        [
+            (1000, "M"), (900, "CM"), (500, "D"), (400, "CD"), (100, "C"), (90, "XC"),
+            (50, "L"), (40, "XL"), (10, "X"), (9, "IX"), (5, "V"), (4, "IV"), (1, "I"),
+        ];
+
+        var builder = new System.Text.StringBuilder();
+
+        foreach (var (numeral, symbol) in numerals)
+        {
+            while (value >= numeral)
+            {
+                builder.Append(symbol);
+                value -= numeral;
+            }
+        }
+
+        return builder.ToString();
+    }
+
     private XElement? NumElement(int numberingId) =>
         _root.Elements(Ns.W + "num").FirstOrDefault(n => (int?)n.Attribute(Ns.W + "numId") == numberingId);
 

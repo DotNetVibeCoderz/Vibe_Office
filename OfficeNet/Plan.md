@@ -669,9 +669,11 @@ melengkapi.
   sungguhan — juga di luar PDF/A — lewat `PdfFont` di seluruh mesin tata letak, chart, dan watermark.
   Ekspor arsip menolak font baku dan karakter tanpa glyph. veraPDF: sesuai PDF/A-2b, dengan heading,
   daftar, tabel, chart, dan watermark.
-- [ ] **Nomor daftar di ekspor PDF.** Daftar bernomor masih digambar dengan butir (`BulletFor`).
-  Mesin hitungnya sudah ada di `WordToHtml.ListCounters` (`StartAt`, `IsBulleted`); yang kurang format
-  nomor (`decimal`, `lowerLetter`, `upperRoman`, …) dan `lvlText` (`%1.`).
+- [x] **Nomor daftar di ekspor PDF — selesai.** Label dihitung sekali, sebelum tata letak, atas seluruh
+  body dalam urutan dokumen (tata letak bisa mengunjungi paragraf lebih dari sekali): format tiap
+  level, `lvlText` dengan `%1`–`%9`, `start` dan `startOverride`, daftar yang dilanjutkan, level
+  bersarang yang mulai lagi. Ikut diperbaiki: indentasi level dari definisi penomoran diabaikan,
+  sehingga level bersarang tidak menjorok; label lebar menabrak teks; butir Symbol (U+F0B7).
 
 ### ExcelNet
 

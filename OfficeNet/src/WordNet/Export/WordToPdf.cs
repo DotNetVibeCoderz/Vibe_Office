@@ -456,6 +456,14 @@ public static class WordToPdf
                 ApplyParagraph(style.ParagraphFormat);
             }
 
+            // The list level's indentation comes between the style's and the paragraph's own. The
+            // label hangs left of the text, so the paragraph's box starts where the label does.
+            if (ListIndent(paragraph) is { } list)
+            {
+                leftIndent = list.Left - list.Hanging;
+                firstLineIndent = 0;
+            }
+
             ApplyParagraph(paragraph.Format);
 
             return (before, after, fontSize * lineFactor, alignment, leftIndent, rightIndent, firstLineIndent);
@@ -570,7 +578,12 @@ public static class WordToPdf
             }
 
             var filler = new LineFiller(segments, FontFor);
-            var bulletIndent = bulletText is null ? 0 : 18;
+            // The level's hanging indent, unless the label is wider — "1.1.2." can be — in which case
+            // the text steps past it, as Word moves it to the next tab stop.
+            var hanging = ListIndent(paragraph)?.Hanging is > 0 and var h ? h : 18;
+            var bulletIndent = bulletText is null
+                ? 0
+                : Math.Max(hanging, FontFor(baseFormat.FontFamily, false, false).Measure(bulletText, baseFormat.SizePoints) + 4);
 
             for (var i = 0; !filler.AtEnd; i++)
             {
@@ -635,15 +648,86 @@ public static class WordToPdf
                 return null;
             }
 
-            // Rendering the real numbering would mean running Word's counter machinery across the
-            // whole document. A bullet glyph per level is honest about that limit and keeps list
-            // structure visible.
+            if ((_labels ??= ListLabels(_document)).TryGetValue(paragraph.Element, out var label))
+            {
+                return label;
+            }
+
+            // A list paragraph the counting pass did not see — in a header, say. A bullet per level
+            // keeps the structure visible.
             return (level.Value % 3) switch
             {
                 0 => "•",
                 1 => "◦",
                 _ => "▪",
             };
+        }
+
+        private Dictionary<XElement, string>? _labels;
+
+        /// <summary>The indentation a paragraph's list level gives it, when it is a list item.</summary>
+        private (double Left, double Hanging)? ListIndent(Paragraph paragraph)
+        {
+            var numberingProperties = paragraph.Element.Element(Ns.W + "pPr")?.Element(Ns.W + "numPr");
+            var id = (int?)numberingProperties?.Element(Ns.W + "numId")?.Attribute(Ns.W + "val");
+
+            return id is > 0
+                ? _document.Numbering.LevelIndent(id.Value, Math.Clamp(paragraph.ListLevel ?? 0, 0, 8))
+                : null;
+        }
+
+        /// <summary>
+        /// Every list item's label, counted once over the whole body in document order.
+        /// </summary>
+        /// <remarks>
+        /// Counted ahead of layout rather than as paragraphs are laid out, because layout visits a
+        /// paragraph more than once — a table row is measured before it is drawn, and a row that
+        /// repeats as a header is drawn on every page. Word numbers by list, not by position, so
+        /// "1, 2, a paragraph, 3" is one list; a deeper level restarts whenever a shallower item
+        /// appears, which is what a nested outline does.
+        /// </remarks>
+        private static Dictionary<XElement, string> ListLabels(WordDocument document)
+        {
+            var labels = new Dictionary<XElement, string>();
+            var counts = new Dictionary<int, int[]>();
+            var numbering = document.Numbering;
+
+            foreach (var element in document.Body.Descendants(Ns.W + "p"))
+            {
+                var numberingProperties = element.Element(Ns.W + "pPr")?.Element(Ns.W + "numPr");
+                var id = (int?)numberingProperties?.Element(Ns.W + "numId")?.Attribute(Ns.W + "val");
+
+                // numId 0 is Word's way of switching numbering off.
+                if (id is not > 0)
+                {
+                    continue;
+                }
+
+                var level = Math.Clamp((int?)numberingProperties!.Element(Ns.W + "ilvl")?.Attribute(Ns.W + "val") ?? 0, 0, 8);
+
+                if (!counts.TryGetValue(id.Value, out var levels))
+                {
+                    levels = new int[9];
+
+                    for (var i = 0; i < levels.Length; i++)
+                    {
+                        levels[i] = numbering.StartAt(id.Value, i) - 1;
+                    }
+
+                    counts[id.Value] = levels;
+                }
+
+                levels[level]++;
+
+                for (var deeper = level + 1; deeper < levels.Length; deeper++)
+                {
+                    levels[deeper] = numbering.StartAt(id.Value, deeper) - 1;
+                }
+
+                labels[element] = numbering.Label(id.Value, level, levels);
+            }
+
+            return labels;
         }
 
         private readonly record struct Segment(string Text, Effective Format);

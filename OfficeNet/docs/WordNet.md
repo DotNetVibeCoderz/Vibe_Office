@@ -876,8 +876,14 @@ numbered and bulleted lists, tables with shading and borders, inline images, hea
 page fields, watermarks, page sizes and margins, sections.
 
 **What it does not:** floating objects positioned by `wrap="square"` (drawn inline), footnotes,
-comments, text boxes, and Word's exact hyphenation and kerning. A numbered list is drawn with bullets,
-not its numbers. See [Plan.md](../Plan.md).
+comments, text boxes, and Word's exact hyphenation and kerning. See [Plan.md](../Plan.md).
+
+A numbered list carries the numbers Word would show: each level's format (`1`, `a`, `iv`, `01`) and
+text (`%1.`, `%1.%2`), its starting number, a list that resumes after a paragraph in between, a
+nested level that restarts under each parent, and a restarted list counting from its own start.
+Levels indent as the numbering definition says, and a label wider than its hanging indent pushes the
+text along rather than running into it. A bullet in the Symbol font — Word's own, a private-use
+character — is drawn as `•`.
 
 ## Common mistakes
 
