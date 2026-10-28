@@ -124,6 +124,12 @@ public static class ContentTypes
     /// <summary>The calculation chain.</summary>
     public const string ExcelCalcChain = Excel + ".calcChain+xml";
 
+    /// <summary>A worksheet's cell comments.</summary>
+    public const string ExcelComments = Excel + ".comments+xml";
+
+    /// <summary>A legacy VML drawing, declared as a Default for the <c>vml</c> extension.</summary>
+    public const string VmlDrawing = "application/vnd.openxmlformats-officedocument.vmlDrawing";
+
     // ---- PresentationML -----------------------------------------------------------------------
 
     /// <summary>The main part of a .pptx.</summary>
@@ -225,7 +231,7 @@ public static class ContentTypes
             "xml" => Xml,
             "rels" => Relationships,
             "bin" => "application/vnd.openxmlformats-officedocument.oleObject",
-            "vml" => "application/vnd.openxmlformats-officedocument.vmlDrawing",
+            "vml" => VmlDrawing,
             "txt" => "text/plain",
             "csv" => "text/csv",
             "json" => "application/json",

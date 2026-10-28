@@ -26,7 +26,7 @@ namespace ExcelNet;
 /// <c>sheetPr</c>, <c>dimension</c>, <c>sheetViews</c>, <c>sheetFormatPr</c>, <c>cols</c>,
 /// <c>sheetData</c>, <c>sheetProtection</c>, <c>autoFilter</c>, <c>mergeCells</c>,
 /// <c>conditionalFormatting</c>, <c>dataValidations</c>, <c>hyperlinks</c>, <c>pageMargins</c>,
-/// <c>drawing</c>. Writing <c>mergeCells</c> before <c>sheetData</c> produces a file Excel offers
+/// <c>drawing</c>, <c>legacyDrawing</c>. Writing <c>mergeCells</c> before <c>sheetData</c> produces a file Excel offers
 /// to repair.
 /// </para>
 /// </remarks>
@@ -104,7 +104,65 @@ internal static class SheetXml
                 case "dataValidation":
                     ReadDataValidation(sheet, reader);
                     break;
+
+                case "hyperlink":
+                    ReadHyperlink(sheet, reader);
+                    break;
             }
+        }
+    }
+
+    /// <summary>
+    /// Reads one <c>hyperlink</c>: an external target through its relationship, or an internal one
+    /// from <c>location</c>.
+    /// </summary>
+    /// <remarks>
+    /// The writer has always written these, and until this reader existed every hyperlink in an
+    /// opened file vanished on save: the element was skipped and the cell kept no target.
+    /// A <c>ref</c> may name a range. The link belongs to every cell in it, and Excel writes it that
+    /// way when a link is applied to a selection, so each cell gets its own copy.
+    /// </remarks>
+    private static void ReadHyperlink(Worksheet sheet, XmlReader reader)
+    {
+        var reference = reader.GetAttribute("ref");
+        var id = reader.GetAttribute("id", R.NamespaceName);
+        var location = reader.GetAttribute("location");
+
+        string? target = null;
+
+        if (id is not null &&
+            sheet.Part.RelationshipById(id) is { TargetMode: TargetMode.External } relationship)
+        {
+            target = relationship.Target;
+
+            if (!string.IsNullOrEmpty(location))
+            {
+                target += "#" + location;
+            }
+        }
+        else if (!string.IsNullOrEmpty(location))
+        {
+            target = "#" + location;
+        }
+
+        if (target is null)
+        {
+            return;
+        }
+
+        if (CellRangeReference.TryParse(reference, out var range))
+        {
+            for (var row = range.Start.Row; row <= range.End.Row; row++)
+            {
+                for (var column = range.Start.Column; column <= range.End.Column; column++)
+                {
+                    sheet.LoadHyperlink(new CellReference(row, column), target);
+                }
+            }
+        }
+        else if (CellReference.TryParse(reference, out var cell))
+        {
+            sheet.LoadHyperlink(cell, target);
         }
     }
 
@@ -647,6 +705,7 @@ internal static class SheetXml
             WriteHyperlinks(writer, sheet);
             WritePageMargins(writer);
             WriteDrawing(writer, sheet);
+            WriteLegacyDrawing(writer, sheet);
 
             writer.WriteEndElement();
             writer.WriteEndDocument();
@@ -1033,11 +1092,22 @@ internal static class SheetXml
 
         foreach (var (reference, data) in links)
         {
-            var relationshipId = sheet.Workbook.EnsureHyperlink(sheet, data.HyperlinkTarget!);
+            var target = data.HyperlinkTarget!;
 
             writer.WriteStartElement("hyperlink", S.NamespaceName);
             writer.WriteAttributeString("ref", reference.A1);
-            writer.WriteAttributeString("id", R.NamespaceName, relationshipId);
+
+            if (target.StartsWith('#'))
+            {
+                // A place inside the workbook. A relationship would make Excel treat it as a file.
+                writer.WriteAttributeString("location", target[1..]);
+            }
+            else
+            {
+                writer.WriteAttributeString("id", R.NamespaceName,
+                    sheet.Workbook.EnsureHyperlink(sheet, target));
+            }
+
             writer.WriteEndElement();
         }
 
@@ -1064,6 +1134,30 @@ internal static class SheetXml
         }
 
         writer.WriteStartElement("drawing", S.NamespaceName);
+        writer.WriteAttributeString("id", Ns.R.NamespaceName, relationship.Id);
+        writer.WriteEndElement();
+    }
+
+    /// <summary>
+    /// Writes <c>legacyDrawing</c>, the VML that displays cell comments. It follows
+    /// <c>drawing</c> in the schema sequence.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="SheetComments.Write"/> runs first and leaves the relationship in place exactly
+    /// when there is something to point at.
+    /// </remarks>
+    private static void WriteLegacyDrawing(XmlWriter writer, Worksheet sheet)
+    {
+        var relationship = sheet.Part
+            .RelationshipsByType(RelationshipTypes.VmlDrawing)
+            .FirstOrDefault();
+
+        if (relationship is null)
+        {
+            return;
+        }
+
+        writer.WriteStartElement("legacyDrawing", S.NamespaceName);
         writer.WriteAttributeString("id", Ns.R.NamespaceName, relationship.Id);
         writer.WriteEndElement();
     }

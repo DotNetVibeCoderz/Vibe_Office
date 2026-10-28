@@ -207,6 +207,7 @@ public sealed class Workbook : OfficeDocument, IReadOnlyList<Worksheet>
             };
 
             SheetXml.Read(sheet, part.GetBytes(), SharedStrings);
+            SheetComments.Read(sheet);
             _sheets.Add(sheet);
         }
 
@@ -396,8 +397,14 @@ public sealed class Workbook : OfficeDocument, IReadOnlyList<Worksheet>
         // repeated saves inflate it.
         SharedStrings.ResetReferenceCount();
 
+        // VML shape ids are unique across the workbook, so idmap blocks are handed out here, in
+        // one pass over every sheet. Block 0 is never used; Excel starts at 1.
+        var nextVmlBlock = 1;
+
         foreach (var sheet in _sheets)
         {
+            // Comments go first: they decide whether the sheet has a legacyDrawing to point at.
+            SheetComments.Write(sheet, ref nextVmlBlock);
             sheet.Part.SetBytes(SheetXml.Write(sheet, SharedStrings));
         }
 

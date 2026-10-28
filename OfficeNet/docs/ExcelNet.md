@@ -89,6 +89,20 @@ sheet.WriteColumn("F1", "Jan", "Feb", "Mar");
 sheet.WriteRange("A5", rows);     // IEnumerable<IEnumerable<object?>>
 ```
 
+### Comments and hyperlinks
+
+```csharp
+sheet["B2"].Set(42).WithComment("Angka sementara, menunggu audit");
+sheet["A1"].WithHyperlink("https://example.org/laporan");
+sheet["A2"].WithHyperlink("#Ringkasan!B2");   // '#' = a place inside the workbook
+
+string? note = sheet["B2"].Comment;
+```
+
+`Cell` is a value returned by the indexer, so `sheet["B2"].Comment = "…"` does not compile — use
+`WithComment`/`WithHyperlink`. A comment is written as two parts: the text, and the VML note that
+Excel needs to display it. Both are read back on open, and removing every comment removes both.
+
 ## Formulas
 
 ```csharp

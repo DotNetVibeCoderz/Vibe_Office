@@ -121,6 +121,9 @@ public static class RelationshipTypes
     /// <summary>A defined table (ListObject) part.</summary>
     public const string Table = Office + "/table";
 
+    /// <summary>A legacy VML drawing — in a worksheet, the shapes that display cell comments.</summary>
+    public const string VmlDrawing = Office + "/vmlDrawing";
+
     /// <summary>The calculation chain.</summary>
     public const string CalcChain = Office + "/calcChain";
 

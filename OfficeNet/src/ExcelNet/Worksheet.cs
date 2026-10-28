@@ -85,6 +85,11 @@ public readonly struct Cell
     }
 
     /// <summary>A hyperlink target, or <c>null</c>.</summary>
+    /// <remarks>
+    /// A URI links outside the workbook. A target starting with <c>#</c> (<c>#Sheet2!A1</c>, or
+    /// <c>#MyName</c>) links to a place inside it and is written as the hyperlink's
+    /// <c>location</c>, with no relationship.
+    /// </remarks>
     public string? Hyperlink
     {
         get => _sheet.GetHyperlink(Reference);
@@ -142,6 +147,24 @@ public readonly struct Cell
     public Cell WithNumberFormat(string format)
     {
         Style = Style.WithNumberFormat(format);
+        return this;
+    }
+
+    /// <summary>Attaches a comment (<c>null</c> removes it) and returns the cell.</summary>
+    /// <remarks>
+    /// <see cref="Cell"/> is a value returned by the indexer, so <c>sheet["A1"].Comment = …</c>
+    /// does not compile; this is the form that does.
+    /// </remarks>
+    public Cell WithComment(string? comment)
+    {
+        Comment = comment;
+        return this;
+    }
+
+    /// <summary>Sets the cell's hyperlink (<c>null</c> removes it) and returns the cell.</summary>
+    public Cell WithHyperlink(string? target)
+    {
+        Hyperlink = target;
         return this;
     }
 
@@ -539,6 +562,24 @@ public sealed class Worksheet
 
         data.Comment = comment;
         Workbook.Package.MarkDirty();
+    }
+
+    /// <summary>Sets a comment read from the file, without marking the package dirty.</summary>
+    internal void LoadComment(CellReference reference, string comment)
+    {
+        ref var data = ref System.Runtime.InteropServices.CollectionsMarshal
+            .GetValueRefOrAddDefault(_cells, reference, out _);
+
+        data.Comment = comment;
+    }
+
+    /// <summary>Sets a hyperlink read from the file, without marking the package dirty.</summary>
+    internal void LoadHyperlink(CellReference reference, string target)
+    {
+        ref var data = ref System.Runtime.InteropServices.CollectionsMarshal
+            .GetValueRefOrAddDefault(_cells, reference, out _);
+
+        data.HyperlinkTarget = target;
     }
 
     internal string? GetHyperlink(CellReference reference) =>

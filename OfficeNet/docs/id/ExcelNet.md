@@ -91,6 +91,21 @@ sheet.WriteColumn("F1", "Jan", "Feb", "Mar");
 sheet.WriteRange("A5", rows);     // IEnumerable<IEnumerable<object?>>
 ```
 
+### Komentar dan hyperlink
+
+```csharp
+sheet["B2"].Set(42).WithComment("Angka sementara, menunggu audit");
+sheet["A1"].WithHyperlink("https://example.org/laporan");
+sheet["A2"].WithHyperlink("#Ringkasan!B2");   // '#' = tempat di dalam workbook
+
+string? note = sheet["B2"].Comment;
+```
+
+`Cell` adalah nilai yang dikembalikan indexer, jadi `sheet["B2"].Comment = "…"` tidak bisa
+dikompilasi — pakai `WithComment`/`WithHyperlink`. Komentar ditulis sebagai dua part: teksnya, dan
+catatan VML yang dibutuhkan Excel untuk menampilkannya. Keduanya dibaca kembali saat dibuka, dan
+menghapus semua komentar menghapus keduanya.
+
 ## Formula
 
 ```csharp

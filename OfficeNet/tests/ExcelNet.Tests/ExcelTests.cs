@@ -25,7 +25,8 @@ internal static class XlsxValidator
         "dataConsolidate", "customSheetViews", "mergeCells", "phoneticPr", "conditionalFormatting",
         "dataValidations", "hyperlinks", "printOptions", "pageMargins", "pageSetup", "headerFooter",
         "rowBreaks", "colBreaks", "customProperties", "cellWatches", "ignoredErrors", "smartTags",
-        "drawing",
+        "drawing", "legacyDrawing", "legacyDrawingHF", "picture", "oleObjects", "controls",
+        "webPublishItems", "tableParts", "extLst",
     ];
 
     internal static void AssertValid(byte[] xlsx)
@@ -59,6 +60,8 @@ internal static class XlsxValidator
                 problems.Add($"{entry.FullName}: rows are not in ascending order.");
             }
         }
+
+        problems.AddRange(CheckComments(archive));
 
         var styles = archive.GetEntry("xl/styles.xml");
 
@@ -109,6 +112,64 @@ internal static class XlsxValidator
 
         Assert.True(problems.Count == 0,
             "The .xlsx is structurally invalid:\n  - " + string.Join("\n  - ", problems));
+    }
+
+    /// <summary>
+    /// A comments part is only visible through a VML note, so a sheet relating to one must also
+    /// carry <c>legacyDrawing</c>, and every note's shape id must be unique across the workbook.
+    /// </summary>
+    private static IEnumerable<string> CheckComments(System.IO.Compression.ZipArchive archive)
+    {
+        const string rels = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+        XNamespace pr = "http://schemas.openxmlformats.org/package/2006/relationships";
+        var shapeIds = new Dictionary<string, string>();
+
+        foreach (var relsEntry in archive.Entries.Where(e =>
+                     e.FullName.StartsWith("xl/worksheets/_rels/", StringComparison.Ordinal)))
+        {
+            using var relsStream = relsEntry.Open();
+            var relationships = XDocument.Load(relsStream).Root!.Elements(pr + "Relationship").ToList();
+            var sheetName = "xl/worksheets/" + relsEntry.Name[..^".rels".Length];
+
+            var hasComments = relationships.Any(r => r.Attribute("Type")!.Value == rels + "/comments");
+            var vml = relationships.FirstOrDefault(r => r.Attribute("Type")!.Value == rels + "/vmlDrawing");
+
+            using var sheetStream = archive.GetEntry(sheetName)!.Open();
+            var legacy = XDocument.Load(sheetStream).Root!.Element(Ns.S + "legacyDrawing");
+
+            if (hasComments && legacy is null)
+            {
+                yield return $"{sheetName} has a comments part but no <legacyDrawing>; Excel shows nothing.";
+            }
+
+            if (legacy is not null &&
+                legacy.Attribute(XName.Get("id", rels))?.Value != vml?.Attribute("Id")?.Value)
+            {
+                yield return $"{sheetName} <legacyDrawing> does not point at its vmlDrawing relationship.";
+            }
+
+            if (vml is null)
+            {
+                continue;
+            }
+
+            var vmlPath = "xl/" + vml.Attribute("Target")!.Value.Replace("../", "");
+            using var vmlStream = archive.GetEntry(vmlPath)!.Open();
+            var text = new StreamReader(vmlStream).ReadToEnd();
+
+            foreach (System.Text.RegularExpressions.Match match in
+                     System.Text.RegularExpressions.Regex.Matches(text, "<v:shape id=\"([^\"]+)\""))
+            {
+                var id = match.Groups[1].Value;
+
+                if (shapeIds.TryGetValue(id, out var other))
+                {
+                    yield return $"VML shape id {id} is used by both {other} and {vmlPath}.";
+                }
+
+                shapeIds[id] = vmlPath;
+            }
+        }
     }
 }
 
