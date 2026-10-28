@@ -177,7 +177,9 @@ public static class WordToPdf
                 DrawHeadersAndFooters();
             }
 
-            if (_options.Watermark is { Length: > 0 } watermark)
+            // The document's own watermark, unless the options name a different one: a watermark set
+            // on the .docx should not vanish the moment it is exported.
+            if ((_options.Watermark ?? _document.Watermark) is { Length: > 0 } watermark)
             {
                 foreach (var page in _pages)
                 {
@@ -1870,8 +1872,19 @@ public static class WordToPdf
             var result = new List<(string, ParagraphAlignment, Effective)>();
 
             var referenceName = isHeader ? Ns.W + "headerReference" : Ns.W + "footerReference";
-            var reference = _section.Properties.Elements(referenceName)
-                .FirstOrDefault(e => (e.Attr(Ns.W + "type") ?? "default") == "default");
+
+            // A section without its own reference inherits the nearest earlier section's — Word's
+            // "Link to Previous". Reading only this section's would drop the header from every
+            // document whose later sections were never given one.
+            var sections = _document.Sections;
+            var index = sections.ToList().FindIndex(s => s.Properties == _section.Properties);
+            XElement? reference = null;
+
+            for (var i = index < 0 ? sections.Count - 1 : index; i >= 0 && reference is null; i--)
+            {
+                reference = sections[i].Properties.Elements(referenceName)
+                    .FirstOrDefault(e => (e.Attr(Ns.W + "type") ?? "default") == "default");
+            }
 
             var id = reference?.Attr(Ns.R + "id");
             var part = id is null ? null : _document.DocumentPart.RelatedPart(id);
@@ -1913,23 +1926,8 @@ public static class WordToPdf
             string? pendingInstruction = null;
             var inResult = false;
 
-            foreach (var element in paragraph.Element.Elements())
+            foreach (var (element, _) in ParagraphContent.Runs(paragraph.Element))
             {
-                if (element.Name == Ns.W + "hyperlink")
-                {
-                    foreach (var run in element.Elements(Ns.W + "r"))
-                    {
-                        builder.Append(RunText(run));
-                    }
-
-                    continue;
-                }
-
-                if (element.Name != Ns.W + "r")
-                {
-                    continue;
-                }
-
                 var fieldChar = element.Element(Ns.W + "fldChar")?.Attr(Ns.W + "fldCharType");
 
                 if (fieldChar == "begin")

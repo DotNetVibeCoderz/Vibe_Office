@@ -15,13 +15,34 @@ namespace WordNet.Tests;
 /// <summary>Structural rules a .docx must satisfy, checked without going through WordNet.</summary>
 internal static class DocxValidator
 {
+    // ins/del/moveFrom/moveTo open a paragraph mark's run properties (CT_ParaRPr); rPrChange closes
+    // every run-properties element.
     private static readonly string[] RunPropertyOrder =
     [
-        "rStyle", "rFonts", "b", "bCs", "i", "iCs", "caps", "smallCaps", "strike", "dstrike",
+        "ins", "del", "moveFrom", "moveTo", "rStyle", "rFonts", "b", "bCs", "i", "iCs", "caps", "smallCaps", "strike", "dstrike",
         "outline", "shadow", "emboss", "imprint", "noProof", "snapToGrid", "vanish", "webHidden",
         "color", "spacing", "w", "kern", "position", "sz", "szCs", "highlight", "u", "effect",
         "bdr", "shd", "fitText", "vertAlign", "rtl", "cs", "em", "lang", "eastAsianLayout",
-        "specVanish", "oMath",
+        "specVanish", "oMath", "rPrChange",
+    ];
+
+    // CT_Settings, ECMA-376 Part 1 §17.15.1.78 — the elements this library has reason to write,
+    // in schema order. Anything not listed is ignored by the check.
+    private static readonly string[] SettingsOrder =
+    [
+        "writeProtection", "view", "zoom", "removePersonalInformation", "removeDateAndTime",
+        "proofState", "attachedTemplate", "documentType", "mailMerge", "revisionView",
+        "trackRevisions", "doNotTrackMoves", "doNotTrackFormatting", "documentProtection",
+        "autoFormatOverride", "defaultTabStop", "evenAndOddHeaders", "characterSpacingControl",
+        "updateFields", "footnotePr", "endnotePr", "compat", "docVars", "rsids",
+        "themeFontLang", "clrSchemeMapping", "shapeDefaults", "decimalSymbol", "listSeparator",
+    ];
+
+    private static readonly XName[] RevisionNames =
+    [
+        Ns.W + "ins", Ns.W + "del", Ns.W + "moveFrom", Ns.W + "moveTo", Ns.W + "rPrChange",
+        Ns.W + "pPrChange", Ns.W + "tblPrChange", Ns.W + "trPrChange", Ns.W + "tcPrChange",
+        Ns.W + "sectPrChange",
     ];
 
     private static readonly string[] ParagraphPropertyOrder =
@@ -128,6 +149,111 @@ internal static class DocxValidator
             else if (blocks[^1].Name != Ns.W + "p")
             {
                 problems.Add($"A w:tc ends with <{blocks[^1].Name.LocalName}>; it must end with w:p.");
+            }
+        }
+
+        // w:pPr, when present, is a paragraph's first child.
+        foreach (var paragraph in document.Descendants(Ns.W + "p"))
+        {
+            var index = paragraph.Elements().ToList().FindIndex(e => e.Name == Ns.W + "pPr");
+
+            if (index > 0)
+            {
+                problems.Add($"A w:p has w:pPr at position {index}; it must come first.");
+            }
+        }
+
+        // Deleted text is w:delText and only deleted text is. Word shows either mistake as damage.
+        foreach (var text in document.Descendants(Ns.W + "t"))
+        {
+            if (text.Ancestors().Any(a => a.Name == Ns.W + "del" || a.Name == Ns.W + "moveFrom"))
+            {
+                problems.Add($"A w:t (\"{text.Value}\") sits inside a deletion; it must be w:delText.");
+            }
+        }
+
+        foreach (var text in document.Descendants(Ns.W + "delText"))
+        {
+            if (!text.Ancestors().Any(a => a.Name == Ns.W + "del" || a.Name == Ns.W + "moveFrom"))
+            {
+                problems.Add($"A w:delText (\"{text.Value}\") sits outside any deletion.");
+            }
+        }
+
+        // Drawing ids are unique across the document; a duplicate is reported as damage.
+        XNamespace wp = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing";
+
+        foreach (var id in document.Descendants(wp + "docPr")
+                     .GroupBy(e => e.Attribute("id")?.Value)
+                     .Where(g => g.Count() > 1)
+                     .Select(g => g.Key))
+        {
+            problems.Add($"wp:docPr id {id} is used more than once.");
+        }
+
+        // Revision ids are unique.
+        var revisionIds = document.Descendants()
+            .Where(e => RevisionNames.Contains(e.Name))
+            .Select(e => e.Attribute(Ns.W + "id")?.Value)
+            .Where(id => id is not null)
+            .GroupBy(id => id)
+            .Where(g => g.Count() > 1)
+            .Select(g => g.Key);
+
+        foreach (var id in revisionIds)
+        {
+            problems.Add($"Revision id {id} is used more than once.");
+        }
+
+        if (archive.GetEntry("word/settings.xml") is { } settingsEntry)
+        {
+            using var settingsStream = settingsEntry.Open();
+            var settings = XDocument.Load(settingsStream).Root!;
+
+            if (OpcValidator.CheckChildOrder(settings, SettingsOrder) is { } problem)
+            {
+                problems.Add("word/settings.xml: " + problem);
+            }
+        }
+
+        // Every other WordprocessingML part resolves its r: attributes against its *own*
+        // relationships. Checking only document.xml let every header picture ship broken: the
+        // header's r:embed named a relationship that existed only on the document part.
+        foreach (var part in archive.Entries.Where(e =>
+                     e.FullName.StartsWith("word/", StringComparison.Ordinal) &&
+                     !e.FullName.StartsWith("word/_rels/", StringComparison.Ordinal) &&
+                     e.FullName.EndsWith(".xml", StringComparison.Ordinal) &&
+                     e.FullName.Count(c => c == '/') == 1 &&
+                     e.FullName != "word/document.xml"))
+        {
+            using var partStream = part.Open();
+            var partXml = XDocument.Load(partStream);
+            var used = partXml.Descendants().Attributes().Where(a => a.Name.Namespace == Ns.R).ToList();
+
+            if (used.Count == 0)
+            {
+                continue;
+            }
+
+            var partRelsEntry = archive.GetEntry($"word/_rels/{part.Name}.rels");
+            var partIds = new HashSet<string>(StringComparer.Ordinal);
+
+            if (partRelsEntry is not null)
+            {
+                using var partRelsStream = partRelsEntry.Open();
+
+                foreach (var relationship in XDocument.Load(partRelsStream).Root?.Elements() ?? [])
+                {
+                    if (relationship.Attribute("Id")?.Value is { } id)
+                    {
+                        partIds.Add(id);
+                    }
+                }
+            }
+
+            foreach (var attribute in used.Where(a => !partIds.Contains(a.Value)))
+            {
+                problems.Add($"{part.FullName} references relationship '{attribute.Value}', which it does not have.");
             }
         }
 

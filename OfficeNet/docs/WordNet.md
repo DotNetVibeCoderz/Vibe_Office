@@ -185,6 +185,51 @@ every page. The PDF exporter substitutes markers and fills in the real numbers p
 `SaveAsPdf` produces correct pagination even though the `.docx` itself carries a stale cache until
 Word refreshes it.
 
+**A new section inherits the previous section's header and footer** — Word's *Link to Previous* —
+until you call `GetHeader()`/`GetFooter()` on it, which gives it one of its own. Earlier versions
+copied the reference instead, so both sections shared one header and writing the new section's
+header rewrote the old one too.
+
+## Watermark
+
+```csharp
+document.AddWatermark("DRAF");                 // light grey, diagonal, behind the text
+string? text = document.Watermark;             // "DRAF"
+document.RemoveWatermark();
+```
+
+Like Word, the watermark lives in the **headers**: a header is drawn on every page, and a shape
+anchored in it behind the text is placed against the page, so one shape covers every page of the
+section. Each header part a section actually uses gets one; a section that inherits its header
+inherits the watermark too, and is not given a header of its own. The PDF export draws it, unless
+`PdfExportOptions.Watermark` names a different one.
+
+It is a DrawingML shape rather than the VML WordArt Word's own dialog inserts; Word 2010 and later
+show both. `Watermark` and `RemoveWatermark` recognise only watermarks this library added.
+
+## Splitting a document
+
+```csharp
+IReadOnlyList<WordDocument> chapters = document.SplitByHeading(1);   // one per Heading 1
+IReadOnlyList<WordDocument> sections = document.SplitBySection();
+IReadOnlyList<WordDocument> pages    = document.SplitAtPageBreaks();  // explicit breaks only
+
+for (var i = 0; i < chapters.Count; i++)
+{
+    using var chapter = chapters[i];
+    chapter.Save($"bab-{i + 1}.docx");
+}
+```
+
+Each part is a complete document: it keeps the source's styles and lists, its own section's page
+setup and headers (inherited ones included), and drops the images, footnotes, comments and headers
+it no longer uses. A bookmark or comment range cut in half by a boundary is removed. The source is
+unchanged, and splitting then `AppendDocument`-ing the parts back gives the same text.
+
+There is **no split by page**. Pages that Word makes by itself as text fills them are decided by
+Word's layout engine, which this library does not imitate; only an explicit page break is a page
+boundary written in the file. A break in the middle of a paragraph splits the paragraph.
+
 ## Footnotes, endnotes and comments
 
 ```csharp
@@ -233,6 +278,155 @@ they belong in a block after the last page, which is separate work, and drawing 
 would put them somewhere they do not belong. **Comments are not exported either**: they are review
 metadata rather than content, and Word does not print them by default.
 
+## Tracked changes
+
+```csharp
+var paragraph = document.AddParagraph("Kontrak berlaku ");
+paragraph.AddTrackedRun("mulai hari ini", "Kang Fadhil");      // w:ins
+paragraph.AddRun(" kecuali disebut lain.").TrackDeletion("Ani"); // w:del
+document.AddParagraph("Pasal yang dihapus.").TrackDeletion("Ani"); // runs + paragraph mark
+document.TrackRevisions = true;   // Word's Track Changes switch
+
+foreach (var revision in document.Revisions)
+{
+    Console.WriteLine($"{revision.Kind} by {revision.Author}: {revision.Text}");
+}
+
+document.Revisions.AcceptAll();   // or RejectAll(), or revision.Accept() one at a time
+```
+
+**Everything reads the final view.** `Paragraph.Text`, `Runs`, `ExtractText`, the PDF and the HTML
+export show inserted text and leave deleted text out — as the document reads with every change
+accepted. For the original, call `RejectAll()` on a copy.
+
+`Revisions` covers the body, headers, footers, footnotes, endnotes and comments, and tells apart
+three things that share an element name: `w:ins` around runs is inserted text, inside a paragraph
+mark it is an inserted paragraph break (`ParagraphInserted`), inside a row's properties it is an
+inserted row. Accepting a deleted paragraph mark joins the paragraph into the next one, which keeps
+its own formatting, exactly as Word does. Formatting changes (`RunFormat`, `ParagraphFormat`,
+`PropertyFormat` for tables and sections) keep the old properties beside the new; rejecting puts
+them back.
+
+What is not covered: cell-level insertions and merges (`w:cellIns`, `w:cellMerge`), and numbering
+changes. Edits made through the library are not tracked automatically — `TrackRevisions` changes what
+*Word* records, so a tracked edit is made with `AddTrackedRun` and `TrackDeletion`.
+
+## Combining documents
+
+```csharp
+using WordNet.Merging;
+
+using var report = WordDocument.Open("laporan.docx");
+using var appendix = WordDocument.Open("lampiran.docx");
+
+report.AppendDocument(appendix);                                    // new page, own headers
+report.AppendDocument(appendix, new AppendOptions
+{
+    SectionBreak = SectionJoin.Continuous,                          // or None
+    Styles = StyleConflict.KeepSource,                              // or UseTarget (default)
+});
+```
+
+Everything the appended content refers to comes with it and is **renumbered**, because each id
+means something only in its own file: styles, list definitions, images (deduplicated by content),
+hyperlinks, headers and footers, footnotes, endnotes, comments, bookmarks, revision ids and drawing
+ids. The source is not modified, so one template can be appended many times.
+
+Two of these are worth knowing about:
+
+- **Lists get a fresh `w:nsid`.** Word decides that two lists are the same list by `nsid`, not by
+  id, and two documents made from the same template routinely share one — so a copied list that
+  kept it would continue the target's numbering.
+- **A bookmark that already exists is renamed** (`Lampiran` → `Lampiran_2`) and the appended
+  content's internal links follow it. `REF` and `PAGEREF` fields that name it are not rewritten.
+
+`StyleConflict.UseTarget` matches Word's *Use destination styles*: the appended Heading 1 looks like
+the target's. `KeepSource` copies a differing style under a new id (`Heading1_1`) so the content
+looks as it did; identical styles are shared either way. `SectionJoin.None` drops the source's
+sections and headers, so the content takes the target's page setup.
+
+Not carried: threaded comment replies (`commentsExtended`), and fields that refer to renamed
+bookmarks.
+
+## Restricting editing
+
+```csharp
+using WordNet.Protection;
+
+var name = document.AddParagraph("Nama: ");
+document.AllowEditing(name);                                   // everyone may edit this one
+document.AllowEditing(notes, editor: "ani@example.org");      // only Ani may edit these
+document.Protect(DocumentEditRestriction.ReadOnly, "rahasia");
+
+bool? ok = document.Protection?.VerifyPassword("rahasia");    // true
+document.Unprotect();
+```
+
+**This is not security.** Nothing is encrypted; the restriction is a flag in `settings.xml` that any
+editor can delete, and the password only decides whether Word's *Stop Protection* button accepts it.
+Use it to keep a template or a contract from being changed by accident. To keep content private,
+encrypt the PDF instead.
+
+The other restrictions are `Comments`, `Forms`, and `TrackedChanges` — the last also turns on
+`TrackRevisions`, because forbidding tracking to be switched off means nothing if it was never on.
+
+The password is hashed the way Word does it, which is **not** the way Excel hashes a sheet password:
+the password is first reduced to Word's 1997-era 32-bit key, and the salted SHA-512 runs over that
+key's reversed hex digits. `VerifyPassword` returns `null`, not `false`, for a scheme it does not
+implement, so a file from another producer is never reported as having the wrong password when
+nobody actually checked.
+
+## Templates
+
+Write the template in Word, with tokens where data goes:
+
+```text
+Yth. {{pelanggan.nama}},                     ← a field, with a dotted path
+
+| Barang            | Qty     | Harga                  |
+| {{#baris}}{{nama}} | {{qty}} | {{harga:N0}}{{/baris}} |   ← one row per item
+| Total             |         | {{total:N0}}           |
+
+{{#lunas}}Terima kasih.{{/lunas}}{{^lunas}}Mohon segera dibayar.{{/lunas}}
+```
+
+```csharp
+using WordNet.Templates;
+
+using var invoice = WordDocument.Open("template-invoice.docx");
+invoice.FillTemplate(new
+{
+    pelanggan = new { nama = "Kang Fadhil" },
+    baris = new[] { new { nama = "Kertas", qty = 2, harga = 50_000 } },
+    total = 100_000,
+    lunas = false,
+}, new TemplateOptions { Culture = CultureInfo.GetCultureInfo("id-ID") });
+invoice.Save("invoice-0017.docx");
+```
+
+**Where a section's two tags sit decides what repeats**, so a template needs no extra markup:
+
+| Tags | What repeats |
+|---|---|
+| In one paragraph | The text between them, inline |
+| In different paragraphs of rows in one table | Those rows — one per item |
+| Anywhere else | The blocks from the opening paragraph to the closing one; a paragraph holding only a tag is dropped |
+
+In a one-column table both tags land in the same cell; put the closing tag in a second paragraph of
+that cell to repeat the row, since two tags in one paragraph repeat inline.
+
+A list repeats once per item with the item as the context (`{{.}}` is the item itself), and a
+lookup that misses in the item falls back to the enclosing data. `false`, `null`, an empty string
+and an empty list render nothing; `{{^x}}` renders exactly when `{{#x}}` would not. Zero is a value
+and renders. Data can be objects, anonymous objects, dictionaries, and lists of them. Fields take
+.NET format strings (`{{total:N2}}`, `{{tanggal:dd MMMM yyyy}}`) in `TemplateOptions.Culture`,
+which defaults to the invariant culture so the same data fills identically on every machine. A
+newline in a value becomes a line break.
+
+**Formatting is kept character by character.** Word splits what you typed as `{{nama}}` into
+several runs freely; each token is cut out of its runs at its edges, so a bold word next to it stays
+bold. Headers, footers and footnotes are filled too.
+
 ## Finding and replacing text
 
 ```csharp
@@ -250,8 +444,10 @@ document.MailMerge(new Dictionary<string, string>
 ```
 
 `ReplaceText` is per-run and fast; `ReplaceTextAcrossRuns` joins the paragraph, replaces, and
-redistributes the text while preserving each run's formatting. Use the second when a replacement
-"mysteriously does nothing".
+writes it back as **one run with the first run's formatting** — other formatting in that paragraph
+is lost. Use it when a replacement "mysteriously does nothing" in plain paragraphs; for templates
+use `FillTemplate`, which keeps every character's formatting. (An earlier version of this page said
+`ReplaceTextAcrossRuns` preserved each run's formatting. It never did.)
 
 ## Images
 

@@ -113,21 +113,18 @@ public static class WordToHtml
         var spans = new List<HtmlSpan>();
         var images = new List<HtmlBlock>();
 
-        foreach (var child in paragraph.Element.Elements())
-        {
-            if (child.Name == Ns.W + "r")
-            {
-                AddRun(document, child, null, spans, images, includeImages);
-            }
-            else if (child.Name == Ns.W + "hyperlink")
-            {
-                var href = HrefOf(document, child);
+        XElement? lastLink = null;
+        string? href = null;
 
-                foreach (var run in child.Elements(Ns.W + "r"))
-                {
-                    AddRun(document, run, href, spans, images, includeImages);
-                }
+        foreach (var (run, hyperlink) in ParagraphContent.Runs(paragraph.Element))
+        {
+            if (hyperlink != lastLink)
+            {
+                lastLink = hyperlink;
+                href = hyperlink is null ? null : HrefOf(document, hyperlink);
             }
+
+            AddRun(document, run, href, spans, images, includeImages);
         }
 
         var style = new CssStyle { Alignment = AlignmentOf(paragraph) };

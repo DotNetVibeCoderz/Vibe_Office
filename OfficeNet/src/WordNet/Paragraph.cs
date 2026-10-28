@@ -26,9 +26,19 @@ public sealed class Paragraph
             document.Touch);
     }
 
-    private static readonly XName[] ParagraphOrder =
+    /// <summary>
+    /// <c>w:pPr</c> and everything that may follow it. Only the first entry's position matters —
+    /// <c>w:pPr</c> must be the paragraph's first child — but every possible successor has to be
+    /// named, or a paragraph holding only a tracked insertion gets its properties appended after it.
+    /// </summary>
+    internal static readonly XName[] ParagraphOrder =
     [
         Ns.W + "pPr", Ns.W + "r", Ns.W + "hyperlink", Ns.W + "bookmarkStart", Ns.W + "bookmarkEnd",
+        Ns.W + "ins", Ns.W + "del", Ns.W + "moveFrom", Ns.W + "moveTo", Ns.W + "sdt",
+        Ns.W + "smartTag", Ns.W + "fldSimple", Ns.W + "customXml", Ns.W + "commentRangeStart",
+        Ns.W + "commentRangeEnd", Ns.W + "proofErr", Ns.W + "permStart", Ns.W + "permEnd",
+        Ns.W + "moveFromRangeStart", Ns.W + "moveFromRangeEnd", Ns.W + "moveToRangeStart",
+        Ns.W + "moveToRangeEnd", Ns.W + "bdo", Ns.W + "dir",
     ];
 
     /// <summary>The underlying <c>w:p</c> element.</summary>
@@ -41,20 +51,16 @@ public sealed class Paragraph
     public WordDocument Document => _document;
 
     /// <summary>
-    /// The runs directly in the paragraph and inside its hyperlinks, in document order.
+    /// The runs the paragraph shows, in document order, wherever they are nested.
     /// </summary>
     /// <remarks>
-    /// A hyperlink wraps its runs in a <c>w:hyperlink</c> element, so a paragraph's direct
-    /// <c>w:r</c> children are not all of its runs. Missing that is why link text disappears from
-    /// naive text extraction.
+    /// Runs sit inside hyperlinks, tracked insertions, content controls and fields as well as
+    /// directly in the paragraph, so its direct <c>w:r</c> children are not all of its runs. This is
+    /// the final view: runs inside a tracked deletion are left out.
+    /// <see cref="WordDocument.Revisions"/> reaches those.
     /// </remarks>
     public IReadOnlyList<Run> Runs =>
-    [
-        .. Element.Elements()
-            .SelectMany(e => e.Name == Ns.W + "hyperlink" ? e.Elements(Ns.W + "r") : Enumerable.Repeat(e, 1))
-            .Where(e => e.Name == Ns.W + "r")
-            .Select(e => new Run(_document, e)),
-    ];
+        [.. ParagraphContent.Runs(Element).Select(item => new Run(_document, item.Run))];
 
     /// <summary>
     /// Appends the paragraph's text to a builder.
@@ -63,24 +69,14 @@ public sealed class Paragraph
     /// Walks the elements directly rather than through <see cref="Runs"/>, which materialises a
     /// fresh list and a fresh wrapper per run on every access — 2.4 MB for a ten-thousand-paragraph
     /// document, and it was being paid once per paragraph on top of a string per paragraph.
-    /// The set of elements it visits is the same one <see cref="Runs"/> reports: runs of the
-    /// paragraph itself, and runs inside a hyperlink.
+    /// The set of elements it visits is the same one <see cref="Runs"/> reports, because both go
+    /// through <see cref="ParagraphContent"/>.
     /// </remarks>
     internal void AppendTextTo(StringBuilder builder)
     {
-        foreach (var child in Element.Elements())
+        foreach (var (run, _) in ParagraphContent.Runs(Element))
         {
-            if (child.Name == Ns.W + "r")
-            {
-                Run.AppendText(child, builder);
-            }
-            else if (child.Name == Ns.W + "hyperlink")
-            {
-                foreach (var run in child.Elements(Ns.W + "r"))
-                {
-                    Run.AppendText(run, builder);
-                }
-            }
+            Run.AppendText(run, builder);
         }
     }
 
@@ -208,7 +204,7 @@ public sealed class Paragraph
         ArgumentException.ThrowIfNullOrWhiteSpace(text);
         ArgumentException.ThrowIfNullOrWhiteSpace(url);
 
-        var relationshipId = _document.AddHyperlinkRelationship(url);
+        var relationshipId = _document.AddHyperlinkRelationship(_document.OwnerPartOf(Element), url);
 
         var hyperlink = new XElement(Ns.W + "hyperlink",
             new XAttribute(Ns.R + "id", relationshipId));
@@ -567,6 +563,52 @@ public sealed class Paragraph
     public void Remove()
     {
         Element.Remove();
+        _document.Touch();
+    }
+
+    /// <summary>Appends text as a tracked insertion by <paramref name="author"/>.</summary>
+    /// <returns>The run, inside its <c>w:ins</c>.</returns>
+    public Run AddTrackedRun(string text, string author, DateTimeOffset? date = null)
+    {
+        var run = AddRun(text);
+        run.TrackInsertion(author, date);
+        return run;
+    }
+
+    /// <summary>
+    /// Marks the whole paragraph as deleted: every run, and the paragraph mark itself.
+    /// </summary>
+    /// <remarks>
+    /// Deleting the runs alone leaves an empty paragraph behind once the change is accepted. Word
+    /// marks the paragraph mark too (<c>w:pPr/w:rPr/w:del</c>), and accepting that joins what is
+    /// left with the next paragraph — so an accepted deletion of a whole paragraph leaves no gap.
+    /// </remarks>
+    public void TrackDeletion(string author, DateTimeOffset? date = null)
+    {
+        foreach (var run in Runs.Where(r => !r.IsDeleted).ToList())
+        {
+            run.TrackDeletion(author, date);
+        }
+
+        var markProperties = XmlUtil.GetOrCreate(
+            XmlUtil.GetOrCreate(Element, Ns.W + "pPr", ParagraphOrder),
+            Ns.W + "rPr", ParagraphFormat.Order);
+
+        if (markProperties.Element(Ns.W + "del") is null)
+        {
+            // CT_ParaRPr opens with ins?, del?, moveFrom?, moveTo?: after any ins, before the rest.
+            var marker = _document.RevisionElement(Ns.W + "del", author, date);
+
+            if (markProperties.Element(Ns.W + "ins") is { } inserted)
+            {
+                inserted.AddAfterSelf(marker);
+            }
+            else
+            {
+                markProperties.AddFirst(marker);
+            }
+        }
+
         _document.Touch();
     }
 

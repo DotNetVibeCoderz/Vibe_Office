@@ -277,7 +277,7 @@ public sealed class Run
     {
         ArgumentNullException.ThrowIfNull(imageBytes);
 
-        var (relationshipId, info) = _document.AddImage(imageBytes);
+        var (relationshipId, info) = _document.AddImage(_document.OwnerPartOf(Element), imageBytes);
 
         var (finalWidth, finalHeight) = ResolveSize(info, width, height);
 
@@ -368,6 +368,69 @@ public sealed class Run
     public void Remove()
     {
         Element.Remove();
+        _document.Touch();
+    }
+
+    /// <summary>True when the run sits inside a tracked deletion.</summary>
+    public bool IsDeleted =>
+        Element.Ancestors().Any(e => e.Name == Ns.W + "del" || e.Name == Ns.W + "moveFrom");
+
+    /// <summary>True when the run sits inside a tracked insertion.</summary>
+    public bool IsInserted =>
+        Element.Ancestors().Any(e => e.Name == Ns.W + "ins" || e.Name == Ns.W + "moveTo");
+
+    /// <summary>
+    /// Marks the run as deleted by <paramref name="author"/>, as Word does with Track Changes on.
+    /// </summary>
+    /// <remarks>
+    /// The text stays in the file, wrapped in <c>w:del</c>, with each <c>w:t</c> renamed to
+    /// <c>w:delText</c>; Word shows text left as <c>w:t</c> inside a deletion as damage. Deleting a
+    /// run that is itself a tracked insertion nests the deletion inside it, which is what Word
+    /// writes when someone deletes text another reviewer inserted.
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">The run is already deleted.</exception>
+    public Revisions.Revision TrackDeletion(string author, DateTimeOffset? date = null)
+    {
+        if (IsDeleted)
+        {
+            throw new InvalidOperationException("The run is already a tracked deletion.");
+        }
+
+        var wrapper = _document.RevisionElement(Ns.W + "del", author, date);
+
+        foreach (var node in Element.Elements(Ns.W + "t").ToList())
+        {
+            node.Name = Ns.W + "delText";
+        }
+
+        foreach (var node in Element.Elements(Ns.W + "instrText").ToList())
+        {
+            node.Name = Ns.W + "delInstrText";
+        }
+
+        Wrap(wrapper);
+        return new Revisions.Revision(_document, Revisions.RevisionKind.Deletion, wrapper);
+    }
+
+    /// <summary>Marks the run as inserted by <paramref name="author"/>.</summary>
+    /// <exception cref="InvalidOperationException">The run is already inserted or deleted.</exception>
+    public Revisions.Revision TrackInsertion(string author, DateTimeOffset? date = null)
+    {
+        if (IsInserted || IsDeleted)
+        {
+            throw new InvalidOperationException("The run is already a tracked change.");
+        }
+
+        var wrapper = _document.RevisionElement(Ns.W + "ins", author, date);
+        Wrap(wrapper);
+        return new Revisions.Revision(_document, Revisions.RevisionKind.Insertion, wrapper);
+    }
+
+    private void Wrap(System.Xml.Linq.XElement wrapper)
+    {
+        Element.AddBeforeSelf(wrapper);
+        Element.Remove();
+        wrapper.Add(Element);
         _document.Touch();
     }
 

@@ -159,7 +159,7 @@ public sealed class Section
     ];
 
     // headerReference and footerReference must precede everything else in w:sectPr.
-    private static readonly XName[] ReferenceOrder =
+    internal static readonly XName[] ReferenceOrder =
     [
         Ns.W + "headerReference", Ns.W + "footerReference", .. SectionOrder,
     ];

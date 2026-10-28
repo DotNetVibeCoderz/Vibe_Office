@@ -10,6 +10,7 @@ using OfficeNet.Core.Xml;
 using WordNet.Drawing;
 using WordNet.Notes;
 using WordNet.Numbering;
+using WordNet.Revisions;
 using WordNet.Sections;
 using WordNet.Styles;
 using WordNet.Tables;
@@ -177,25 +178,251 @@ public sealed class WordDocument : OfficeDocument
         return document;
     }
 
-    private void SeedIdCounters()
+    /// <remarks>
+    /// Called on open, and again after <see cref="AppendDocument"/> brings in content with ids of
+    /// its own. It only ever moves the counters forward.
+    /// </remarks>
+    internal void SeedIdCounters()
     {
         // Continuing from the highest existing id is what keeps an edited document's ids unique.
         // Restarting at 1 collides with what the original producer wrote, and Word reports a
-        // duplicate drawing id as unreadable content.
-        var drawingIds = Root.Descendants(Ns.Wp + "docPr")
+        // duplicate drawing id as unreadable content. Headers and footers count: docPr ids are
+        // unique across the whole document, not per part.
+        var drawingIds = RevisionCollection.Roots(this)
+            .SelectMany(r => r.Descendants(Ns.Wp + "docPr"))
             .Select(e => e.IntAttr("id"))
             .DefaultIfEmpty(0)
             .Max();
 
-        _nextDrawingId = drawingIds + 1;
+        _nextDrawingId = Math.Max(_nextDrawingId, drawingIds + 1);
 
         var bookmarkIds = Root.Descendants(Ns.W + "bookmarkStart")
             .Select(e => e.IntAttr(Ns.W + "id"))
             .DefaultIfEmpty(-1)
             .Max();
 
-        _nextBookmarkId = bookmarkIds + 1;
+        _nextBookmarkId = Math.Max(_nextBookmarkId, bookmarkIds + 1);
     }
+
+    // ---- Tracked changes -----------------------------------------------------------------------
+
+    /// <summary>
+    /// The tracked changes in the body, headers, footers, notes and comments, as a snapshot.
+    /// </summary>
+    /// <remarks>
+    /// Everything else in WordNet — <see cref="Paragraph.Runs"/>, <see cref="ExtractText"/>, the PDF
+    /// and HTML exports — reads the <em>final</em> view: inserted text is shown and deleted text is
+    /// not. To get the original instead, <see cref="RevisionCollection.RejectAll"/> on a copy.
+    /// </remarks>
+    public RevisionCollection Revisions => new(this);
+
+    /// <summary>
+    /// Whether Word records edits as tracked changes (<c>w:trackRevisions</c>).
+    /// </summary>
+    /// <remarks>
+    /// This is the switch Word shows as Track Changes. It changes what Word does with later
+    /// edits; it does not make edits made through this library tracked — use
+    /// <see cref="Paragraph.AddTrackedRun"/> and <see cref="Run.TrackDeletion"/> for those.
+    /// </remarks>
+    public bool TrackRevisions
+    {
+        get => DocumentSettings.Find(this)?.Element(Ns.W + "trackRevisions") is { } element &&
+               XmlUtil.OoxmlBool(element.Attr(Ns.W + "val")) != false;
+        set => DocumentSettings.Set(this, Ns.W + "trackRevisions",
+            value ? new XElement(Ns.W + "trackRevisions") : null);
+    }
+
+    /// <summary>A new revision wrapper or marker with a fresh id, author and date.</summary>
+    internal XElement RevisionElement(XName name, string author, DateTimeOffset? date)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(author);
+
+        _nextRevisionId = Math.Max(_nextRevisionId, RevisionCollection.NextId(this));
+
+        // Seconds precision and an explicit Z: Word writes this form, and a fractional or
+        // offset-bearing date is shown as "unknown date" by some versions.
+        var when = (date ?? DateTimeOffset.UtcNow).ToUniversalTime()
+            .ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", System.Globalization.CultureInfo.InvariantCulture);
+
+        return new XElement(name,
+            new XAttribute(Ns.W + "id", _nextRevisionId++),
+            new XAttribute(Ns.W + "author", author),
+            new XAttribute(Ns.W + "date", when));
+    }
+
+    private int _nextRevisionId;
+
+    // ---- Merging -------------------------------------------------------------------------------
+
+    /// <summary>
+    /// Appends another document's content to the end of this one.
+    /// </summary>
+    /// <remarks>
+    /// Everything the content refers to comes with it and is renumbered: styles, lists, images,
+    /// hyperlinks, headers and footers, footnotes, endnotes, comments, bookmarks and revision ids.
+    /// The source is not modified. See <see cref="Merging.DocumentMerger"/> for why each of those
+    /// needs rewriting rather than copying.
+    /// </remarks>
+    /// <exception cref="ArgumentException"><paramref name="source"/> is this document.</exception>
+    public void AppendDocument(WordDocument source, Merging.AppendOptions? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+
+        if (ReferenceEquals(source, this))
+        {
+            throw new ArgumentException(
+                "A document cannot be appended to itself; open a second copy of it instead.",
+                nameof(source));
+        }
+
+        new Merging.DocumentMerger(this, source, options ?? new Merging.AppendOptions()).Append();
+    }
+
+    /// <summary>Splits the document into one document per section.</summary>
+    /// <remarks>
+    /// Each part is a complete document with the source's styles, lists and the headers of its own
+    /// section; images, notes and comments it no longer uses are removed. The source is unchanged.
+    /// </remarks>
+    public IReadOnlyList<WordDocument> SplitBySection() =>
+        Merging.DocumentSplitter.Split(this, (block, index) =>
+        {
+            var previous = block.ElementsBeforeSelf().LastOrDefault();
+            return previous is not null && Merging.DocumentSplitter.EndsSection(previous) is not null;
+        });
+
+    /// <summary>
+    /// Splits the document before every heading of <paramref name="level"/> or higher (a smaller
+    /// number), so each chapter becomes a document. Content before the first heading is a part of
+    /// its own.
+    /// </summary>
+    public IReadOnlyList<WordDocument> SplitByHeading(int level = 1)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(level, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(level, 9);
+
+        return Merging.DocumentSplitter.Split(this, (block, _) =>
+            block.Name == Ns.W + "p" && new Paragraph(this, block).HeadingLevel is { } heading &&
+            heading <= level);
+    }
+
+    /// <summary>
+    /// Splits the document at every explicit page break (<c>w:br w:type="page"</c>), dropping the
+    /// break itself. A break in the middle of a paragraph splits the paragraph.
+    /// </summary>
+    /// <remarks>
+    /// Pages Word creates by itself, as text fills them, are not boundaries: where they fall is
+    /// decided by Word's layout engine, and that is not something this library imitates.
+    /// </remarks>
+    public IReadOnlyList<WordDocument> SplitAtPageBreaks() =>
+        Merging.DocumentSplitter.Split(this, (block, _) =>
+            block.ElementsBeforeSelf().LastOrDefault() is { } previous &&
+            Merging.DocumentSplitter.EndsWithPageBreak(previous),
+            cutAtPageBreaks: true);
+
+    // ---- Watermark -----------------------------------------------------------------------------
+
+    /// <summary>
+    /// Puts a large, pale, diagonal word — <c>DRAFT</c>, <c>RAHASIA</c> — behind the text of every
+    /// page, replacing a watermark this library added before.
+    /// </summary>
+    /// <param name="text">The watermark text.</param>
+    /// <param name="color">Defaults to a light grey that prints without hiding the text.</param>
+    /// <remarks>
+    /// The watermark lives in the headers, as it does when Word adds one, so it is on every page of
+    /// every section; a section that inherits its header inherits the watermark with it. The PDF
+    /// export draws it too, unless <see cref="Export.PdfExportOptions.Watermark"/> overrides it.
+    /// </remarks>
+    public void AddWatermark(string text, OfficeColor? color = null) =>
+        WordNet.Drawing.Watermark.Add(this, text, color);
+
+    /// <summary>The text of a watermark this library added, or <c>null</c>.</summary>
+    public string? Watermark => WordNet.Drawing.Watermark.Find(this);
+
+    /// <summary>Removes a watermark this library added. Returns false when there was none.</summary>
+    public bool RemoveWatermark() => WordNet.Drawing.Watermark.Remove(this);
+
+    // ---- Protection ----------------------------------------------------------------------------
+
+    /// <summary>The editing restriction, or <c>null</c> when the document has none.</summary>
+    public WordNet.Protection.DocumentProtection? Protection =>
+        DocumentSettings.Find(this)?.Element(Ns.W + "documentProtection") is { } element
+            ? new WordNet.Protection.DocumentProtection(element)
+            : null;
+
+    /// <summary>
+    /// Restricts editing in Word. Prevention of mistakes, not security — see
+    /// <see cref="WordNet.Protection.DocumentProtection"/>.
+    /// </summary>
+    /// <param name="restriction">What readers may still do.</param>
+    /// <param name="password">
+    /// Needed to lift the restriction in Word; <c>null</c> lets anyone lift it.
+    /// </param>
+    /// <remarks>
+    /// <see cref="WordNet.Protection.DocumentEditRestriction.TrackedChanges"/> also turns on
+    /// <see cref="TrackRevisions"/>: the restriction forbids turning tracking off, which means
+    /// nothing if it was never on.
+    /// </remarks>
+    public void Protect(WordNet.Protection.DocumentEditRestriction restriction, string? password = null)
+    {
+        DocumentSettings.Set(this, Ns.W + "documentProtection",
+            WordNet.Protection.DocumentProtection.Build(restriction, password));
+
+        if (restriction == WordNet.Protection.DocumentEditRestriction.TrackedChanges)
+        {
+            TrackRevisions = true;
+        }
+    }
+
+    /// <summary>Removes the editing restriction. The ranges opened for editing stay.</summary>
+    public void Unprotect() => DocumentSettings.Set(this, Ns.W + "documentProtection", null);
+
+    /// <summary>
+    /// Lets <paramref name="editor"/> edit from the start of <paramref name="first"/> to the end of
+    /// <paramref name="last"/> while the document is read-only.
+    /// </summary>
+    /// <param name="first">The first paragraph of the range.</param>
+    /// <param name="last">The last paragraph; the same as <paramref name="first"/> for one.</param>
+    /// <param name="editor">
+    /// A user (<c>"ani@example.org"</c> or <c>"DOMAIN\ani"</c>); <c>null</c> lets everyone edit.
+    /// </param>
+    /// <remarks>
+    /// An exception is a pair of markers, <c>w:permStart</c> and <c>w:permEnd</c>, sharing an id.
+    /// They only mean anything under <see cref="WordNet.Protection.DocumentEditRestriction.ReadOnly"/>;
+    /// Word ignores them otherwise.
+    /// </remarks>
+    public void AllowEditing(Paragraph first, Paragraph? last = null, string? editor = null)
+    {
+        ArgumentNullException.ThrowIfNull(first);
+        last ??= first;
+
+        var id = Math.Max(_nextRevisionId, RevisionCollection.NextId(this));
+        _nextRevisionId = id + 1;
+
+        var start = new XElement(Ns.W + "permStart", new XAttribute(Ns.W + "id", id));
+        start.Add(editor is null
+            ? new XAttribute(Ns.W + "edGrp", "everyone")
+            : new XAttribute(Ns.W + "ed", editor));
+
+        // The start goes right after w:pPr so the range covers the whole first paragraph.
+        if (first.Element.Element(Ns.W + "pPr") is { } properties)
+        {
+            properties.AddAfterSelf(start);
+        }
+        else
+        {
+            first.Element.AddFirst(start);
+        }
+
+        last.Element.Add(new XElement(Ns.W + "permEnd", new XAttribute(Ns.W + "id", id)));
+        Touch();
+    }
+
+    /// <summary>The ranges opened for editing, as (id, editor) pairs; editor <c>null</c> is everyone.</summary>
+    public IReadOnlyList<(int Id, string? Editor)> EditableRanges =>
+    [
+        .. Root.Descendants(Ns.W + "permStart").Select(e =>
+            (e.IntAttr(Ns.W + "id"), e.Attr(Ns.W + "ed") ?? (e.Attr(Ns.W + "edGrp") == "everyone" ? null : e.Attr(Ns.W + "edGrp")))),
+    ];
 
     // ---- Notes and comments --------------------------------------------------------------------
 
@@ -499,28 +726,8 @@ public sealed class WordDocument : OfficeDocument
         return paragraph;
     }
 
-    private void EnableUpdateFieldsOnOpen()
-    {
-        var settingsPart = _documentPart.RelatedPartByType(RelationshipTypes.Settings);
-
-        if (settingsPart is null)
-        {
-            settingsPart = Package.AddXmlPart(SettingsPartName, ContentTypes.WordSettings,
-                DefaultParts.Settings());
-            _documentPart.AddRelationship(settingsPart, RelationshipTypes.Settings);
-        }
-
-        var root = settingsPart.Xml.Root;
-        if (root is null || root.Element(Ns.W + "updateFields") is not null)
-        {
-            return;
-        }
-
-        // w:updateFields belongs near the top of w:settings; Word is tolerant here, unlike with
-        // w:rPr, but keeping it first matches what Word itself writes.
-        root.AddFirst(XmlUtil.ValElement(Ns.W + "updateFields", "true"));
-        Touch();
-    }
+    private void EnableUpdateFieldsOnOpen() =>
+        DocumentSettings.Ensure(this, XmlUtil.ValElement(Ns.W + "updateFields", "true"));
 
     // The block appended most recently, used to make repeated appends O(1). See InsertBlock.
     private XNode? _lastInsertedBlock;
@@ -681,6 +888,15 @@ public sealed class WordDocument : OfficeDocument
         Body.Add(breakParagraph);
 
         var next = new XElement(current);
+
+        // Without its own header and footer references the new section inherits the previous
+        // section's, which is exactly Word's "Link to Previous". Copying the references instead
+        // made both sections point at one part, so writing the new section's header rewrote every
+        // section's — with no way to separate them. Now GetHeader() on the new section gives it
+        // a header of its own, and leaving it alone keeps the inherited one.
+        next.Elements(Ns.W + "headerReference").Remove();
+        next.Elements(Ns.W + "footerReference").Remove();
+
         Body.Add(next);
 
         var section = new Section(this, next) { Start = start };
@@ -764,23 +980,7 @@ public sealed class WordDocument : OfficeDocument
     {
         // Like w:titlePg for first pages, this is a document-wide setting rather than a section
         // one, and an even-page header without it never appears.
-        var settingsPart = _documentPart.RelatedPartByType(RelationshipTypes.Settings);
-
-        if (settingsPart is null)
-        {
-            settingsPart = Package.AddXmlPart(SettingsPartName, ContentTypes.WordSettings,
-                DefaultParts.Settings());
-            _documentPart.AddRelationship(settingsPart, RelationshipTypes.Settings);
-        }
-
-        var root = settingsPart.Xml.Root;
-        if (root is null || root.Element(Ns.W + "evenAndOddHeaders") is not null)
-        {
-            return;
-        }
-
-        root.AddFirst(new XElement(Ns.W + "evenAndOddHeaders"));
-        Touch();
+        DocumentSettings.Ensure(this, new XElement(Ns.W + "evenAndOddHeaders"));
     }
 
     internal void RemoveHeaderFooter(Section section, HeaderFooterKind kind, bool isHeader)
@@ -835,13 +1035,59 @@ public sealed class WordDocument : OfficeDocument
 
     // ---- Media and relationships ---------------------------------------------------------------
 
-    internal (string RelationshipId, ImageInfo Info) AddImage(byte[] imageBytes)
+    /// <summary>
+    /// The part whose XML holds <paramref name="element"/>: the document, or a header, footer,
+    /// footnotes, endnotes or comments part.
+    /// </summary>
+    /// <remarks>
+    /// A relationship id resolves only against the part it is used in. Images and hyperlinks
+    /// added inside a header used to get their relationship on the document part, so the header's
+    /// <c>r:embed</c> pointed at nothing — every picture in a header was broken, and no test looked.
+    /// </remarks>
+    internal OpcPart OwnerPartOf(XElement element)
+    {
+        var document = element.Document;
+
+        if (document is null || document == _documentPart.Xml)
+        {
+            return _documentPart;
+        }
+
+        foreach (var type in (string[])
+                 [
+                     RelationshipTypes.Header, RelationshipTypes.Footer, RelationshipTypes.Footnotes,
+                     RelationshipTypes.Endnotes, RelationshipTypes.Comments,
+                 ])
+        {
+            foreach (var part in _documentPart.RelatedPartsByType(type))
+            {
+                if (part.IsXmlLoaded && part.Xml == document)
+                {
+                    return part;
+                }
+            }
+        }
+
+        return _documentPart;
+    }
+
+    internal (string RelationshipId, ImageInfo Info) AddImage(byte[] imageBytes) =>
+        AddImage(_documentPart, imageBytes);
+
+    /// <summary>
+    /// Adds an image (deduplicated by content) and a relationship to it from <paramref name="owner"/>.
+    /// </summary>
+    /// <remarks>
+    /// An <c>r:embed</c> resolves against the relationships of the part it sits in, so an image in
+    /// a header or a footnote needs its relationship on that part, not on the document.
+    /// </remarks>
+    internal (string RelationshipId, ImageInfo Info) AddImage(OpcPart owner, byte[] imageBytes)
     {
         var part = AddImagePart(imageBytes, "/word/media", out var info);
 
         // Reuse an existing relationship to the same part rather than adding a second one. Two
         // relationships to one image are legal and make the document larger for no benefit.
-        var existing = _documentPart.RelationshipsByType(RelationshipTypes.Image)
+        var existing = owner.RelationshipsByType(RelationshipTypes.Image)
             .FirstOrDefault(r => r.TargetMode == TargetMode.Internal && r.TargetPartName == part.Name);
 
         if (existing is not null)
@@ -849,17 +1095,19 @@ public sealed class WordDocument : OfficeDocument
             return (existing.Id, info);
         }
 
-        var relationship = _documentPart.AddRelationship(part, RelationshipTypes.Image);
+        var relationship = owner.AddRelationship(part, RelationshipTypes.Image);
         return (relationship.Id, info);
     }
 
-    internal string AddHyperlinkRelationship(string url)
+    internal string AddHyperlinkRelationship(string url) => AddHyperlinkRelationship(_documentPart, url);
+
+    internal string AddHyperlinkRelationship(OpcPart owner, string url)
     {
-        var existing = _documentPart.RelationshipsByType(RelationshipTypes.Hyperlink)
+        var existing = owner.RelationshipsByType(RelationshipTypes.Hyperlink)
             .FirstOrDefault(r => r.TargetMode == TargetMode.External && r.Target == url);
 
         return existing?.Id
-               ?? _documentPart.AddExternalRelationship(RelationshipTypes.Hyperlink, url).Id;
+               ?? owner.AddExternalRelationship(RelationshipTypes.Hyperlink, url).Id;
     }
 
     // ---- Text ----------------------------------------------------------------------------------
@@ -1014,6 +1262,25 @@ public sealed class WordDocument : OfficeDocument
 
         return count;
     }
+
+    /// <summary>
+    /// Fills a template: <c>{{field}}</c>, <c>{{field:N0}}</c>, <c>{{customer.city}}</c>,
+    /// repeating <c>{{#items}}…{{/items}}</c> and inverted <c>{{^items}}…{{/items}}</c> sections.
+    /// </summary>
+    /// <param name="data">
+    /// An object, an anonymous object, a dictionary, or any nesting of them with lists.
+    /// </param>
+    /// <param name="options">Culture for numbers and dates, and what a missing field becomes.</param>
+    /// <returns>How many fields were written.</returns>
+    /// <remarks>
+    /// The body, headers, footers and notes are all filled. A section repeats inline, as table
+    /// rows, or as blocks, depending on where its two tags sit — see
+    /// <see cref="Templates.TemplateEngine"/>. Unlike <see cref="MailMerge"/>, the formatting of
+    /// every character outside a token is kept.
+    /// </remarks>
+    /// <exception cref="OfficeNetException">A section is not closed, or closed without opening.</exception>
+    public int FillTemplate(object? data, Templates.TemplateOptions? options = null) =>
+        new Templates.TemplateEngine(this, options ?? new Templates.TemplateOptions()).Fill(data);
 
     /// <summary>Counts the document's words, the way Word's status bar does.</summary>
     public int WordCount =>

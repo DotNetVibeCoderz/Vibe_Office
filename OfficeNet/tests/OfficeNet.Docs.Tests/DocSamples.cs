@@ -394,6 +394,124 @@ public class DocSamples : IDisposable
     }
 
     [Fact]
+    public void WordNet_TrackedChanges()
+    {
+        using var document = WordDocument.Create();
+
+        var paragraph = document.AddParagraph("Kontrak berlaku ");
+        paragraph.AddTrackedRun("mulai hari ini", "Kang Fadhil");
+        paragraph.AddRun(" kecuali disebut lain.").TrackDeletion("Ani");
+        document.AddParagraph("Pasal yang dihapus.").TrackDeletion("Ani");
+        document.TrackRevisions = true;
+
+        foreach (var revision in document.Revisions)
+        {
+            _ = $"{revision.Kind} by {revision.Author}: {revision.Text}";
+        }
+
+        Assert.Equal(4, document.Revisions.Count);
+        document.Revisions.AcceptAll();
+        Assert.Equal("Kontrak berlaku mulai hari ini", document.ExtractText());
+    }
+
+    [Fact]
+    public void WordNet_CombiningDocuments()
+    {
+        using var report = WordDocument.Create();
+        report.AddParagraph("Laporan");
+        using var appendix = WordDocument.Create();
+        appendix.AddParagraph("Lampiran");
+
+        report.AppendDocument(appendix);
+        report.AppendDocument(appendix, new WordNet.Merging.AppendOptions
+        {
+            SectionBreak = WordNet.Merging.SectionJoin.Continuous,
+            Styles = WordNet.Merging.StyleConflict.KeepSource,
+        });
+
+        Assert.Equal(3, report.Sections.Count);
+        Assert.Equal("Laporan\nLampiran\nLampiran", report.ExtractText());
+    }
+
+    [Fact]
+    public void WordNet_Watermark()
+    {
+        using var document = WordDocument.Create();
+        document.AddParagraph("isi");
+
+        document.AddWatermark("DRAF");
+        string? text = document.Watermark;
+        Assert.Equal("DRAF", text);
+        Assert.True(document.RemoveWatermark());
+    }
+
+    [Fact]
+    public void WordNet_SplittingADocument()
+    {
+        using var document = WordDocument.Create();
+        document.AddHeading("Bab 1", 1);
+        document.AddParagraph("isi");
+        document.AddPageBreak();
+        document.AddHeading("Bab 2", 1);
+
+        IReadOnlyList<WordDocument> chapters = document.SplitByHeading(1);
+        IReadOnlyList<WordDocument> sections = document.SplitBySection();
+        IReadOnlyList<WordDocument> pages = document.SplitAtPageBreaks();
+
+        Assert.Equal(2, chapters.Count);
+        Assert.Single(sections);
+        Assert.Equal(2, pages.Count);
+
+        foreach (var part in chapters.Concat(sections).Concat(pages))
+        {
+            part.Dispose();
+        }
+    }
+
+    [Fact]
+    public void WordNet_Templates()
+    {
+        using var invoice = WordDocument.Create();
+        invoice.AddParagraph("Yth. {{pelanggan.nama}},");
+        var table = invoice.AddTable(2, 3);
+        table[0, 0].Text = "{{#baris}}{{nama}}";
+        table[0, 1].Text = "{{qty}}";
+        table[0, 2].Text = "{{harga:N0}}{{/baris}}";
+        table[1, 0].Text = "Total";
+        table[1, 2].Text = "{{total:N0}}";
+        invoice.AddParagraph("{{#lunas}}Terima kasih.{{/lunas}}{{^lunas}}Mohon segera dibayar.{{/lunas}}");
+
+        invoice.FillTemplate(new
+        {
+            pelanggan = new { nama = "Kang Fadhil" },
+            baris = new[] { new { nama = "Kertas", qty = 2, harga = 50_000 } },
+            total = 100_000,
+            lunas = false,
+        }, new WordNet.Templates.TemplateOptions { Culture = System.Globalization.CultureInfo.GetCultureInfo("id-ID") });
+
+        Assert.Contains("Yth. Kang Fadhil,", invoice.ExtractText());
+        Assert.Contains("Mohon segera dibayar.", invoice.ExtractText());
+        Assert.Equal("100.000", invoice.Tables[0].Rows[^1].Cells[2].Text);
+    }
+
+    [Fact]
+    public void WordNet_RestrictingEditing()
+    {
+        using var document = WordDocument.Create();
+        var notes = document.AddParagraph("Catatan");
+
+        var name = document.AddParagraph("Nama: ");
+        document.AllowEditing(name);
+        document.AllowEditing(notes, editor: "ani@example.org");
+        document.Protect(WordNet.Protection.DocumentEditRestriction.ReadOnly, "rahasia");
+
+        bool? ok = document.Protection?.VerifyPassword("rahasia");
+        Assert.True(ok);
+        document.Unprotect();
+        Assert.Null(document.Protection);
+    }
+
+    [Fact]
     public void WordNet_ReplaceMailMergeAndRead()
     {
         using var document = WordDocument.Create();
@@ -490,6 +608,12 @@ public class DocSamples : IDisposable
         sheet.WriteRow("A11", DateTime.Today, "WordNet", 12, 480_000);
         sheet.WriteColumn("F1", "Jan", "Feb", "Mar");
         sheet.WriteRange("A20", new object?[][] { ["a", 1], ["b", 2] });
+
+        sheet["B2"].Set(42).WithComment("Angka sementara, menunggu audit");
+        sheet["A1"].WithHyperlink("https://example.org/laporan");
+        sheet["A2"].WithHyperlink("#Ringkasan!B2");
+        string? note = sheet["B2"].Comment;
+        Assert.Equal("Angka sementara, menunggu audit", note);
     }
 
     [Fact]

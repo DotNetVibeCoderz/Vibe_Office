@@ -186,6 +186,52 @@ menulis "1" di setiap halaman. Pengekspor PDF mengganti field dengan penanda lal
 sebenarnya per halaman, jadi `SaveAsPdf` menghasilkan penomoran yang benar meski berkas `.docx`-nya
 sendiri masih membawa cache basi sampai Word menyegarkannya.
 
+**Section baru mewarisi header dan footer section sebelumnya** — *Link to Previous* di Word —
+sampai `GetHeader()`/`GetFooter()` dipanggil padanya, yang memberinya header sendiri. Versi
+sebelumnya menyalin referensinya, sehingga kedua section berbagi satu header dan menulis header
+section baru ikut mengubah yang lama.
+
+## Watermark
+
+```csharp
+document.AddWatermark("DRAF");                 // abu-abu muda, diagonal, di belakang teks
+string? text = document.Watermark;             // "DRAF"
+document.RemoveWatermark();
+```
+
+Seperti di Word, watermark tinggal di **header**: header digambar di setiap halaman, dan shape yang
+ditambatkan di dalamnya di belakang teks diposisikan terhadap halaman, sehingga satu shape menutup
+setiap halaman section itu. Setiap part header yang benar-benar dipakai section mendapat satu;
+section yang mewarisi header ikut mewarisi watermark-nya dan tidak diberi header sendiri. Ekspor PDF
+menggambarnya, kecuali `PdfExportOptions.Watermark` menyebut yang lain.
+
+Ini shape DrawingML, bukan VML WordArt yang dimasukkan dialog Word; Word 2010 ke atas menampilkan
+keduanya. `Watermark` dan `RemoveWatermark` hanya mengenali watermark yang ditambahkan pustaka ini.
+
+## Memecah dokumen
+
+```csharp
+IReadOnlyList<WordDocument> chapters = document.SplitByHeading(1);   // satu per Heading 1
+IReadOnlyList<WordDocument> sections = document.SplitBySection();
+IReadOnlyList<WordDocument> pages    = document.SplitAtPageBreaks();  // hanya break eksplisit
+
+for (var i = 0; i < chapters.Count; i++)
+{
+    using var chapter = chapters[i];
+    chapter.Save($"bab-{i + 1}.docx");
+}
+```
+
+Setiap bagian adalah dokumen utuh: gaya dan daftar sumbernya tetap ada, begitu juga pengaturan
+halaman dan header section-nya sendiri (termasuk yang diwarisi), sedangkan gambar, footnote,
+komentar, dan header yang tidak dipakai lagi dibuang. Bookmark atau range komentar yang terpotong
+batas dihapus. Sumbernya tidak berubah, dan memecah lalu menggabungkan kembali bagian-bagiannya
+dengan `AppendDocument` menghasilkan teks yang sama.
+
+**Tidak ada pemecahan per halaman.** Halaman yang dibuat Word sendiri saat teks memenuhinya
+ditentukan mesin layout Word, yang tidak ditiru pustaka ini; hanya page break eksplisit yang
+merupakan batas halaman yang tertulis di berkas. Break di tengah paragraf memecah paragrafnya.
+
 ## Footnote, endnote, dan komentar
 
 ```csharp
@@ -234,6 +280,157 @@ di blok setelah halaman terakhir, dan itu pekerjaan tersendiri; menggambarnya se
 menaruhnya di tempat yang salah. **Komentar juga tidak diekspor**: ia metadata tinjauan, bukan isi,
 dan Word pun tidak mencetaknya secara baku.
 
+## Track changes
+
+```csharp
+var paragraph = document.AddParagraph("Kontrak berlaku ");
+paragraph.AddTrackedRun("mulai hari ini", "Kang Fadhil");      // w:ins
+paragraph.AddRun(" kecuali disebut lain.").TrackDeletion("Ani"); // w:del
+document.AddParagraph("Pasal yang dihapus.").TrackDeletion("Ani"); // run + tanda paragraf
+document.TrackRevisions = true;   // sakelar Track Changes di Word
+
+foreach (var revision in document.Revisions)
+{
+    Console.WriteLine($"{revision.Kind} oleh {revision.Author}: {revision.Text}");
+}
+
+document.Revisions.AcceptAll();   // atau RejectAll(), atau revision.Accept() satu per satu
+```
+
+**Semuanya membaca tampilan final.** `Paragraph.Text`, `Runs`, `ExtractText`, ekspor PDF, dan ekspor
+HTML menampilkan teks sisipan dan tidak menampilkan teks yang dihapus — seperti dokumen dibaca bila
+setiap perubahan diterima. Untuk versi aslinya, panggil `RejectAll()` pada salinan.
+
+`Revisions` mencakup body, header, footer, footnote, endnote, dan komentar, dan membedakan tiga hal
+yang memakai nama elemen sama: `w:ins` di sekeliling run adalah teks sisipan, di dalam tanda paragraf
+adalah pemisah paragraf yang disisipkan (`ParagraphInserted`), di dalam properti baris adalah baris
+yang disisipkan. Menerima tanda paragraf yang dihapus menggabungkan paragraf itu ke paragraf
+berikutnya, yang mempertahankan formatnya sendiri, persis seperti Word. Perubahan format
+(`RunFormat`, `ParagraphFormat`, `PropertyFormat` untuk tabel dan section) menyimpan properti lama di
+samping yang baru; menolaknya mengembalikan yang lama.
+
+Yang belum dicakup: sisipan dan gabungan tingkat sel (`w:cellIns`, `w:cellMerge`), serta perubahan
+penomoran. Suntingan lewat pustaka ini tidak otomatis terlacak — `TrackRevisions` mengubah apa yang
+dicatat *Word*, jadi suntingan terlacak dibuat dengan `AddTrackedRun` dan `TrackDeletion`.
+
+## Menggabungkan dokumen
+
+```csharp
+using WordNet.Merging;
+
+using var report = WordDocument.Open("laporan.docx");
+using var appendix = WordDocument.Open("lampiran.docx");
+
+report.AppendDocument(appendix);                                    // halaman baru, header sendiri
+report.AppendDocument(appendix, new AppendOptions
+{
+    SectionBreak = SectionJoin.Continuous,                          // atau None
+    Styles = StyleConflict.KeepSource,                              // atau UseTarget (bawaan)
+});
+```
+
+Semua yang dirujuk isi tambahan ikut terbawa dan **dinomori ulang**, karena setiap id hanya
+bermakna di berkasnya sendiri: gaya, definisi daftar, gambar (dideduplikasi menurut isinya),
+hyperlink, header dan footer, footnote, endnote, komentar, bookmark, id revisi, dan id drawing.
+Sumbernya tidak diubah, jadi satu template bisa ditambahkan berkali-kali.
+
+Dua hal yang layak diketahui:
+
+- **Daftar mendapat `w:nsid` baru.** Word memutuskan dua daftar adalah daftar yang sama menurut
+  `nsid`, bukan id, dan dua dokumen dari template yang sama sering berbagi satu — jadi daftar
+  salinan yang mempertahankannya akan melanjutkan penomoran target.
+- **Bookmark yang sudah ada diganti namanya** (`Lampiran` → `Lampiran_2`) dan tautan internal isi
+  tambahan mengikutinya. Field `REF` dan `PAGEREF` yang menyebutnya tidak ditulis ulang.
+
+`StyleConflict.UseTarget` sama dengan *Use destination styles* di Word: Heading 1 tambahan tampil
+seperti milik target. `KeepSource` menyalin gaya yang berbeda dengan id baru (`Heading1_1`) agar
+isinya tampil seperti semula; gaya yang identik tetap dipakai bersama. `SectionJoin.None` membuang
+section dan header sumber, sehingga isinya mengikuti pengaturan halaman target.
+
+Yang tidak ikut: balasan komentar berutas (`commentsExtended`), dan field yang merujuk bookmark yang
+diganti namanya.
+
+## Membatasi penyuntingan
+
+```csharp
+using WordNet.Protection;
+
+var name = document.AddParagraph("Nama: ");
+document.AllowEditing(name);                                   // semua orang boleh menyunting ini
+document.AllowEditing(notes, editor: "ani@example.org");      // hanya Ani yang boleh
+document.Protect(DocumentEditRestriction.ReadOnly, "rahasia");
+
+bool? ok = document.Protection?.VerifyPassword("rahasia");    // true
+document.Unprotect();
+```
+
+**Ini bukan keamanan.** Tidak ada yang dienkripsi; pembatasannya hanya flag di `settings.xml` yang
+bisa dihapus editor mana pun, dan password-nya hanya menentukan apakah tombol *Stop Protection* di
+Word menerimanya. Pakai untuk menjaga template atau kontrak dari perubahan tak sengaja. Untuk
+merahasiakan isi, enkripsi PDF-nya.
+
+Pembatasan lainnya adalah `Comments`, `Forms`, dan `TrackedChanges` — yang terakhir sekaligus
+menyalakan `TrackRevisions`, karena melarang pelacakan dimatikan tidak ada artinya bila pelacakan
+memang belum menyala.
+
+Password di-hash seperti cara Word, yang **berbeda** dari cara Excel untuk password sheet: password
+lebih dulu diturunkan menjadi kunci 32-bit skema Word 1997, lalu SHA-512 bersalt dijalankan atas
+digit hex kunci itu dalam urutan byte terbalik. `VerifyPassword` mengembalikan `null`, bukan
+`false`, untuk skema yang tidak diimplementasikan, sehingga berkas dari produsen lain tidak pernah
+dinyatakan salah password padahal tidak ada yang benar-benar memeriksanya.
+
+## Template
+
+Tulis templatenya di Word, dengan token di tempat data:
+
+```text
+Yth. {{pelanggan.nama}},                     ← field, dengan path bertitik
+
+| Barang            | Qty     | Harga                  |
+| {{#baris}}{{nama}} | {{qty}} | {{harga:N0}}{{/baris}} |   ← satu baris per item
+| Total             |         | {{total:N0}}           |
+
+{{#lunas}}Terima kasih.{{/lunas}}{{^lunas}}Mohon segera dibayar.{{/lunas}}
+```
+
+```csharp
+using WordNet.Templates;
+
+using var invoice = WordDocument.Open("template-invoice.docx");
+invoice.FillTemplate(new
+{
+    pelanggan = new { nama = "Kang Fadhil" },
+    baris = new[] { new { nama = "Kertas", qty = 2, harga = 50_000 } },
+    total = 100_000,
+    lunas = false,
+}, new TemplateOptions { Culture = CultureInfo.GetCultureInfo("id-ID") });
+invoice.Save("invoice-0017.docx");
+```
+
+**Posisi kedua tag sebuah bagian menentukan apa yang berulang**, jadi template tidak butuh markup
+tambahan:
+
+| Tag | Yang berulang |
+|---|---|
+| Di satu paragraf | Teks di antaranya, inline |
+| Di paragraf berbeda pada baris-baris satu tabel | Baris-baris itu — satu per item |
+| Selain itu | Blok dari paragraf pembuka sampai paragraf penutup; paragraf yang hanya berisi tag dibuang |
+
+Di tabel satu kolom kedua tag jatuh di sel yang sama; taruh tag penutup di paragraf kedua sel itu
+untuk mengulang barisnya, karena dua tag di satu paragraf berulang inline.
+
+Daftar berulang sekali per item dengan item sebagai konteks (`{{.}}` adalah item itu sendiri), dan
+pencarian yang tidak ketemu di item jatuh ke data di luarnya. `false`, `null`, string kosong, dan
+daftar kosong tidak menghasilkan apa pun; `{{^x}}` tampil tepat ketika `{{#x}}` tidak. Nol adalah
+nilai dan tetap tampil. Datanya bisa objek, objek anonim, dictionary, dan daftar darinya. Field
+menerima format .NET (`{{total:N2}}`, `{{tanggal:dd MMMM yyyy}}`) dalam `TemplateOptions.Culture`,
+yang bawaannya invariant agar data yang sama mengisi sama di setiap mesin. Baris baru di nilai
+menjadi line break.
+
+**Format dipertahankan karakter demi karakter.** Word bebas memecah `{{nama}}` yang diketik menjadi
+beberapa run; setiap token dipotong dari run-nya tepat di tepinya, sehingga kata tebal di sebelahnya
+tetap tebal. Header, footer, dan footnote ikut diisi.
+
 ## Mencari dan mengganti teks
 
 ```csharp
@@ -251,8 +448,10 @@ document.MailMerge(new Dictionary<string, string>
 ```
 
 `ReplaceText` bekerja per run dan cepat; `ReplaceTextAcrossRuns` menggabungkan paragraf, mengganti,
-lalu membagikan teksnya kembali sambil mempertahankan format tiap run. Pakai yang kedua kalau
-penggantian "entah kenapa tidak terjadi apa-apa".
+lalu menulisnya kembali sebagai **satu run dengan format run pertama** — format lain di paragraf itu
+hilang. Pakai untuk paragraf polos ketika penggantian "entah kenapa tidak terjadi apa-apa"; untuk
+template pakai `FillTemplate`, yang mempertahankan format setiap karakter. (Versi sebelumnya halaman
+ini menyebut `ReplaceTextAcrossRuns` mempertahankan format tiap run. Itu tidak pernah benar.)
 
 ## Gambar
 
