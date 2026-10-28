@@ -24,7 +24,8 @@ public sealed class DocumentTools(Workspace workspace)
     [McpServerTool(Name = "convert", Title = "Convert a document", Destructive = true)]
     [Description(
         "Converts between formats, chosen by the two extensions: .docx/.xlsx/.pptx → .pdf, " +
-        ".docx → .html or .md, .xlsx → .html (every sheet a table), .html → .docx, .pptx or .xlsx " +
+        ".docx → .html or .md, .xlsx → .html (every sheet a table), .pptx → .html (every slide in turn), " +
+        ".html → .docx, .pptx or .xlsx " +
         "(every table a sheet), .md → .docx, .txt → .docx (a paragraph per " +
         "line), .pdf → .docx (paragraphs, headings, tables reconstructed) or .xlsx (tables).")]
     public string Convert(
@@ -49,6 +50,10 @@ public sealed class DocumentTools(Workspace workspace)
 
                 case (".docx", ".md" or ".markdown"):
                     WordToMarkdown.Convert(source, target);
+                    break;
+
+                case (".pptx", ".html" or ".htm"):
+                    PowerPointNet.Html.SlidesToHtml.Convert(source, target);
                     break;
 
                 case (".xlsx" or ".xlsm", ".html" or ".htm"):
@@ -128,7 +133,7 @@ public sealed class DocumentTools(Workspace workspace)
                 default:
                     throw new ArgumentException(
                         $"Converting {from} to {to} is not supported. Supported: docx/xlsx/pptx → pdf, " +
-                        "docx → html/md, xlsx → html, html → docx/pptx/xlsx, md/txt → docx, pdf → docx/xlsx.");
+                        "docx → html/md, xlsx/pptx → html, html → docx/pptx/xlsx, md/txt → docx, pdf → docx/xlsx.");
             }
 
             return $"Converted {workspace.Relative(source)} to {workspace.Relative(target)}.";

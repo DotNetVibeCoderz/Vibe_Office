@@ -365,6 +365,34 @@ new HtmlSlideOptions
 }
 ```
 
+## Slide → HTML
+
+```csharp
+using PowerPointNet.Html;
+
+var html = SlidesToHtml.Convert(deck);                 // satu halaman untuk seluruh deck
+SlidesToHtml.Convert("rapat.pptx", "rapat.html");
+
+var fragment = SlidesToHtml.Convert(deck, new SlideHtmlOptions
+{
+    FullDocument = false,
+    IncludeNotes = true,          // catatan tiap slide menyusul, sebagai kutipan
+    IncludeHiddenSlides = false,
+    EmbedImages = true,
+});
+```
+
+Slide adalah kanvas dan halaman adalah aliran, jadi yang ditulis adalah apa yang dikatakan slide, bukan
+di mana ia meletakkannya: judulnya sebagai heading, lalu sisanya dalam urutan baca — atas ke bawah,
+kiri ke kanan, sampai ke dalam grup — dengan butir sebagai daftar yang mempertahankan levelnya, tautan
+sebagai tautan, tabel sebagai tabel, gambar dengan teks alt-nya, chart sebagai tabel angkanya, dan
+diagram sebagai daftar node-nya. Garis memisahkan slide. Posisi, ukuran, warna shape, dan animasi tidak
+ikut.
+
+Ditulis lewat blok dan `HtmlWriter` yang sama dengan Word → HTML, dan dibaca kembali lewat
+`HtmlToSlides`: halaman yang dijadikan slide lalu ditulis lagi mempertahankan heading, daftar, dan
+tabelnya.
+
 ## Transisi, animasi, dan catatan
 
 ```csharp

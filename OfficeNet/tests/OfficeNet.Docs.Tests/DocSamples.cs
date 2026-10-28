@@ -1368,6 +1368,30 @@ public class DocSamples : IDisposable
     }
 
     [Fact]
+    public void PowerPointNet_SlidesToHtml()
+    {
+        using var deck = Presentation.Create();
+        deck.AddBulletSlide("Ringkasan", ["Pendapatan naik", "Biaya turun"]).Notes = "Sebut angka tahun lalu.";
+
+        var html = SlidesToHtml.Convert(deck);
+        Assert.Contains("<h2>Ringkasan</h2>", html, StringComparison.Ordinal);
+
+        var fragment = SlidesToHtml.Convert(deck, new SlideHtmlOptions
+        {
+            FullDocument = false,
+            IncludeNotes = true,
+            IncludeHiddenSlides = false,
+            EmbedImages = true,
+        });
+        Assert.Contains("tahun lalu", fragment, StringComparison.Ordinal);
+
+        var pptx = Path_("rapat.pptx");
+        deck.Save(pptx);
+        SlidesToHtml.Convert(pptx, Path_("rapat.html"));
+        Assert.True(File.Exists(Path_("rapat.html")));
+    }
+
+    [Fact]
     public void PowerPointNet_HtmlToSlides()
     {
         const string Html = """

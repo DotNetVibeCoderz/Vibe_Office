@@ -365,6 +365,32 @@ new HtmlSlideOptions
 }
 ```
 
+## Slides → HTML
+
+```csharp
+using PowerPointNet.Html;
+
+var html = SlidesToHtml.Convert(deck);                 // one page for the whole deck
+SlidesToHtml.Convert("rapat.pptx", "rapat.html");
+
+var fragment = SlidesToHtml.Convert(deck, new SlideHtmlOptions
+{
+    FullDocument = false,
+    IncludeNotes = true,          // each slide's notes follow it, as a quotation
+    IncludeHiddenSlides = false,
+    EmbedImages = true,
+});
+```
+
+A slide is a canvas and a page is a flow, so this writes what a slide says rather than where it puts
+things: its title as a heading, then the rest in reading order — top to bottom, left to right, into
+groups — with bullets as lists keeping their levels, links as links, tables as tables, pictures with
+their alt text, a chart as the table of its numbers, and a diagram as a list of its nodes. A rule
+separates the slides. Positions, sizes, colours of shapes and animation do not come through.
+
+It writes through the same blocks and `HtmlWriter` as Word → HTML, and reads back through
+`HtmlToSlides`: a page made into slides and written out again keeps its headings, lists and tables.
+
 ## Transitions, animation and notes
 
 ```csharp

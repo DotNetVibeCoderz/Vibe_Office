@@ -475,7 +475,10 @@ sekarang jauh lebih sempit daripada saat v1.3 dimulai.
 
     Yang tidak ikut terbawa: format dari gaya selain heading, struktur di dalam sel tabel, posisi
     gambar di dalam paragrafnya, dan `pre` yang kembali sebagai paragraf monospace, bukan `pre`.
-  - [ ] **PPTX → HTML.** Tinggal memetakan slide ke blok; penulisnya sudah ada.
+  - [x] **PPTX → HTML — selesai.** `PowerPointNet.Html.SlidesToHtml`: judul sebagai heading, isi dalam
+    urutan baca (termasuk di dalam grup), butir sebagai daftar dengan level, tautan, tabel, gambar,
+    chart sebagai tabel angkanya, SmartArt sebagai daftar node, catatan opsional sebagai kutipan.
+    Dicek dengan BeautifulSoup. Juga di tool MCP `convert`.
 
 ---
 
