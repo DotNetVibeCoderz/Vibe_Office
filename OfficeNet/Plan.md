@@ -718,9 +718,9 @@ melengkapi.
   **bukan** format biner lama: yang dibutuhkan hanya pembaca/penulis CFB minimal untuk dua stream,
   bukan model `.xls`. Berlaku sama untuk .docx dan .pptx, jadi tempatnya di Core.
 - [ ] **XLSX → HTML dan HTML → XLSX** (tabel). `HtmlWriter`/`HtmlFlattener` sudah di Core.
-- [ ] **XLSM.** Ekstensinya dikenali dan part yang tidak dimodelkan dibawa utuh; yang belum
-  diperiksa adalah content type bagian utamanya (`sheet.macroEnabled.main+xml`) bertahan saat
-  disimpan. Satu tes round-trip dengan `vbaProject.bin` menjawabnya.
+- [x] **XLSM — terbukti, tanpa perubahan kode.** Tes round trip: .xlsm yang diubah lalu disimpan
+  mempertahankan content type `sheet.macroEnabled.main+xml`, relasi `vbaProject`, dan isi
+  `vbaProject.bin` byte demi byte. Sebelumnya hanya diasumsikan.
 
 ### PowerPointNet
 

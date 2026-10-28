@@ -625,7 +625,7 @@ memeriksa bagaimana pustaka memperlakukan `w:ins` sebelum menulis fitur track ch
 - [x] ExcelNet: fungsi finansial `PMT`, `PV`, `FV`, `NPER`, `RATE`, `NPV`, `IRR`, `XNPV`, `XIRR` —
       diuji terhadap contoh resmi Microsoft; parser kini menerima argumen yang dikosongkan
 - [ ] ExcelNet: XLSX ↔ HTML
-- [ ] ExcelNet: round-trip XLSM terverifikasi (content type macro-enabled bertahan)
+- [x] ExcelNet: round-trip XLSM terverifikasi (content type macro-enabled dan `vbaProject.bin` bertahan)
 - [ ] Core: chart kombinasi + sumbu sekunder
 - [ ] Core: enkripsi Agile ECMA-376 (CFB minimal) untuk .docx/.xlsx/.pptx
 - [ ] PowerPointNet: garis, panah, konektor (`p:cxnSp`)
