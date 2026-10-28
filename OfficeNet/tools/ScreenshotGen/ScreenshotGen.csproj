@@ -8,5 +8,11 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\OfficeNet\OfficeNet.csproj" />
     <ProjectReference Include="..\..\src\OfficeNet.Rendering\OfficeNet.Rendering.csproj" />
+    <!-- Built first, but not referenced: the MCP screenshots come from running the server as a
+         separate process and talking to it over stdio, the way an assistant does. -->
+    <ProjectReference Include="..\..\src\OfficeNet.Mcp\OfficeNet.Mcp.csproj" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="ModelContextProtocol" />
   </ItemGroup>
 </Project>

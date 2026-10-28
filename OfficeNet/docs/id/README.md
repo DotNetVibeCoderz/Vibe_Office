@@ -19,6 +19,7 @@ Dibuat oleh Gravicode Studios, dipimpin oleh Kang Fadhil.
 | `Gravicode.OfficeNet.PdfNet` | `PdfNet` | PyPDF2 | [PdfNet](PdfNet.md) |
 | `Gravicode.OfficeNet.Rendering` | `OfficeNet.Rendering` | pdf2image / poppler | [Rendering](Rendering.md) |
 | `Gravicode.OfficeNet` | `OfficeNet` | — | [API terpadu](OfficeNet.md) |
+| `Gravicode.OfficeNet.Mcp` | `OfficeNet.Mcp` | — | [Server MCP](Mcp.md) |
 | `Gravicode.OfficeNet.Core` | `OfficeNet.Core` | — | [Konsep inti](Core.md) |
 
 Pasang yang Anda butuhkan saja; `Gravicode.OfficeNet` menarik keempat library format sekaligus titik
@@ -99,6 +100,8 @@ menyimpang dari apa yang sebenarnya dilakukan kodenya.
 - **[PdfNet](PdfNet.md)** — gabung, pisah, ekstrak, enkripsi, formulir, anotasi, menggambar.
 - **[Rendering](Rendering.md)** — halaman ke PNG/JPEG/WebP, thumbnail.
 - **[API terpadu](OfficeNet.md)** — deteksi format dan operasi lintas format.
+- **[Server MCP](Mcp.md)** — 23 tool yang memungkinkan asisten AI membuat, menyunting, mengonversi,
+  dan meninjau dokumen, terkurung di satu direktori workspace.
 
 ## Notebook
 

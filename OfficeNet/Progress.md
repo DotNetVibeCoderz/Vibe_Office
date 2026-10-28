@@ -594,7 +594,7 @@ tetapi tidak pernah ditulis ke berkas maupun dibaca kembali. Komentar hilang dia
 
 **Bug kedua dengan bentuk yang sama, di WordNet:** run di dalam tracked insertion tidak terlihat
 oleh `Paragraph.Runs`, sehingga teks sisipan hilang dari setiap keluaran. Ditemukan saat
-memeriksa bagaimana pustaka memperlakukan `w:ins` sebelum menulis fitur track changes. **826 tes.**
+memeriksa bagaimana pustaka memperlakukan `w:ins` sebelum menulis fitur track changes. **854 tes.**
 
 - [x] ExcelNet: komentar sel ditulis dan dibaca (`comments` + VML `legacyDrawing`); hyperlink sel
       kini juga dibaca kembali (sebelumnya hilang saat buka-lalu-simpan); `WithComment`/`WithHyperlink`
@@ -638,6 +638,25 @@ Sudah ada dan **tidak** perlu dikerjakan, walaupun tercantum di `reference.md`: 
 worksheet, proteksi sheet, data validation, autofilter, pivot, hyperlink sel, `MEDIAN`/`TODAY`/
 lookup, duplikat/hapus/urut ulang slide, layout & master, media, doughnut/scatter, merge/split/
 pindah/hapus halaman PDF, enkripsi PDF, tanda tangan PDF beserta validasinya, highlight/note/link.
+
+## v2.2 — server MCP (`Gravicode.OfficeNet.Mcp`)
+
+Alasan dan keputusannya di [Plan.md](Plan.md#v22--server-mcp-untuk-asisten-ai).
+
+- [x] `src/OfficeNet.Mcp` — server stdio, `dotnet tool` dengan perintah `officenet-mcp`
+- [x] 23 tool: 9 Word, 4 Excel, 2 PowerPoint, 3 PDF, 5 lintas format (termasuk `render_page`
+      yang mengembalikan PNG ke model)
+- [x] `Workspace` — semua path terkurung di `--root` (termasuk `..`, path absolut, prefiks saudara,
+      dan symbolic link keluar); `--read-only`
+- [x] Error pustaka dan argumen dijelaskan ke model; error lain generik
+- [x] `tests/OfficeNet.Mcp.Tests` — server dijalankan sebagai proses dan diajak bicara lewat stdio;
+      setiap jenis dokumen dibuat lewat protokol lalu divalidasi
+- [x] Smoke test JSON-RPC mentah dengan Python, tanpa SDK
+- [x] `docs/Mcp.md` + `docs/id/Mcp.md`; README, README.id, dan indeks docs
+- [x] `tools/ScreenshotGen` sebagai klien MCP — lima screenshot dan satu kolase dari panggilan tool
+- [x] `ChartRenderer` dipindah ke PdfNet; **chart workbook kini tergambar di ekspor PDF Excel**
+      (sebelumnya hilang); tanggal ISO di data template diformat sebagai tanggal
+- [ ] Transport HTTP, resources dan prompts MCP, Markdown sebagai input — lihat Plan
 
 ## Yang masih tersisa
 

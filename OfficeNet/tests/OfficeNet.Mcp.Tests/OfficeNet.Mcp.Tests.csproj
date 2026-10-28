@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>OfficeNet.Mcp.Tests</RootNamespace>
+    <AssemblyName>OfficeNet.Mcp.Tests</AssemblyName>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Referenced for Workspace's unit tests, and so the server is built before the tests that
+         launch it. The end-to-end tests run the server from its own output directory, as a client
+         would, not from a copy beside the tests. -->
+    <ProjectReference Include="..\..\src\OfficeNet.Mcp\OfficeNet.Mcp.csproj" />
+    <ProjectReference Include="..\OfficeNet.TestKit\OfficeNet.TestKit.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="ModelContextProtocol" />
+  </ItemGroup>
+
+</Project>

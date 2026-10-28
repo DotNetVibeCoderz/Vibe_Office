@@ -17,6 +17,7 @@ keeps its shape, so if you know the Python you already know the API.
 | `Gravicode.OfficeNet.Rendering` | pdf2image | Pages to PNG/JPEG/WebP — the only package with a native dependency |
 | `Gravicode.OfficeNet.Core` | — | The OPC container, units, colour and chart model every library shares |
 | `Gravicode.OfficeNet` | — | Meta package pulling in all of the above, plus the `Office` facade |
+| `Gravicode.OfficeNet.Mcp` | — | **MCP server** — lets Claude, Copilot and other AI assistants create, edit, convert and preview documents |
 
 *Dibuat oleh Gravicode Studios, dipimpin oleh Kang Fadhil.*
 
@@ -35,6 +36,25 @@ actually does.
 | **ExcelNet** — typed dates, Rupiah formats, and a `SUM` the engine actually evaluated | ![An Excel workbook rendered to PNG](docs/screenshots/excelnet-workbook.png) |
 | **PowerPointNet** — a native chart, drawn by the PDF exporter from its own cached data | ![A chart slide rendered to PNG](docs/screenshots/powerpointnet-deck-03.png) |
 | **HTML → slides** — headings, nested lists and a table become a deck in one call | ![A slide generated from HTML](docs/screenshots/html-to-slides-03.png) |
+
+### Through an AI assistant — the MCP server
+
+`officenet-mcp` puts OfficeNet behind 23 [Model Context Protocol](https://modelcontextprotocol.io)
+tools, so Claude, GitHub Copilot or any MCP client can make these documents from a sentence. The
+four below were made **through the protocol**: the screenshot tool starts the server as a separate
+process, calls its tools over stdio as an assistant would, and the PNGs come from the server's own
+`render_page` tool.
+
+![A report, a workbook with a chart, a deck and an invoice, all created through the MCP server](docs/screenshots/mcp-showcase.png)
+
+```bash
+dotnet tool install -g Gravicode.OfficeNet.Mcp
+claude mcp add officenet -- officenet-mcp --root ~/Documents/officenet
+```
+
+Every path is confined to `--root`, `--read-only` refuses every write, and `render_page` returns
+the page as an image the model can look at — so it can check its own work. See the
+[MCP guide](docs/Mcp.md).
 
 ### The sample applications
 
@@ -73,6 +93,7 @@ pages is compiled and run by the test suite, so none of them can go stale.
 | PdfNet | [PdfNet.md](docs/PdfNet.md) | [id/PdfNet.md](docs/id/PdfNet.md) |
 | Rendering | [Rendering.md](docs/Rendering.md) | [id/Rendering.md](docs/id/Rendering.md) |
 | Unified API and plugins | [OfficeNet.md](docs/OfficeNet.md) | [id/OfficeNet.md](docs/id/OfficeNet.md) |
+| MCP server for AI assistants | [Mcp.md](docs/Mcp.md) | [id/Mcp.md](docs/id/Mcp.md) |
 
 And elsewhere in the repository:
 

@@ -18,6 +18,7 @@ sudah paham API-nya.
 | `Gravicode.OfficeNet.Rendering` | pdf2image | Halaman ke PNG/JPEG/WebP — satu-satunya paket dengan dependensi native |
 | `Gravicode.OfficeNet.Core` | — | Kontainer OPC, satuan, warna, dan model chart yang dipakai bersama |
 | `Gravicode.OfficeNet` | — | Paket meta yang menarik semuanya, plus facade `Office` |
+| `Gravicode.OfficeNet.Mcp` | — | **Server MCP** — memungkinkan Claude, Copilot, dan asisten AI lain membuat, menyunting, mengonversi, dan meninjau dokumen |
 
 *Dibuat oleh Gravicode Studios, dipimpin oleh Kang Fadhil.*
 
@@ -36,6 +37,25 @@ menyimpang dari apa yang sebenarnya dilakukan kodenya.
 | **ExcelNet** — tanggal bertipe, format Rupiah, dan `SUM` yang benar-benar dihitung mesin formula | ![Workbook Excel dirender ke PNG](docs/screenshots/excelnet-workbook.png) |
 | **PowerPointNet** — chart native, digambar pengekspor PDF dari data cache-nya sendiri | ![Slide chart dirender ke PNG](docs/screenshots/powerpointnet-deck-03.png) |
 | **HTML → slide** — heading, daftar bersarang, dan tabel menjadi deck dalam satu panggilan | ![Slide yang dihasilkan dari HTML](docs/screenshots/html-to-slides-03.png) |
+
+### Lewat asisten AI — server MCP
+
+`officenet-mcp` menaruh OfficeNet di balik 23 tool [Model Context Protocol](https://modelcontextprotocol.io),
+sehingga Claude, GitHub Copilot, atau klien MCP apa pun bisa membuat dokumen-dokumen ini dari satu
+kalimat. Keempat dokumen di bawah dibuat **lewat protokol**: alat screenshot menjalankan server
+sebagai proses terpisah, memanggil tool-nya lewat stdio seperti asisten, dan PNG-nya berasal dari
+tool `render_page` milik server itu sendiri.
+
+![Laporan, workbook dengan chart, deck, dan invoice, semuanya dibuat lewat server MCP](docs/screenshots/mcp-showcase.png)
+
+```bash
+dotnet tool install -g Gravicode.OfficeNet.Mcp
+claude mcp add officenet -- officenet-mcp --root ~/Documents/officenet
+```
+
+Setiap path terkurung di `--root`, `--read-only` menolak semua penulisan, dan `render_page`
+mengembalikan halaman sebagai gambar yang bisa dilihat model — sehingga ia bisa memeriksa hasil
+kerjanya sendiri. Lihat [panduan MCP](docs/id/Mcp.md).
 
 ### Aplikasi contoh
 
@@ -74,6 +94,7 @@ halaman-halaman itu dikompilasi dan dijalankan oleh test suite, jadi tidak ada y
 | PdfNet | [id/PdfNet.md](docs/id/PdfNet.md) | [PdfNet.md](docs/PdfNet.md) |
 | Rendering | [id/Rendering.md](docs/id/Rendering.md) | [Rendering.md](docs/Rendering.md) |
 | API terpadu dan plugin | [id/OfficeNet.md](docs/id/OfficeNet.md) | [OfficeNet.md](docs/OfficeNet.md) |
+| Server MCP untuk asisten AI | [id/Mcp.md](docs/id/Mcp.md) | [Mcp.md](docs/Mcp.md) |
 
 Dan di tempat lain dalam repositori ini:
 

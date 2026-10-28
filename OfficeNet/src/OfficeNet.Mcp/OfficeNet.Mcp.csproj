@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>OfficeNet.Mcp</RootNamespace>
+    <AssemblyName>Gravicode.OfficeNet.Mcp</AssemblyName>
+    <PackageId>Gravicode.OfficeNet.Mcp</PackageId>
+    <IsPackable>true</IsPackable>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>officenet-mcp</ToolCommandName>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <Description>
+      An MCP server that lets AI assistants create, edit, convert and preview Word, Excel,
+      PowerPoint and PDF documents through OfficeNet. Runs over stdio; every path is confined to
+      one workspace directory. Install with `dotnet tool install -g Gravicode.OfficeNet.Mcp`.
+      Dibuat oleh Gravicode Studios, dipimpin oleh Kang Fadhil.
+    </Description>
+    <PackageTags>mcp;model-context-protocol;ai;agent;office;docx;xlsx;pptx;pdf;gravicode</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OfficeNet\OfficeNet.csproj" />
+    <ProjectReference Include="..\OfficeNet.Rendering\OfficeNet.Rendering.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ModelContextProtocol" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+  </ItemGroup>
+
+</Project>

@@ -732,6 +732,79 @@ melengkapi.
 
 ---
 
+## v2.2 — Server MCP untuk asisten AI
+
+Asisten AI (Claude, Copilot, Cursor) semakin sering diminta "buatkan laporannya dalam Word" atau
+"rapikan spreadsheet ini". [Model Context Protocol](https://modelcontextprotocol.io) adalah cara
+baku untuk memberi mereka alat. OfficeNet sudah punya semua kemampuannya; yang kurang hanya
+pintunya. Paket baru `Gravicode.OfficeNet.Mcp` (perintah `officenet-mcp`, dipasang sebagai
+`dotnet tool`) menaruh keempat pustaka di balik tool MCP lewat stdio.
+
+Keputusan yang mengunci bentuknya:
+
+1. **Tool tanpa state, berbasis path.** Setiap panggilan membuka berkas, mengerjakan satu hal, lalu
+   menyimpan. Tidak ada handle dokumen yang hidup di antara panggilan, jadi tidak ada state yang
+   bisa basi atau bocor antar-percakapan, dan server bisa dimatikan kapan saja.
+2. **Satu workspace, ditegakkan di kode.** Model bisa dibujuk meminta apa saja — oleh pengguna, atau
+   oleh teks tersembunyi di dokumen yang disuruh dibacanya. Setiap path di-resolve terhadap
+   `--root` dan ditolak bila keluar, termasuk lewat symbolic link. `--read-only` menolak setiap
+   penulisan. Tidak ada tool yang menyentuh jaringan.
+3. **Model bisa melihat hasilnya.** `render_page` mengembalikan halaman sebagai gambar PNG di dalam
+   respons MCP. Tanpanya server hanya pembuat berkas buta; dengannya asisten bisa membuat, melihat,
+   lalu membetulkan.
+4. **Input yang memaafkan.** Model mengisi skema dari deskripsi, jadi jenis blok adalah string biasa,
+   hampir semua anggota opsional, `**tebal**` dan `*miring*` dipahami, tanggal ISO menjadi tanggal,
+   dan string berawalan `=` menjadi formula yang langsung dihitung.
+5. **Kesalahan dijelaskan agar bisa dibetulkan.** Eksepsi pustaka dan argumen yang keliru kembali
+   sebagai error yang terbaca ("Unknown block type 'tabel'"); kegagalan lain tetap generik, tanpa
+   stack trace.
+6. **SkiaSharp boleh di sini.** Server adalah aplikasi, bukan pustaka inti, jadi bergantung pada
+   `OfficeNet.Rendering` tidak melanggar prinsip pertama.
+
+- [x] **Server stdio dengan 23 tool — selesai.** Word: buat, tambah, isi template, cari-ganti,
+  track changes, proteksi, watermark, gabung, pecah. Excel: buat (formula, format, chart), tulis
+  sel, baca, tambah chart. PowerPoint: buat (tujuh jenis slide, catatan pembicara), HTML → slide.
+  PDF: gabung, pecah, enkripsi. Lintas format: konversi, ekstraksi teks, info dokumen, render
+  halaman, daftar berkas. SDK C# resmi `ModelContextProtocol` 2.2.0. Setiap tool membawa
+  `readOnlyHint`/`destructiveHint` agar klien tahu apa yang perlu dikonfirmasi.
+- [x] **Diuji lewat protokol sungguhan.** `tests/OfficeNet.Mcp.Tests` menjalankan server sebagai
+  proses terpisah dan memakai `McpClient` lewat stdio, bukan memanggil kelas tool langsung — yang
+  akan melewatkan skema JSON, pengikatan argumen, konversi eksepsi, dan keluaran nyasar ke stdout.
+  Setiap jenis dokumen dibuat lewat protokol, dibuka kembali oleh pustakanya, dan diperiksa
+  validator OPC. Smoke test kedua memakai Python yang menulis JSON-RPC mentah, tanpa SDK.
+- [x] **Dokumentasi** `docs/Mcp.md` dan `docs/id/Mcp.md`: instalasi, konfigurasi Claude Code,
+  Claude Desktop, dan VS Code, model keamanan, daftar tool, contoh klien C#.
+- [x] **Melihat hasilnya menemukan dua cacat yang tidak ditangkap tes.** Kolase pertama
+  memperlihatkan (1) tanggal invoice tercetak `2026-10-28`: JSON tidak punya tipe tanggal, jadi
+  `{{tanggal:dd MMMM yyyy}}` menerima string yang tak bisa diformat — sekarang string tanggal ISO di
+  data template menjadi tanggal; dan (2) **chart workbook tidak ada di PDF-nya sama sekali**.
+  `ChartRenderer` privat di PowerPointNet, dan ExcelNet tidak boleh bergantung pada saudaranya.
+  Renderer itu kini **pindah ke PdfNet** (`PdfNet.Content.ChartRenderer`, publik) — sah karena ia
+  hanya butuh `ChartData` dari Core dan `PdfCanvas` — dan `ExcelToPdf` menggambar chart di bawah
+  data, berukuran dari anchor-nya. Ini sekaligus prasyarat "chart di dokumen Word" di v2.1.
+- [x] **Regresi stdout sekarang gagal, bukan menggantung.** Mutasi "log ke stdout" membuat seluruh
+  run tes macet tanpa batas: klien menunggu respons yang tak pernah bisa diurai. Setiap panggilan di
+  tes kini punya tenggat 60 detik. Mutasi "tanpa pemeriksaan batas" juga membuktikan tesnya nyata —
+  server yang dirusak itu benar-benar menulis `lolos.docx` ke luar workspace — dan sisa berkas itu
+  sempat menggagalkan run berikutnya, jadi namanya kini unik per run. Sembilan mutasi, semuanya
+  tertangkap.
+- [x] **Screenshot dari protokol.** `tools/ScreenshotGen` kini juga klien MCP: ia menjalankan server,
+  membuat laporan, workbook, deck, dan invoice dari template lewat panggilan tool, dan PNG-nya
+  ditulis oleh `render_page` milik server sendiri. Tampil di README dan di panduan MCP.
+
+Berikutnya, bila ada permintaan:
+
+- [ ] **Transport HTTP** (streamable HTTP) untuk server bersama. Sengaja belum: begitu server bisa
+  dijangkau lewat jaringan, ia butuh autentikasi dan otorisasi per pengguna, dan "satu workspace"
+  berubah menjadi "satu workspace per pengguna". stdio menghindari semua itu karena server adalah
+  proses milik pengguna sendiri.
+- [ ] **Resources dan prompts MCP** — dokumen di workspace sebagai resource yang bisa dibaca klien,
+  dan prompt siap pakai ("buat laporan kuartal dari spreadsheet ini").
+- [ ] **Markdown sebagai input `word_create`** begitu Markdown → DOCX (v2.1) selesai: model menulis
+  Markdown dengan sangat fasih, dan blok terstruktur hanyalah jembatan sampai saat itu.
+
+---
+
 ## Yang sengaja tidak akan dikerjakan
 
 Menyebutkan ini sama pentingnya dengan menyebutkan rencana: ia mencegah orang menunggu sesuatu

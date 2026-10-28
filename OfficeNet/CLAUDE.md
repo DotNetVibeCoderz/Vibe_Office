@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 are both complete, and 1.3.0 is on NuGet**; v2.0 is in progress — the HTML engine now lives in
 `OfficeNet.Core.Html`, and `WordNet.Import.HtmlToWord` and `WordNet.Export.WordToHtml` exist. All six
 libraries build clean with zero warnings: `OfficeNet.Core`, `PdfNet`, `WordNet`, `ExcelNet`,
-`PowerPointNet`, `OfficeNet` (meta) and `OfficeNet.Rendering`. **826 tests pass** across seven
+`PowerPointNet`, `OfficeNet` (meta), `OfficeNet.Rendering`, and the MCP server `OfficeNet.Mcp`. **854 tests pass** across eight
 test projects.
 
 Everything the plan listed through v1.1 exists: the libraries, tests with independent structural
@@ -41,7 +41,13 @@ OfficeNet.Core ──┬── PdfNet ──┬── WordNet
                  │            └── PowerPointNet
                  │
                  └── OfficeNet.Rendering (SkiaSharp — the only native dependency)
+
+OfficeNet (meta) + OfficeNet.Rendering ── OfficeNet.Mcp (officenet-mcp, a dotnet tool)
 ```
+
+`OfficeNet.Mcp` is an application, not a library, so depending on Rendering (and SkiaSharp) is
+fine there. Its tools are stateless and path-based; every path goes through `Workspace`, which is
+the security boundary — see `docs/Mcp.md`.
 
 `OfficeNet.Rendering` is a **separate package on purpose**. It is the one component that needs a
 native dependency, and keeping SkiaSharp out of the other five is what makes "identical output on
@@ -208,6 +214,27 @@ Every item here cost real debugging time. None are hypothetical.
   A reader that only walks the series loses `ShowDataLabels` and `ValueFormat`, and every exported
   chart comes out unlabelled with raw numbers.
 
+### MCP server
+
+- **stdout is the protocol.** One log line or banner on stdout corrupts the JSON-RPC stream, and the
+  client does not fail — it waits forever. Logging goes to stderr (`LogToStandardErrorThreshold`),
+  and every call in `OfficeNet.Mcp.Tests` has a deadline so that regression fails instead of hangs.
+- **Every path through `Workspace`.** A new tool that takes a path and calls `File.*` directly is a
+  hole. `Existing` / `ForWriting` / `ResolveDirectory` are the only ways in; `ForWriting` is what
+  enforces `--read-only`.
+- **Only `McpException` messages reach the client.** `ToolGuard.Run` converts the library's own
+  exceptions and argument errors; anything else is reported generically by the SDK, on purpose.
+- **JSON has no dates.** ISO date strings are turned into `DateTime` for cells and template data
+  (`Values.Cell`, `Values.TemplateData`), or `:dd MMMM yyyy` formats nothing.
+- **Test through the process, not the classes.** `ServerFixture` launches the built server and
+  talks stdio. The C# sample in `docs/Mcp.md` is compiled in `OfficeNet.Mcp.Tests`, not DocSamples.
+
+### Charts across formats
+
+- **`ChartRenderer` lives in PdfNet** (`PdfNet.Content`), so slides, sheets and (later) Word all
+  draw charts the same way. It used to be private to PowerPointNet, and a workbook's charts were
+  missing from its PDF. `ExcelToPdf` draws them below the data, sized from their anchor.
+
 ### Documentation
 
 `tests/OfficeNet.Docs.Tests/DocSamples.cs` **is** the code in `docs/`. Every sample compiles and
@@ -220,6 +247,10 @@ viewer, so they cannot drift from what the code produces:
 ```powershell
 dotnet run --project tools/ScreenshotGen -c Release
 ```
+
+The `mcp-*.png` screenshots come from ScreenshotGen acting as an MCP client: it runs the built server
+(`src/OfficeNet.Mcp/bin/Release`) and every document and PNG is produced by tool calls. Build in
+Release first.
 
 ## Commands
 

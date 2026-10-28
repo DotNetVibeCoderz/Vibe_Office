@@ -1,5 +1,6 @@
 // OfficeNet - Dibuat oleh Gravicode Studios, dipimpin oleh Kang Fadhil.
 
+using System.Text.Json;
 using ExcelNet.Styles;
 using ExcelNet;
 using OfficeNet.Core.Charts;
@@ -9,6 +10,8 @@ using OfficeNet.Rendering;
 using PowerPointNet.Charts;
 using PowerPointNet.Html;
 using PowerPointNet;
+using ModelContextProtocol.Client;
+using SkiaSharp;
 using WordNet;
 
 // Generates the screenshots the documentation embeds.
@@ -33,6 +36,7 @@ BuildExcel();
 BuildPowerPoint();
 BuildHtmlConversion();
 BuildPdf();
+await BuildMcp();
 
 Console.WriteLine("Done.");
 
@@ -281,6 +285,268 @@ void BuildPdf()
     OfficeNet.Office.ConvertToPdf(source, path);
 
     Save("pdfnet-export", path, render);
+}
+
+// ---- MCP ---------------------------------------------------------------------------------------
+//
+// These documents are made by the MCP server, not by calling the libraries here: the server runs as
+// a separate process and every file comes from a tool call over stdio, the same path an assistant
+// takes. Even the PNGs are written by the server's own render_page tool.
+
+async Task BuildMcp()
+{
+    var workspace = Path.Combine(scratch, "mcp");
+
+    if (Directory.Exists(workspace))
+    {
+        Directory.Delete(workspace, recursive: true);
+    }
+
+    Directory.CreateDirectory(workspace);
+
+    var server = Path.Combine(repository, "src", "OfficeNet.Mcp", "bin", "Release", "net10.0",
+        "Gravicode.OfficeNet.Mcp.dll");
+
+    await using var client = await McpClient.CreateAsync(new StdioClientTransport(new()
+    {
+        Name = "officenet",
+        Command = "dotnet",
+        Arguments = [server, "--root", workspace],
+    }));
+
+    var tools = await client.ListToolsAsync();
+    Console.WriteLine($"  MCP server answered with {tools.Count} tools");
+
+    await Call(client, "word_create", new
+    {
+        path = "laporan.docx",
+        title = "Laporan Kuartal III",
+        author = "Gravicode Studios",
+        blocks = new object[]
+        {
+            new { type = "heading", level = 0, text = "Laporan Kuartal III 2026" },
+            new { type = "paragraph", text = "Disusun oleh asisten AI lewat **OfficeNet MCP**, dipimpin oleh *Kang Fadhil*." },
+            new { type = "heading", level = 1, text = "Ringkasan" },
+            new
+            {
+                type = "paragraph",
+                align = "justify",
+                text = "Pendapatan tumbuh **32%** dibanding kuartal sebelumnya, ditopang permintaan di " +
+                       "Jakarta dan Bandung. Biaya operasional turun tipis berkat otomasi pelaporan.",
+            },
+            new { type = "heading", level = 1, text = "Sorotan" },
+            new { type = "bullets", items = new[] { "Jakarta memimpin pertumbuhan", "Empat rilis library selesai", "Biaya operasional turun 4%" } },
+            new { type = "heading", level = 1, text = "Pendapatan per Wilayah" },
+            new
+            {
+                type = "table",
+                rows = new[]
+                {
+                    new[] { "Wilayah", "Q2", "Q3", "Pertumbuhan" },
+                    new[] { "Jakarta", "1.120", "1.480", "+32%" },
+                    new[] { "Bandung", "860", "1.150", "+34%" },
+                    new[] { "Surabaya", "740", "905", "+22%" },
+                },
+            },
+            new { type = "quote", text = "Dokumen ini dibuat sepenuhnya lewat panggilan tool MCP." },
+        },
+    });
+
+    await Call(client, "excel_create", new
+    {
+        path = "penjualan.xlsx",
+        sheets = new[]
+        {
+            new
+            {
+                name = "Penjualan",
+                rows = new object[][]
+                {
+                    ["Tanggal", "Produk", "Qty", "Harga", "Total"],
+                    ["2026-10-01", "WordNet", 12, 450000, "=C2*D2"],
+                    ["2026-10-02", "ExcelNet", 9, 520000, "=C3*D3"],
+                    ["2026-10-03", "PowerPointNet", 7, 480000, "=C4*D4"],
+                    ["2026-10-04", "PdfNet", 15, 300000, "=C5*D5"],
+                    ["", "", "", "TOTAL", "=SUM(E2:E5)"],
+                },
+                numberFormats = new Dictionary<string, string> { ["A"] = "dd mmm yyyy", ["D"] = "#,##0", ["E"] = "#,##0" },
+                chart = new
+                {
+                    type = "column",
+                    title = "Total per produk",
+                    categories = new[] { "WordNet", "ExcelNet", "PowerPointNet", "PdfNet" },
+                    series = new[] { new { name = "Total", values = new[] { 5400000.0, 4680000, 3360000, 4500000 } } },
+                    valueFormat = "#,##0",
+                },
+            },
+        },
+    });
+
+    await Call(client, "pptx_create", new
+    {
+        path = "tinjauan.pptx",
+        slides = new object[]
+        {
+            new { type = "title", title = "Tinjauan Kuartal III", subtitle = "Dibuat lewat OfficeNet MCP" },
+            new { type = "bullets", title = "Sorotan", bullets = new[] { "Pendapatan naik 32%", "Jakarta memimpin", "Biaya turun 4%" } },
+            new
+            {
+                type = "chart",
+                title = "Pendapatan per Wilayah",
+                chart = new
+                {
+                    type = "column",
+                    categories = new[] { "Jakarta", "Bandung", "Surabaya", "Medan" },
+                    series = new[]
+                    {
+                        new { name = "Q2", values = new[] { 1120.0, 860, 740, 410 } },
+                        new { name = "Q3", values = new[] { 1480.0, 1150, 905, 520 } },
+                    },
+                    showDataLabels = true,
+                    valueFormat = "#,##0",
+                },
+            },
+            new { type = "table", title = "Status", rows = new[] { new[] { "Komponen", "Status" }, new[] { "WordNet", "Selesai" }, new[] { "ExcelNet", "Selesai" } } },
+        },
+    });
+
+    // The template is itself written through the server, tokens and all, then filled from JSON.
+    await Call(client, "word_create", new
+    {
+        path = "template-invoice.docx",
+        blocks = new object[]
+        {
+            new { type = "heading", level = 0, text = "INVOICE {{nomor}}" },
+            new { type = "paragraph", text = "Kepada: **{{pelanggan.nama}}**, {{pelanggan.kota}}" },
+            new { type = "paragraph", text = "Tanggal: {{tanggal:dd MMMM yyyy}}" },
+            new
+            {
+                type = "table",
+                rows = new[]
+                {
+                    new[] { "Barang", "Qty", "Harga", "Jumlah" },
+                    new[] { "{{#baris}}{{barang}}", "{{qty}}", "{{harga:N0}}", "{{jumlah:N0}}{{/baris}}" },
+                    new[] { "", "", "Total", "{{total:N0}}" },
+                },
+            },
+            new { type = "paragraph", text = "{{#lunas}}Status: **LUNAS**{{/lunas}}{{^lunas}}Mohon dibayar sebelum {{jatuhTempo:dd MMMM yyyy}}.{{/lunas}}" },
+        },
+    });
+
+    await Call(client, "word_fill_template", new
+    {
+        templatePath = "template-invoice.docx",
+        outputPath = "invoice-0017.docx",
+        culture = "id-ID",
+        data = new
+        {
+            nomor = "INV-2026-0017",
+            tanggal = "2026-10-28",
+            jatuhTempo = "2026-11-11",
+            pelanggan = new { nama = "PT Maju Bersama", kota = "Bandung" },
+            baris = new[]
+            {
+                new { barang = "Lisensi OfficeNet", qty = 3, harga = 1500000, jumlah = 4500000 },
+                new { barang = "Pelatihan", qty = 1, harga = 2500000, jumlah = 2500000 },
+                new { barang = "Dukungan 12 bulan", qty = 1, harga = 3000000, jumlah = 3000000 },
+            },
+            total = 10000000,
+            lunas = false,
+        },
+    });
+
+    await Call(client, "convert", new { input = "laporan.docx", output = "laporan.pdf" });
+
+    // Preview PNGs, written by the server's render_page tool and copied into the docs.
+    (string Document, int Page, string Name)[] previews =
+    [
+        ("laporan.pdf", 1, "mcp-word-report"),
+        ("penjualan.xlsx", 1, "mcp-excel-workbook"),
+        ("tinjauan.pptx", 3, "mcp-deck-03"),
+        ("invoice-0017.docx", 1, "mcp-invoice"),
+    ];
+
+    foreach (var (document, page, name) in previews)
+    {
+        await Call(client, "render_page", new { path = document, page, dpi = 100, savePath = $"png/{name}.png" });
+        var target = Path.Combine(screenshots, name + ".png");
+        File.Copy(Path.Combine(workspace, "png", name + ".png"), target, overwrite: true);
+        Console.WriteLine($"  {name + ".png",-32} {new FileInfo(target).Length / 1024.0,7:0.0} KB");
+    }
+
+    Showcase(
+        Path.Combine(screenshots, "mcp-showcase.png"),
+        [
+            ("word_create", Path.Combine(screenshots, "mcp-word-report.png")),
+            ("excel_create", Path.Combine(screenshots, "mcp-excel-workbook.png")),
+            ("pptx_create", Path.Combine(screenshots, "mcp-deck-03.png")),
+            ("word_fill_template", Path.Combine(screenshots, "mcp-invoice.png")),
+        ]);
+}
+
+static async Task Call(McpClient client, string tool, object arguments)
+{
+    // Through JSON, as a client sends them.
+    var json = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(JsonSerializer.Serialize(arguments))!
+        .ToDictionary(p => p.Key, p => (object?)p.Value);
+
+    var result = await client.CallToolAsync(tool, json);
+    var text = string.Join(" ", result.Content.OfType<ModelContextProtocol.Protocol.TextContentBlock>().Select(t => t.Text));
+
+    if (result.IsError == true)
+    {
+        throw new InvalidOperationException($"{tool} failed: {text}");
+    }
+
+    Console.WriteLine($"  {tool,-20} {text}");
+}
+
+// Four previews side by side, each captioned with the tool that made it.
+void Showcase(string path, (string Caption, string Image)[] tiles)
+{
+    const int tileWidth = 560;
+    const int tileHeight = 420;
+    const int gap = 24;
+    const int caption = 34;
+
+    // Two by two: four in a row is too wide for a README.
+    const int columns = 2;
+    var rows = (tiles.Length + columns - 1) / columns;
+    var width = gap + columns * (tileWidth + gap);
+    var height = gap + rows * (caption + tileHeight + gap);
+
+    using var surface = SKSurface.Create(new SKImageInfo(width, height));
+    var canvas = surface.Canvas;
+    canvas.Clear(new SKColor(0xF3, 0xF4, 0xF6));
+
+    using var typeface = SKTypeface.FromFamilyName("Consolas", SKFontStyle.Bold) ?? SKTypeface.Default;
+    using var font = new SKFont(typeface, 20);
+    using var text = new SKPaint { Color = new SKColor(0x1F, 0x38, 0x64), IsAntialias = true };
+    using var shadow = new SKPaint { Color = new SKColor(0, 0, 0, 40), IsAntialias = true };
+
+    for (var i = 0; i < tiles.Length; i++)
+    {
+        var x = gap + i % columns * (tileWidth + gap);
+        var y = gap + i / columns * (caption + tileHeight + gap);
+        canvas.DrawText(tiles[i].Caption, x, y + 22, SKTextAlign.Left, font, text);
+
+        using var image = SKBitmap.Decode(tiles[i].Image);
+        var scale = Math.Min((float)tileWidth / image.Width, (float)tileHeight / image.Height);
+        var drawn = new SKRect(0, 0, image.Width * scale, image.Height * scale);
+        drawn.Offset(x + (tileWidth - drawn.Width) / 2, y + caption + (tileHeight - drawn.Height) / 2);
+
+        var shadowRect = drawn;
+        shadowRect.Offset(4, 4);
+        canvas.DrawRect(shadowRect, shadow);
+
+        using var sampled = SKImage.FromBitmap(image);
+        canvas.DrawImage(sampled, drawn, new SKSamplingOptions(SKCubicResampler.Mitchell));
+    }
+
+    using var snapshot = surface.Snapshot();
+    using var data = snapshot.Encode(SKEncodedImageFormat.Png, 100);
+    File.WriteAllBytes(path, data.ToArray());
+    Console.WriteLine($"  {Path.GetFileName(path),-32} {new FileInfo(path).Length / 1024.0,7:0.0} KB");
 }
 
 void Save(string prefix, string documentPath, RenderOptions options)

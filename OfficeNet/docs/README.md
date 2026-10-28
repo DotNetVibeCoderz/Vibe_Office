@@ -19,6 +19,7 @@ Dibuat oleh Gravicode Studios, dipimpin oleh Kang Fadhil.
 | `Gravicode.OfficeNet.PdfNet` | `PdfNet` | PyPDF2 | [PdfNet](PdfNet.md) |
 | `Gravicode.OfficeNet.Rendering` | `OfficeNet.Rendering` | pdf2image / poppler | [Rendering](Rendering.md) |
 | `Gravicode.OfficeNet` | `OfficeNet` | — | [Unified API](OfficeNet.md) |
+| `Gravicode.OfficeNet.Mcp` | `OfficeNet.Mcp` | — | [MCP server](Mcp.md) |
 | `Gravicode.OfficeNet.Core` | `OfficeNet.Core` | — | [Core concepts](Core.md) |
 
 Install the one you need; `Gravicode.OfficeNet` pulls in all four format libraries plus a
@@ -98,6 +99,8 @@ tool regenerates them, so they cannot drift away from what the code actually doe
 - **[PdfNet](PdfNet.md)** — merge, split, extract, encrypt, forms, annotations, drawing.
 - **[Rendering](Rendering.md)** — pages to PNG/JPEG/WebP, thumbnails.
 - **[Unified API](OfficeNet.md)** — format detection and format-agnostic operations.
+- **[MCP server](Mcp.md)** — 23 tools that let AI assistants create, edit, convert and preview
+  documents, confined to one workspace directory.
 
 ## Notebooks
 
