@@ -520,6 +520,37 @@ Yang ditolak dengan sengaja, bukan dikira-kira: fungsi tipe 4 (bahasa PostScript
 (tipe 1 dan 4–7), dan tiling pattern. Semuanya `null` sehingga pemanggilnya melewati alih-alih
 menggambar warna keliru dengan percaya diri.
 
+## Rilis v2.0.0
+
+Delapan paket beserta paket simbolnya, dirilis lewat tag `officenet-v2.0.0`. Isinya v2.0 (HTML dan
+Markdown dua arah), seluruh v2.1 (celah fitur terhadap pustaka komersial), dan v2.2 (server MCP).
+
+**Versi mayor karena satu perubahan yang memutus kompatibilitas:** `HtmlParser`, `HtmlNode`, dan
+`CssStyle` pindah dari `PowerPointNet.Html` ke `OfficeNet.Core.Html`. `HtmlToSlides` tidak berubah.
+Selain itu semuanya tambahan.
+
+**Paket baru:** `Gravicode.OfficeNet.Mcp`, sebuah `dotnet tool` (`officenet-mcp`) yang membawa
+SkiaSharp-nya sendiri. Meta package tetap tidak menarik SkiaSharp; hanya
+`Gravicode.OfficeNet.Rendering` yang membawanya.
+
+Diperiksa sebelum menandai, dari `dotnet pack` lokal dengan `-p:Version=2.0.0`: setiap dependensi
+antar-paket menyebut 2.0.0, paket MCP bertipe `DotnetTool` dengan `DotnetToolSettings.xml`, dan
+seluruh 1784 tes lulus di build CI yang sama.
+
+Yang baru bagi pemakainya, secara garis besar:
+
+| Area | |
+|---|---|
+| Konversi | HTML ↔ DOCX, Markdown ↔ DOCX (CommonMark, 651/652 contoh spesifikasi), XLSX ↔ HTML, PPTX → HTML |
+| WordNet | track changes, proteksi dan range yang boleh diedit, gabung dan pecah dokumen, mail merge bersarang, watermark, chart, PDF/A, nomor daftar di PDF |
+| ExcelNet | komentar sel (dulu hilang diam-diam), named range, Excel Table, rich text, sort, conditional formatting, fungsi finansial, PDF/A |
+| PowerPointNet | garis, panah, konektor, freeform, objek OLE tersemat, PDF/A |
+| Chart | kombinasi batang + garis dengan sumbu sekunder, di ketiga format |
+| PdfNet | membuat field formulir, lampiran, PDF/A-2b/3b (veraPDF), metadata XMP, timestamp RFC 3161, field dengan font tersemat |
+| Core | enkripsi dengan kata sandi untuk .docx/.xlsx/.pptx (Agile, dibuka Excel/Word/PowerPoint asli), `CompoundFile` |
+| Rendering | TIFF multi-halaman |
+| MCP | 23 tool lewat stdio, dokumen workspace sebagai resource, tiga prompt |
+
 ## Rilis v1.3.0
 
 Tujuh paket beserta paket simbolnya, dirilis lewat tag `officenet-v1.3.0`. Isinya seluruh v1.2
