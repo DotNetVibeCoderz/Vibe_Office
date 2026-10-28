@@ -160,48 +160,15 @@ public static class WordToPdf
 
         private double ContentWidth => _right - _left;
 
-        private readonly Dictionary<(string Family, bool Bold, bool Italic), PdfFont> _fonts = [];
+        private FontSet? _fontSet;
 
         /// <summary>
         /// The font a run is drawn in: embedded when the resolver has it, otherwise the closest of
         /// the standard 14 — unless the export is PDF/A, which may not use those.
         /// </summary>
-        private PdfFont FontFor(string? family, bool bold, bool italic)
-        {
-            family = string.IsNullOrWhiteSpace(family) ? _options.DefaultFontFamily : family;
-
-            if (_fonts.TryGetValue((family, bold, italic), out var cached))
-            {
-                return cached;
-            }
-
-            var font = Embed(family, bold, italic) ?? Embed(_options.DefaultFontFamily, bold, italic);
-
-            if (font is null && _options.Conformance != PdfConformance.None)
-            {
-                throw new OfficeNetException(
-                    $"A PDF/A export embeds every font, and no font file was found for '{family}' or the default " +
-                    $"'{_options.DefaultFontFamily}'. " + (_options.FontResolver is null
-                        ? "Set PdfExportOptions.FontResolver — FontDirectory.System().Resolve looks in the system's font folders."
-                        : "Make FontResolver return a TrueType file for one of them."));
-            }
-
-            font ??= StandardFonts.Match(family, bold, italic);
-            _fonts[(family, bold, italic)] = font;
-            return font;
-        }
-
-        private PdfFont? Embed(string family, bool bold, bool italic)
-        {
-            if (_options.FontResolver?.Invoke(family, bold, italic) is not { Length: > 0 } bytes)
-            {
-                return null;
-            }
-
-            // Two styles that resolve to the same file — a family with no bold face — are one font:
-            // EmbedFont recognises the bytes it has already embedded.
-            return _pdf.EmbedFont(bytes);
-        }
+        private PdfFont FontFor(string? family, bool bold, bool italic) =>
+            (_fontSet ??= FontSet.For(_pdf, _options.FontResolver, _options.DefaultFontFamily, _options.Conformance))
+            .Get(family, bold, italic);
 
         /// <summary>Where the body text has to stop, once the page's footnotes are accounted for.</summary>
         private double TextBottom => _bottom - _noteAreaHeight;

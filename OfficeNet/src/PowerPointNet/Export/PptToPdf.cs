@@ -15,6 +15,20 @@ namespace PowerPointNet.Export;
 /// <summary>Options for rendering a presentation to PDF.</summary>
 public sealed class SlidePdfOptions
 {
+    /// <summary>
+    /// The archival standard to write: <see cref="PdfConformance.PdfA2B"/> or
+    /// <see cref="PdfConformance.PdfA3B"/>. PDF/A embeds every font, so it needs
+    /// <see cref="FontResolver"/>.
+    /// </summary>
+    public PdfConformance Conformance { get; set; }
+
+    /// <summary>
+    /// Supplies the TrueType file for a family, bold and italic — or <c>null</c> when there is none.
+    /// With it, fonts are embedded and drawn exactly; without it, the 14 standard fonts stand in.
+    /// <see cref="PdfNet.Fonts.FontDirectory.Resolve"/> fits.
+    /// </summary>
+    public Func<string, bool, bool, byte[]?>? FontResolver { get; set; }
+
     /// <summary>Renders hidden slides too.</summary>
     public bool IncludeHiddenSlides { get; set; }
 
@@ -68,6 +82,8 @@ public static class PptToPdf
         var height = presentation.SlideHeight.Points;
         var pageSize = PageSize.Points(width, height);
 
+        var fonts = FontSet.For(pdf, options.FontResolver, "Calibri", options.Conformance);
+
         foreach (var slide in presentation.Slides)
         {
             if (slide.IsHidden && !options.IncludeHiddenSlides)
@@ -76,7 +92,7 @@ public static class PptToPdf
             }
 
             var page = pdf.Pages.Add(pageSize);
-            RenderSlide(presentation, slide, page, options);
+            RenderSlide(presentation, slide, page, options, fonts);
         }
 
         if (pdf.Pages.Count == 0)
@@ -84,11 +100,12 @@ public static class PptToPdf
             pdf.Pages.Add(pageSize);
         }
 
+        pdf.Conformance = options.Conformance;
         return pdf;
     }
 
     private static void RenderSlide(Presentation presentation, Slide slide, PdfPage page,
-        SlidePdfOptions options)
+        SlidePdfOptions options, FontSet fonts)
     {
         var layout = presentation.LayoutOf(slide);
 
@@ -106,16 +123,17 @@ public static class PptToPdf
 
             foreach (var shape in slide.Shapes)
             {
-                RenderShape(presentation, canvas, shape, layout, options);
+                RenderShape(presentation, canvas, shape, layout, options, fonts);
             }
 
             if (options.ShowSlideNumbers)
             {
-                canvas.SetFont(StandardFont.Helvetica, 10);
+                var numberFont = fonts.Get(null);
+                canvas.SetFont(numberFont, 10);
                 canvas.SetFillColor(OfficeColor.Gray);
 
-                var text = slide.SlideNumber.ToString();
-                var textWidth = StandardFonts.MeasurePoints(StandardFont.Helvetica, text, 10);
+                var text = slide.SlideNumber.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                var textWidth = numberFont.Measure(text, 10);
 
                 canvas.DrawText(text, page.MediaBox.Width - 30 - textWidth,
                     page.MediaBox.Height - 20);
@@ -123,7 +141,7 @@ public static class PptToPdf
 
             if (options.IncludeNotes && slide.Notes is { Length: > 0 } notes)
             {
-                canvas.SetFont(StandardFont.HelveticaOblique, 9);
+                canvas.SetFont(fonts.Get(null, italic: true), 9);
                 canvas.SetFillColor(OfficeColor.FromRgb(0x59, 0x59, 0x59));
                 canvas.DrawWrappedText(notes, 30, page.MediaBox.Height - 46,
                     page.MediaBox.Width - 60, 11);
@@ -132,12 +150,21 @@ public static class PptToPdf
 
         if (options.Watermark is { Length: > 0 } watermark)
         {
-            PdfNet.Annotations.AnnotationExtensions.AddWatermark(page, watermark, OfficeColor.Gray, 0.1);
+            var font = fonts.Get(null, bold: true);
+
+            if (font.IsEmbedded)
+            {
+                PdfNet.Annotations.AnnotationExtensions.AddWatermark(page, watermark, font, OfficeColor.Gray, 0.1);
+            }
+            else
+            {
+                PdfNet.Annotations.AnnotationExtensions.AddWatermark(page, watermark, OfficeColor.Gray, 0.1);
+            }
         }
     }
 
     private static void RenderShape(Presentation presentation, PdfCanvas canvas, Shape shape,
-        Layouts.SlideLayout? layout, SlidePdfOptions options)
+        Layouts.SlideLayout? layout, SlidePdfOptions options, FontSet fonts)
     {
         // A line's box may be zero wide or zero high, so it is drawn before that check.
         if (shape is Connector connector)
@@ -188,19 +215,19 @@ public static class PptToPdf
 
         if (shape is SlideTable table)
         {
-            RenderTable(canvas, table, left, top, width, height);
+            RenderTable(canvas, fonts, table, left, top, width, height);
             return;
         }
 
         if (shape is Charts.SlideChart chart)
         {
-            ChartRenderer.Render(canvas, chart.GetData(), left, top, width, height);
+            ChartRenderer.Render(canvas, chart.GetData(), left, top, width, height, fonts.Get(null), fonts.Get(null, bold: true));
             return;
         }
 
         if (shape is Diagrams.SmartArt diagram)
         {
-            RenderDiagram(canvas, diagram, left, top, width, height);
+            RenderDiagram(canvas, fonts, diagram, left, top, width, height);
             return;
         }
 
@@ -237,7 +264,7 @@ public static class PptToPdf
             return;
         }
 
-        RenderTextFrame(presentation, canvas, frame, shape, layout, left, top, width, height);
+        RenderTextFrame(presentation, canvas, fonts, frame, shape, layout, left, top, width, height);
     }
 
     /// <summary>Fills and strokes each path of a freeform, scaled from its grid to the shape's box.</summary>
@@ -534,7 +561,7 @@ public static class PptToPdf
     /// laying it out again would produce a second opinion about where the boxes go, and the two
     /// would disagree the moment anyone edited the diagram.
     /// </remarks>
-    private static void RenderDiagram(PdfCanvas canvas, Diagrams.SmartArt diagram,
+    private static void RenderDiagram(PdfCanvas canvas, FontSet fonts, Diagrams.SmartArt diagram,
         double left, double top, double width, double height)
     {
         var tree = diagram.DrawingPart.Xml.Root?.Element(Ns.Dsp + "spTree");
@@ -627,7 +654,7 @@ public static class PptToPdf
                 }
             }
 
-            RenderDiagramText(canvas, shape, x, y, w, h, geometry, adjust);
+            RenderDiagramText(canvas, fonts, shape, x, y, w, h, geometry, adjust);
 
             canvas.Restore();
         }
@@ -735,7 +762,7 @@ public static class PptToPdf
     /// notch: the label then sits half over the shape behind it. The offset shifts the text into the
     /// body, which is the whole reason the geometry is passed in.
     /// </remarks>
-    private static void RenderDiagramText(PdfCanvas canvas, XElement shape,
+    private static void RenderDiagramText(PdfCanvas canvas, FontSet fonts, XElement shape,
         double x, double y, double width, double height, string geometry = "rect",
         double? adjust = null)
     {
@@ -767,7 +794,7 @@ public static class PptToPdf
             : 12;
 
         var color = SolidFill(properties?.Element(Ns.A + "solidFill")) ?? OfficeColor.White;
-        var font = StandardFonts.Match("Calibri", bold: false, italic: false);
+        var font = fonts.Get("Calibri");
 
         canvas.SetFont(font, size);
         canvas.SetFillColor(color);
@@ -792,13 +819,13 @@ public static class PptToPdf
 
         foreach (var line in lines)
         {
-            var lineWidth = StandardFonts.MeasurePoints(font, line, size);
+            var lineWidth = font.Measure(line, size);
             canvas.DrawText(line, bodyLeft + ((bodyWidth - lineWidth) / 2), cursor);
             cursor += lineHeight;
         }
     }
 
-    private static List<string> WrapDiagramText(string text, StandardFont font, double size,
+    private static List<string> WrapDiagramText(string text, PdfFont font, double size,
         double available)
     {
         var lines = new List<string>();
@@ -808,7 +835,7 @@ public static class PptToPdf
         {
             var candidate = current.Length == 0 ? word : current + " " + word;
 
-            if (StandardFonts.MeasurePoints(font, candidate, size) > available && current.Length > 0)
+            if (font.Measure(candidate, size) > available && current.Length > 0)
             {
                 lines.Add(current.ToString());
                 current.Clear();
@@ -870,7 +897,7 @@ public static class PptToPdf
         return (match.Left.Points, match.Top.Points, match.Width.Points, match.Height.Points);
     }
 
-    private static void RenderTextFrame(Presentation presentation, PdfCanvas canvas, TextFrame frame,
+    private static void RenderTextFrame(Presentation presentation, PdfCanvas canvas, FontSet fonts, TextFrame frame,
         Shape shape, Layouts.SlideLayout? layout, double left, double top, double width, double height)
     {
         const double Inset = 7.2;
@@ -917,7 +944,7 @@ public static class PptToPdf
 
         foreach (var line in lines)
         {
-            var font = StandardFonts.Match(line.Font, line.Bold, line.Italic);
+            var font = fonts.Get(line.Font, line.Bold, line.Italic);
             var indent = line.Level * 18.0 + (line.Bullet ? 14 : 0);
             var wrapped = CountWrappedLines(font, line.Text, line.Size, contentWidth - indent);
             totalHeight += wrapped * line.Size * 1.2 + 4;
@@ -932,7 +959,7 @@ public static class PptToPdf
 
         foreach (var line in lines)
         {
-            var font = StandardFonts.Match(line.Font, line.Bold, line.Italic);
+            var font = fonts.Get(line.Font, line.Bold, line.Italic);
             var indent = line.Level * 18.0 + (line.Bullet ? 14 : 0);
 
             canvas.SetFont(font, line.Size);
@@ -957,7 +984,7 @@ public static class PptToPdf
         }
     }
 
-    private static int CountWrappedLines(StandardFont font, string text, double size, double width)
+    private static int CountWrappedLines(PdfFont font, string text, double size, double width)
     {
         if (text.Length == 0 || width <= 0)
         {
@@ -973,7 +1000,7 @@ public static class PptToPdf
 
             foreach (var word in paragraph.Split(' ', StringSplitOptions.RemoveEmptyEntries))
             {
-                var wordWidth = StandardFonts.MeasurePoints(font, word + " ", size);
+                var wordWidth = font.Measure(word + " ", size);
 
                 if (used + wordWidth > width && used > 0)
                 {
@@ -992,7 +1019,7 @@ public static class PptToPdf
         return Math.Max(1, count);
     }
 
-    private static void RenderTable(PdfCanvas canvas, SlideTable table, double left, double top,
+    private static void RenderTable(PdfCanvas canvas, FontSet fonts, SlideTable table, double left, double top,
         double width, double height)
     {
         var grid = table.Element.Descendants(Ns.A + "gridCol")
@@ -1068,7 +1095,7 @@ public static class PptToPdf
                                     ? OfficeColor.White
                                     : OfficeColor.Black);
 
-                    canvas.SetFont(StandardFonts.Match(run?.FontName ?? "Calibri", bold, false), size);
+                    canvas.SetFont(fonts.Get(run?.FontName ?? "Calibri", bold, false), size);
                     canvas.SetFillColor(color);
                     canvas.DrawText(text, x + 6, y + (rowHeight + size) / 2 - size * 0.25);
                 }

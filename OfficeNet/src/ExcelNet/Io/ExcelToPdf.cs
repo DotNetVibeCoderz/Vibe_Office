@@ -33,6 +33,20 @@ public sealed class ExcelPdfOptions
 
     /// <summary>Evaluates formulas before rendering, so computed cells are not blank.</summary>
     public bool Recalculate { get; set; } = true;
+
+    /// <summary>
+    /// The archival standard to write: <see cref="PdfConformance.PdfA2B"/> or
+    /// <see cref="PdfConformance.PdfA3B"/>. PDF/A embeds every font, so it needs
+    /// <see cref="FontResolver"/>.
+    /// </summary>
+    public PdfConformance Conformance { get; set; }
+
+    /// <summary>
+    /// Supplies the TrueType file for a family, bold and italic — or <c>null</c> when there is none.
+    /// With it, fonts are embedded and drawn exactly; without it, the 14 standard fonts stand in.
+    /// <see cref="PdfNet.Fonts.FontDirectory.Resolve"/> fits.
+    /// </summary>
+    public Func<string, bool, bool, byte[]?>? FontResolver { get; set; }
 }
 
 /// <summary>
@@ -73,9 +87,11 @@ public static class ExcelToPdf
             ? workbook.Worksheets
             : [.. options.SheetNames.Select(workbook.Find).Where(s => s is not null).Cast<Worksheet>()];
 
+        var fonts = FontSet.For(pdf, options.FontResolver, "Calibri", options.Conformance);
+
         foreach (var sheet in sheets)
         {
-            RenderSheet(pdf, sheet, options);
+            RenderSheet(pdf, sheet, options, fonts);
         }
 
         if (pdf.Pages.Count == 0)
@@ -83,10 +99,11 @@ public static class ExcelToPdf
             pdf.Pages.Add(options.PageSize);
         }
 
+        pdf.Conformance = options.Conformance;
         return pdf;
     }
 
-    private static void RenderSheet(PdfDocument pdf, Worksheet sheet, ExcelPdfOptions options)
+    private static void RenderSheet(PdfDocument pdf, Worksheet sheet, ExcelPdfOptions options, FontSet fonts)
     {
         var charts = sheet.Charts;
 
@@ -95,7 +112,7 @@ public static class ExcelToPdf
             if (charts.Count > 0)
             {
                 var chartPage = 1;
-                DrawCharts(pdf, sheet, charts, options, null, 0, ref chartPage);
+                DrawCharts(pdf, sheet, charts, options, null, 0, ref chartPage, fonts);
             }
 
             return;
@@ -145,7 +162,7 @@ public static class ExcelToPdf
 
                 var y = options.Margin;
 
-                canvas.SetFont(StandardFont.HelveticaBold, options.FontSizePoints + 2.5);
+                canvas.SetFont(fonts.Get(null, bold: true), options.FontSizePoints + 2.5);
                 canvas.SetFillColor(OfficeColor.FromRgb(0x1F, 0x38, 0x64));
                 canvas.DrawText(sheet.Name, options.Margin, y + options.FontSizePoints + 2.5);
                 y += options.FontSizePoints + 12;
@@ -156,7 +173,7 @@ public static class ExcelToPdf
                 if (options.RepeatHeaderRow && row > used.Start.Row)
                 {
                     y = DrawRow(canvas, sheet, used, used.Start.Row, firstColumn, columnCount,
-                        widths, options, y);
+                        widths, options, y, fonts);
                 }
 
                 while (row <= used.End.Row)
@@ -168,13 +185,13 @@ public static class ExcelToPdf
                         break;
                     }
 
-                    y = DrawRow(canvas, sheet, used, row, firstColumn, columnCount, widths, options, y);
+                    y = DrawRow(canvas, sheet, used, row, firstColumn, columnCount, widths, options, y, fonts);
                     row++;
                 }
 
                 if (options.ShowFooter)
                 {
-                    Footer(canvas, sheet, options, pageNumber);
+                    Footer(canvas, sheet, options, pageNumber, fonts);
                 }
 
                 pageNumber++;
@@ -190,12 +207,12 @@ public static class ExcelToPdf
             }
         }
 
-        DrawCharts(pdf, sheet, charts, options, lastPage, lastY, ref pageNumber);
+        DrawCharts(pdf, sheet, charts, options, lastPage, lastY, ref pageNumber, fonts);
     }
 
-    private static void Footer(PdfCanvas canvas, Worksheet sheet, ExcelPdfOptions options, int pageNumber)
+    private static void Footer(PdfCanvas canvas, Worksheet sheet, ExcelPdfOptions options, int pageNumber, FontSet fonts)
     {
-        canvas.SetFont(StandardFont.Helvetica, 7.5);
+        canvas.SetFont(fonts.Get(null), 7.5);
         canvas.SetFillColor(OfficeColor.Gray);
         canvas.DrawText($"{sheet.Name} — page {pageNumber}",
             options.Margin, options.PageSize.Height - options.Margin + 4);
@@ -213,7 +230,7 @@ public static class ExcelToPdf
     /// missing from its PDF, because the chart renderer was private to PowerPointNet.
     /// </remarks>
     private static void DrawCharts(PdfDocument pdf, Worksheet sheet, IReadOnlyList<Charts.SheetChart> charts,
-        ExcelPdfOptions options, PdfPage? page, double y, ref int pageNumber)
+        ExcelPdfOptions options, PdfPage? page, double y, ref int pageNumber, FontSet fonts)
     {
         const double Gap = 16;
 
@@ -247,13 +264,13 @@ public static class ExcelToPdf
 
                 using var fresh = page.OpenCanvas();
                 fresh.TopDown = true;
-                fresh.SetFont(StandardFont.HelveticaBold, options.FontSizePoints + 2.5);
+                fresh.SetFont(fonts.Get(null, bold: true), options.FontSizePoints + 2.5);
                 fresh.SetFillColor(OfficeColor.FromRgb(0x1F, 0x38, 0x64));
                 fresh.DrawText(sheet.Name, options.Margin, options.Margin + options.FontSizePoints + 2.5);
 
                 if (options.ShowFooter)
                 {
-                    Footer(fresh, sheet, options, pageNumber);
+                    Footer(fresh, sheet, options, pageNumber, fonts);
                 }
 
                 pageNumber++;
@@ -261,13 +278,13 @@ public static class ExcelToPdf
 
             using var canvas = page.OpenCanvas();
             canvas.TopDown = true;
-            ChartRenderer.Render(canvas, chart.GetData(), options.Margin, y + Gap, width, height);
+            ChartRenderer.Render(canvas, chart.GetData(), options.Margin, y + Gap, width, height, fonts.Get(null), fonts.Get(null, bold: true));
             y += Gap + height;
         }
     }
 
     private static double DrawRow(PdfCanvas canvas, Worksheet sheet, CellRangeReference used, int row,
-        int firstColumn, int columnCount, double[] widths, ExcelPdfOptions options, double y)
+        int firstColumn, int columnCount, double[] widths, ExcelPdfOptions options, double y, FontSet fonts)
     {
         var height = RowPoints(sheet.GetRowHeight(row));
         var x = options.Margin;
@@ -297,13 +314,13 @@ public static class ExcelToPdf
             {
                 var text = Format(value, style.NumberFormat);
 
-                var font = StandardFonts.Match(style.Font.Name, style.Font.Bold, style.Font.Italic);
+                var font = fonts.Get(style.Font.Name, style.Font.Bold, style.Font.Italic);
                 var size = Math.Min(options.FontSizePoints, style.Font.SizePoints);
 
                 canvas.SetFont(font, size);
                 canvas.SetFillColor(style.Font.Color ?? OfficeColor.Black);
 
-                var textWidth = StandardFonts.MeasurePoints(font, text, size);
+                var textWidth = font.Measure(text, size);
 
                 // Numbers are right-aligned unless something says otherwise, which is what a
                 // spreadsheet's General alignment means.

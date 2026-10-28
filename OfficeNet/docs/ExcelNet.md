@@ -751,10 +751,19 @@ workbook.SaveAsPdf("laporan.pdf", new ExcelPdfOptions
     RepeatHeaderRow = true,     // the header row again at the top of every page
     Recalculate = true,         // so the cached results are current
 });
+
+// Archival: PDF/A-2b, every font embedded.
+workbook.SaveAsPdf("arsip.pdf", new ExcelPdfOptions
+{
+    Conformance = PdfConformance.PdfA2B,
+    FontResolver = FontDirectory.System().Resolve,
+});
 ```
 
 Values are rendered as the number format displays them, so a Rupiah column exports as Rupiah rather
-than as a raw double. Charts and conditional formatting are not drawn.
+than as a raw double. Charts are drawn below the data, sized from their anchor; conditional formatting
+is not drawn. With `FontResolver` the cells, headers, footer and charts are drawn in the real, embedded
+fonts; for PDF/A they must be, and veraPDF finds the result conforming.
 
 ## Reading a workbook
 

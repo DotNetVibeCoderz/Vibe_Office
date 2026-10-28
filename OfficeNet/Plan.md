@@ -820,8 +820,10 @@ melengkapi.
 - [ ] **Text field di PDF/A.** Appearance text field digambar dengan Helvetica, jadi dokumen PDF/A
   belum bisa punya text field; butuh appearance dengan font tersemat (Identity-H) yang dibangun ulang
   saat nilainya berubah.
-- [ ] **PDF/A untuk ekspor Excel dan PowerPoint.** Sama dengan Word: `FontResolver` lewat `PdfFont`;
-  `ChartRenderer` sudah menerima font.
+- [x] **PDF/A untuk ekspor Excel dan PowerPoint — selesai.** `ExcelPdfOptions`/`SlidePdfOptions` kini
+  punya `Conformance` dan `FontResolver`. Pilihan font dipindah ke `PdfNet.Content.FontSet`, satu
+  implementasi untuk ketiga eksportir (Word ikut memakainya). veraPDF: sheet dengan chart dan deck
+  dengan chart, catatan, nomor slide, dan watermark sesuai PDF/A-2b.
 - [x] **Metadata XMP — selesai.** `XmpMetadata` (baca/tulis, tanpa kompresi) dan
   `WriteXmpMetadata`, yang membangkitkan paket dari `/Info` *setelah* penyimpanan mencap tanggalnya
   — satu-satunya cara agar keduanya sepakat sampai detik dan zona waktu, seperti yang diperiksa PDF/A.

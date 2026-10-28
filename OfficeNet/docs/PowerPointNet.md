@@ -566,10 +566,19 @@ deck.SaveAsPdf("deck.pdf", new SlidePdfOptions
     IncludeNotes = true,
     IncludeImages = true,
 });
+
+// Archival: PDF/A-2b, every font embedded.
+deck.SaveAsPdf("arsip.pdf", new SlidePdfOptions
+{
+    Conformance = PdfConformance.PdfA2B,
+    FontResolver = FontDirectory.System().Resolve,
+});
 ```
 
-Text, placeholders, autoshapes with fills and outlines, pictures, tables and **charts** are drawn.
-Gradients, 3-D effects, SmartArt and animation are not.
+Text, placeholders, autoshapes in their own geometry, freeforms, lines and connectors, pictures,
+tables, **charts** and SmartArt are drawn. Gradients, 3-D effects and animation are not. With
+`FontResolver` every slide's text, slide number, notes, watermark and chart labels are drawn in the
+real, embedded fonts; for PDF/A they must be, and veraPDF finds the result conforming.
 
 ## Common mistakes
 

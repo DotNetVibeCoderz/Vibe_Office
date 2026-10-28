@@ -572,10 +572,19 @@ deck.SaveAsPdf("deck.pdf", new SlidePdfOptions
     IncludeNotes = true,
     IncludeImages = true,
 });
+
+// Arsip: PDF/A-2b, semua font tersemat.
+deck.SaveAsPdf("arsip.pdf", new SlidePdfOptions
+{
+    Conformance = PdfConformance.PdfA2B,
+    FontResolver = FontDirectory.System().Resolve,
+});
 ```
 
-Teks, placeholder, autoshape dengan fill dan outline, gambar, tabel, dan **chart** digambar. Gradien,
-efek 3-D, SmartArt, dan animasi tidak.
+Teks, placeholder, autoshape dengan geometrinya sendiri, freeform, garis dan konektor, gambar, tabel,
+**chart**, dan SmartArt digambar. Gradien, efek 3-D, dan animasi tidak. Dengan `FontResolver`, teks
+setiap slide, nomor slide, catatan, watermark, dan label chart digambar dengan font aslinya yang
+tersemat; untuk PDF/A memang harus begitu, dan veraPDF menyatakan hasilnya sesuai.
 
 ## Kesalahan yang sering terjadi
 

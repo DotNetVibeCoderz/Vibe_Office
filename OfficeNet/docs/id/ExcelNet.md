@@ -766,10 +766,19 @@ workbook.SaveAsPdf("laporan.pdf", new ExcelPdfOptions
     RepeatHeaderRow = true,     // baris header diulang di puncak tiap halaman
     Recalculate = true,         // supaya hasil cache-nya mutakhir
 });
+
+// Arsip: PDF/A-2b, semua font tersemat.
+workbook.SaveAsPdf("arsip.pdf", new ExcelPdfOptions
+{
+    Conformance = PdfConformance.PdfA2B,
+    FontResolver = FontDirectory.System().Resolve,
+});
 ```
 
 Nilai dirender sebagaimana format angkanya menampilkannya, jadi kolom Rupiah diekspor sebagai Rupiah,
-bukan sebagai double mentah. Chart dan format bersyarat tidak digambar.
+bukan sebagai double mentah. Chart digambar di bawah data, ukurannya dari anchor-nya; format bersyarat
+tidak digambar. Dengan `FontResolver`, sel, header, footer, dan chart digambar dengan font aslinya yang
+tersemat; untuk PDF/A memang harus begitu, dan veraPDF menyatakan hasilnya sesuai.
 
 ## Membaca workbook
 
