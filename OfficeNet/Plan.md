@@ -785,8 +785,11 @@ melengkapi.
   lewat `stCxn`/`endCxn` ke sisi yang berhadapan), `Connector` dengan panah, pola garis, `Start`/`End`
   yang membaca flip. Digambar di ekspor PDF; python-pptx membaca ujung dan tempelannya. Ikut
   diperbaiki: shape biasa di ekspor PDF selalu digambar sebagai kotak, kini dengan geometrinya.
-- [ ] **Custom geometry** (`a:custGeom`) — API path (moveTo/lineTo/cubicBezTo/close) untuk shape
-  bebas, dan ikut digambar di ekspor PDF.
+- [x] **Custom geometry — selesai.** `FreeformPath` dengan grid sendiri (model `a:custGeom`):
+  `MoveTo`, `LineTo`, `CubicTo`, `QuadTo`, `ArcTo` (sudut visual DrawingML), `Close`, `Polygon`;
+  beberapa path per shape, masing-masing diisi/digaris. `AddFreeform`, `Shape.FreeformPaths`
+  (juga freeform buatan PowerPoint). Ekspor PDF menggambarnya; busur diuji pada elips pipih, tempat
+  sudut visual dan parameter berbeda.
 - [ ] **Objek tersemat (OLE)** — sematkan .xlsx/.docx/.pdf sebagai `p:oleObj` dengan gambar
   pratinjau. Paket tersemat adalah berkas OPC biasa, jadi tidak butuh CFB untuk format Office.
 

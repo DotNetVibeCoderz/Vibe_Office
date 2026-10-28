@@ -158,6 +158,38 @@ sama.
 Ekspor PDF kini juga menggambar setiap shape dengan geometrinya sendiri — elips, chevron, panah — yang
 dulu digambar sebagai kotak pembatasnya.
 
+### Shape bebas (freeform)
+
+```csharp
+// Titik dalam grid path itu sendiri — di sini 100 × 100 — diskalakan ke kotak apa pun yang diberikan.
+var heart = new FreeformPath(100, 100)
+    .MoveTo(50, 30)
+    .CubicTo(50, 0, 0, 0, 0, 35).CubicTo(0, 65, 40, 80, 50, 100)
+    .CubicTo(60, 80, 100, 65, 100, 35).CubicTo(100, 0, 50, 0, 50, 30)
+    .Close();
+
+slide.AddFreeform(heart, Units.Inches(1), Units.Inches(1), Units.Inches(2), Units.Inches(2),
+    fill: OfficeColor.FromRgb(0xE0, 0x20, 0x40));
+
+var star = FreeformPath.Polygon(100, 100, (50, 0), (61, 35), (98, 35), (68, 57), (79, 91),
+    (50, 70), (21, 91), (32, 57), (2, 35), (39, 35));
+
+var wave = new FreeformPath(100, 20) { Fill = false }   // garis tepi saja
+    .MoveTo(0, 10).QuadTo(25, 0, 50, 10).QuadTo(75, 20, 100, 10);
+
+var moon = new FreeformPath(200, 100).MoveTo(0, 50).ArcTo(100, 50, 180, 180).Close();
+
+foreach (var path in shape.FreeformPaths) { /* path.Commands: moveTo, lnTo, cubicBezTo, … */ }
+```
+
+Model DrawingML sendiri (`a:custGeom`): path menyatakan grid-nya, jadi shape yang digambar sekali cocok
+untuk ukuran apa pun; satu shape bisa berisi beberapa path, masing-masing diisi, digaris, atau
+keduanya. `ArcTo` menerima argumen DrawingML — jari-jari elips, lalu di mana busur dimulai dan seberapa
+jauh ia berputar, dalam derajat searah jarum jam — dan sudut itu *visual*, yaitu arah dari pusat, yang
+dikonversi ekspor PDF sebelum menempatkan busurnya. Setiap path digambar, termasuk freeform yang
+disimpan PowerPoint; yang koordinatnya berupa rumus guide yang hanya bisa dihitung PowerPoint digambar
+sebagai kotaknya.
+
 ## Tabel
 
 ```csharp

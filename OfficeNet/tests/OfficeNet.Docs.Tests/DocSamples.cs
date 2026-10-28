@@ -1394,6 +1394,39 @@ public class DocSamples : IDisposable
     }
 
     [Fact]
+    public void PowerPointNet_Freeforms()
+    {
+        using var deck = Presentation.Create();
+        var slide = deck.AddSlide(3);
+
+        var heart = new FreeformPath(100, 100)
+            .MoveTo(50, 30)
+            .CubicTo(50, 0, 0, 0, 0, 35).CubicTo(0, 65, 40, 80, 50, 100)
+            .CubicTo(60, 80, 100, 65, 100, 35).CubicTo(100, 0, 50, 0, 50, 30)
+            .Close();
+
+        var shape = slide.AddFreeform(heart, Units.Inches(1), Units.Inches(1), Units.Inches(2), Units.Inches(2),
+            fill: OfficeColor.FromRgb(0xE0, 0x20, 0x40));
+
+        var star = FreeformPath.Polygon(100, 100, (50, 0), (61, 35), (98, 35), (68, 57), (79, 91),
+            (50, 70), (21, 91), (32, 57), (2, 35), (39, 35));
+
+        var wave = new FreeformPath(100, 20) { Fill = false }
+            .MoveTo(0, 10).QuadTo(25, 0, 50, 10).QuadTo(75, 20, 100, 10);
+
+        var moon = new FreeformPath(200, 100).MoveTo(0, 50).ArcTo(100, 50, 180, 180).Close();
+        slide.AddFreeform([star, wave, moon], Units.Inches(4), Units.Inches(1), Units.Inches(4), Units.Inches(2));
+
+        foreach (var path in shape.FreeformPaths)
+        {
+            Assert.Equal("moveTo", path.Commands[0].Kind);
+        }
+
+        using var pdf = deck.ToPdf();
+        Assert.Single(pdf.Pages);
+    }
+
+    [Fact]
     public void PowerPointNet_SlidesToHtml()
     {
         using var deck = Presentation.Create();

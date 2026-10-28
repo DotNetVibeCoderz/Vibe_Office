@@ -325,6 +325,51 @@ public sealed class Slide
 
     // ---- Adding shapes ---------------------------------------------------------------------------
 
+    /// <summary>
+    /// Adds a freeform shape: one or more paths, each in its own grid, scaled to the box given.
+    /// </summary>
+    public Shape AddFreeform(FreeformPath path, Length left, Length top, Length width, Length height,
+        OfficeColor? fill = null, OfficeColor? outline = null, Length? outlineWidth = null) =>
+        AddFreeform([path], left, top, width, height, fill, outline, outlineWidth);
+
+    /// <inheritdoc cref="AddFreeform(FreeformPath, Length, Length, Length, Length, OfficeColor?, OfficeColor?, Length?)"/>
+    public Shape AddFreeform(IReadOnlyList<FreeformPath> paths, Length left, Length top, Length width, Length height,
+        OfficeColor? fill = null, OfficeColor? outline = null, Length? outlineWidth = null)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+
+        if (paths.Count == 0)
+        {
+            throw new ArgumentException("A freeform needs at least one path.", nameof(paths));
+        }
+
+        var id = NextShapeId();
+
+        var properties = new XElement(Ns.P + "spPr",
+            new XElement(Ns.A + "xfrm",
+                new XElement(Ns.A + "off", new XAttribute("x", left.Emu), new XAttribute("y", top.Emu)),
+                new XElement(Ns.A + "ext", new XAttribute("cx", width.Emu), new XAttribute("cy", height.Emu))),
+            FreeformPath.Geometry(paths),
+            fill is { } f
+                ? new XElement(Ns.A + "solidFill", new XElement(Ns.A + "srgbClr", new XAttribute("val", f.ToHex())))
+                : new XElement(Ns.A + "noFill"),
+            outline is { } o
+                ? new XElement(Ns.A + "ln", new XAttribute("w", (outlineWidth ?? Length.FromPoints(1)).Emu),
+                    new XElement(Ns.A + "solidFill", new XElement(Ns.A + "srgbClr", new XAttribute("val", o.ToHex()))))
+                : null);
+
+        var element = new XElement(Ns.P + "sp",
+            new XElement(Ns.P + "nvSpPr",
+                new XElement(Ns.P + "cNvPr", new XAttribute("id", id), new XAttribute("name", $"Freeform {id}")),
+                new XElement(Ns.P + "cNvSpPr"),
+                new XElement(Ns.P + "nvPr")),
+            properties);
+
+        ShapeTree.Add(element);
+        _presentation.Touch();
+        return new Shape(_presentation, element);
+    }
+
     /// <summary>The slide's lines and connectors.</summary>
     public IEnumerable<Connector> Connectors => Shapes.OfType<Connector>();
 

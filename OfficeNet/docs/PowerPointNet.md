@@ -157,6 +157,37 @@ python-pptx reads the same ends and glue.
 The PDF export also draws every shape in its own geometry — an ellipse, a chevron, an arrow — where
 it used to draw each one's bounding box.
 
+### Freeform shapes
+
+```csharp
+// Points in the path's own grid — here 100 × 100 — scaled to whatever box the shape gets.
+var heart = new FreeformPath(100, 100)
+    .MoveTo(50, 30)
+    .CubicTo(50, 0, 0, 0, 0, 35).CubicTo(0, 65, 40, 80, 50, 100)
+    .CubicTo(60, 80, 100, 65, 100, 35).CubicTo(100, 0, 50, 0, 50, 30)
+    .Close();
+
+slide.AddFreeform(heart, Units.Inches(1), Units.Inches(1), Units.Inches(2), Units.Inches(2),
+    fill: OfficeColor.FromRgb(0xE0, 0x20, 0x40));
+
+var star = FreeformPath.Polygon(100, 100, (50, 0), (61, 35), (98, 35), (68, 57), (79, 91),
+    (50, 70), (21, 91), (32, 57), (2, 35), (39, 35));
+
+var wave = new FreeformPath(100, 20) { Fill = false }   // an outline only
+    .MoveTo(0, 10).QuadTo(25, 0, 50, 10).QuadTo(75, 20, 100, 10);
+
+var moon = new FreeformPath(200, 100).MoveTo(0, 50).ArcTo(100, 50, 180, 180).Close();
+
+foreach (var path in shape.FreeformPaths) { /* path.Commands: moveTo, lnTo, cubicBezTo, … */ }
+```
+
+DrawingML's own model (`a:custGeom`): a path declares its grid, so a shape drawn once fits any size;
+one shape can hold several paths, each filled, stroked or both. `ArcTo` takes DrawingML's arguments —
+the ellipse's radii, then where on it the arc starts and how far it turns, in degrees clockwise —
+and those angles are *visual*, the direction from the centre, which the PDF export converts before it
+places the arc. It draws every path, including freeforms saved by PowerPoint; one whose coordinates
+are guide formulas only PowerPoint can evaluate is drawn as its box instead.
+
 ## Tables
 
 ```csharp

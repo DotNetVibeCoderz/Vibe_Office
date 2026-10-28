@@ -210,14 +210,19 @@ public static class PptToPdf
         var geometry = preset?.Attr("prst") ?? "rect";
         var adjust = Adjustment(preset);
 
-        if (shape.FillColor is { } fill)
+        if (shape.FreeformPaths is { Count: > 0 } freeform)
+        {
+            RenderFreeform(canvas, freeform, shape.FillColor, shape.LineColor, shape.LineWidth.Points,
+                left, top, width, height);
+        }
+        else if (shape.FillColor is { } fill)
         {
             canvas.SetFillColor(fill);
             TraceDiagramShape(canvas, geometry, left, top, width, height, adjust);
             canvas.Fill();
         }
 
-        if (shape.LineColor is { } line)
+        if (shape.LineColor is { } line && shape.FreeformPaths.Count == 0)
         {
             canvas.SetStrokeColor(line);
             canvas.SetLineWidth(Math.Max(0.5, shape.LineWidth.Points));
@@ -233,6 +238,162 @@ public static class PptToPdf
         }
 
         RenderTextFrame(presentation, canvas, frame, shape, layout, left, top, width, height);
+    }
+
+    /// <summary>Fills and strokes each path of a freeform, scaled from its grid to the shape's box.</summary>
+    private static void RenderFreeform(PdfCanvas canvas, IReadOnlyList<FreeformPath> paths, OfficeColor? fill,
+        OfficeColor? stroke, double strokeWidth, double left, double top, double width, double height)
+    {
+        foreach (var path in paths)
+        {
+            var doFill = path.Fill && fill is not null;
+            var doStroke = path.Stroke && stroke is not null;
+
+            if (!doFill && !doStroke)
+            {
+                continue;
+            }
+
+            if (fill is { } f)
+            {
+                canvas.SetFillColor(f);
+            }
+
+            if (stroke is { } s)
+            {
+                canvas.SetStrokeColor(s);
+                canvas.SetLineWidth(Math.Max(0.5, strokeWidth));
+            }
+
+            TraceFreeform(canvas, path, left, top, width / path.Width, height / path.Height);
+
+            if (doFill && doStroke)
+            {
+                canvas.FillAndStroke();
+            }
+            else if (doFill)
+            {
+                canvas.Fill();
+            }
+            else
+            {
+                canvas.Stroke();
+            }
+        }
+    }
+
+    private static void TraceFreeform(PdfCanvas canvas, FreeformPath path, double left, double top, double sx, double sy)
+    {
+        var (x, y) = (left, top);
+
+        foreach (var command in path.Commands)
+        {
+            var v = command.Values;
+
+            switch (command.Kind)
+            {
+                case "moveTo":
+                    (x, y) = (left + v[0] * sx, top + v[1] * sy);
+                    canvas.MoveTo(x, y);
+                    break;
+
+                case "lnTo":
+                    (x, y) = (left + v[0] * sx, top + v[1] * sy);
+                    canvas.LineTo(x, y);
+                    break;
+
+                case "cubicBezTo":
+                    canvas.CurveTo(left + v[0] * sx, top + v[1] * sy, left + v[2] * sx, top + v[3] * sy,
+                        left + v[4] * sx, top + v[5] * sy);
+                    (x, y) = (left + v[4] * sx, top + v[5] * sy);
+                    break;
+
+                case "quadBezTo":
+                    // A quadratic is the cubic whose controls sit two thirds of the way to its one.
+                    var (qx, qy) = (left + v[0] * sx, top + v[1] * sy);
+                    var (ex, ey) = (left + v[2] * sx, top + v[3] * sy);
+                    canvas.CurveTo(x + 2.0 / 3 * (qx - x), y + 2.0 / 3 * (qy - y),
+                        ex + 2.0 / 3 * (qx - ex), ey + 2.0 / 3 * (qy - ey), ex, ey);
+                    (x, y) = (ex, ey);
+                    break;
+
+                case "arcTo":
+                    (x, y) = TraceArc(canvas, x, y, v[0] * sx, v[1] * sy, v[2], v[3]);
+                    break;
+
+                case "close":
+                    canvas.ClosePath();
+                    break;
+            }
+        }
+    }
+
+    /// <summary>
+    /// An elliptical arc from the current point, as DrawingML defines it, in Bézier segments of at
+    /// most a quarter turn.
+    /// </summary>
+    /// <remarks>
+    /// DrawingML's angles are visual — the direction from the centre — not the ellipse's parameter,
+    /// and the two differ whenever the radii do, so each is converted before the arc is placed.
+    /// </remarks>
+    private static (double X, double Y) TraceArc(PdfCanvas canvas, double x, double y, double rx, double ry,
+        double startDegrees, double swingDegrees)
+    {
+        if (rx <= 0 || ry <= 0 || swingDegrees == 0)
+        {
+            return (x, y);
+        }
+
+        static double Parameter(double degrees, double rx, double ry)
+        {
+            var angle = degrees * Math.PI / 180;
+            return Math.Atan2(rx * Math.Sin(angle), ry * Math.Cos(angle));
+        }
+
+        var start = Parameter(startDegrees, rx, ry);
+        var end = Parameter(startDegrees + swingDegrees, rx, ry);
+
+        // Keep the direction and size of the swing; atan2 folds both into one turn.
+        var turns = Math.Floor(Math.Abs(swingDegrees) / 360);
+
+        if (swingDegrees > 0)
+        {
+            while (end <= start)
+            {
+                end += 2 * Math.PI;
+            }
+
+            end += turns * 2 * Math.PI;
+        }
+        else
+        {
+            while (end >= start)
+            {
+                end -= 2 * Math.PI;
+            }
+
+            end -= turns * 2 * Math.PI;
+        }
+
+        var cx = x - rx * Math.Cos(start);
+        var cy = y - ry * Math.Sin(start);
+
+        var segments = Math.Max(1, (int)Math.Ceiling(Math.Abs(end - start) / (Math.PI / 2)));
+        var step = (end - start) / segments;
+        var k = 4.0 / 3 * Math.Tan(step / 4);
+
+        for (var i = 0; i < segments; i++)
+        {
+            var a = start + i * step;
+            var b = a + step;
+
+            canvas.CurveTo(
+                cx + rx * (Math.Cos(a) - k * Math.Sin(a)), cy + ry * (Math.Sin(a) + k * Math.Cos(a)),
+                cx + rx * (Math.Cos(b) + k * Math.Sin(b)), cy + ry * (Math.Sin(b) - k * Math.Cos(b)),
+                cx + rx * Math.Cos(b), cy + ry * Math.Sin(b));
+        }
+
+        return (cx + rx * Math.Cos(end), cy + ry * Math.Sin(end));
     }
 
     /// <summary>

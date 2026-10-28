@@ -144,6 +144,13 @@ public class Shape
     public bool IsPlaceholder =>
         NonVisualProperties?.Element(Ns.P + "nvPr")?.Element(Ns.P + "ph") is not null;
 
+    /// <summary>
+    /// The paths of a freeform shape (<c>a:custGeom</c>), or none for a preset shape — or for a
+    /// freeform whose coordinates are guide formulas rather than numbers.
+    /// </summary>
+    public IReadOnlyList<FreeformPath> FreeformPaths =>
+        FreeformPath.Read(Element.Element(Ns.P + "spPr")?.Element(Ns.A + "custGeom"));
+
     private protected XElement ShapeProperties =>
         Element.Element(Ns.P + "spPr") ?? Element.Element(Ns.P + "grpSpPr")
         ?? CreateShapeProperties();
