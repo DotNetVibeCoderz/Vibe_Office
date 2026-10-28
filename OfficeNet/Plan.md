@@ -829,9 +829,10 @@ melengkapi.
 
 ### OfficeNet.Rendering
 
-- [ ] **Keluaran TIFF multi-halaman.** SkiaSharp tidak mengodekan TIFF, tapi TIFF baseline dengan
-  Deflate cukup sederhana untuk ditulis tangan — dan satu TIFF berisi seluruh halaman adalah yang
-  diminta alur arsip dan faks.
+- [x] **Keluaran TIFF multi-halaman — selesai.** `DocumentRenderer.RenderTiff` (PDF, Word, Excel,
+  PowerPoint, atau path), `TiffWriter` baseline: RGB, abu-abu, hitam-putih 1-bit; Deflate dengan
+  predictor 2, PackBits, atau tanpa kompresi; resolusi dan `PageNumber` per halaman. Pillow (libtiff):
+  identik piksel demi piksel dengan render PNG. Juga target `.tif` di tool MCP `convert`.
 
 ### Kandidat dengan nilai lebih rendah
 

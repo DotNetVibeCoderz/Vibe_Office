@@ -1906,6 +1906,28 @@ public class DocSamples : IDisposable
     }
 
     [Fact]
+    public void Rendering_MultiPageTiff()
+    {
+        using var document = WordDocument.Create();
+        document.AddHeading("Kontrak", 1);
+        document.AddPageBreak();
+        document.AddParagraph("Halaman dua");
+
+        var tiff = DocumentRenderer.RenderTiff(document, new TiffOptions
+        {
+            Dpi = 200,
+            Color = TiffColor.BlackAndWhite,
+            Compression = TiffCompression.Deflate,
+        });
+        Assert.Equal("II*\0", System.Text.Encoding.ASCII.GetString(tiff, 0, 4));
+
+        var docx = Path_("kontrak.docx");
+        document.Save(docx);
+        DocumentRenderer.RenderTiff(docx, Path_("kontrak.tif"));
+        Assert.True(File.Exists(Path_("kontrak.tif")));
+    }
+
+    [Fact]
     public void Rendering_AnyFormatToImages()
     {
         var docx = Path_("render.docx");

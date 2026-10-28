@@ -24,6 +24,7 @@ public sealed class DocumentTools(Workspace workspace)
     [McpServerTool(Name = "convert", Title = "Convert a document", Destructive = true)]
     [Description(
         "Converts between formats, chosen by the two extensions: .docx/.xlsx/.pptx → .pdf, " +
+        ".docx/.xlsx/.pptx/.pdf → .tif (every page in one multi-page TIFF), " +
         ".docx → .html or .md, .xlsx → .html (every sheet a table), .pptx → .html (every slide in turn), " +
         ".html → .docx, .pptx or .xlsx " +
         "(every table a sheet), .md → .docx, .txt → .docx (a paragraph per " +
@@ -42,6 +43,10 @@ public sealed class DocumentTools(Workspace workspace)
             {
                 case (".docx" or ".xlsx" or ".pptx", ".pdf"):
                     Office.ConvertToPdf(source, target);
+                    break;
+
+                case (".docx" or ".xlsx" or ".pptx" or ".pdf", ".tif" or ".tiff"):
+                    DocumentRenderer.RenderTiff(source, target);
                     break;
 
                 case (".docx", ".html" or ".htm"):
@@ -133,7 +138,8 @@ public sealed class DocumentTools(Workspace workspace)
                 default:
                     throw new ArgumentException(
                         $"Converting {from} to {to} is not supported. Supported: docx/xlsx/pptx → pdf, " +
-                        "docx → html/md, xlsx/pptx → html, html → docx/pptx/xlsx, md/txt → docx, pdf → docx/xlsx.");
+                        "docx → html/md, xlsx/pptx → html, html → docx/pptx/xlsx, md/txt → docx, pdf → docx/xlsx, " +
+                        "docx/xlsx/pptx/pdf → tif.");
             }
 
             return $"Converted {workspace.Relative(source)} to {workspace.Relative(target)}.";

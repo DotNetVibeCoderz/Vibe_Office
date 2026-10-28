@@ -131,6 +131,25 @@ besar.
 jadi merender ke atas ketiadaan menghasilkan PNG transparan yang terlihat hitam di separuh penampil
 yang membukanya.
 
+## TIFF multi-halaman
+
+```csharp
+var tiff = DocumentRenderer.RenderTiff(document, new TiffOptions
+{
+    Dpi = 200,                              // mode fine faks; 300 untuk pindaian arsip
+    Color = TiffColor.BlackAndWhite,        // atau Rgb, Grayscale
+    Compression = TiffCompression.Deflate,  // atau PackBits, None
+});
+
+DocumentRenderer.RenderTiff("kontrak.docx", "kontrak.tif");   // format apa pun, satu berkas
+```
+
+Semua halaman dalam satu TIFF baseline, yang diminta alur arsip dan faks dan tidak bisa dikodekan
+SkiaSharp. Strip sekitar 64 KB dikompres sendiri-sendiri; Deflate memakai predictor 2, hitam-putih
+diambang pada setengah kecerahan. Tiap halaman mencatat resolusi dan nomornya. Pillow, yang membaca
+lewat libtiff, mendapati halaman berwarna identik piksel demi piksel dengan render PNG di setiap
+kompresi, dan halaman abu-abu serta hitam-putih identik dengan rujukannya.
+
 ## Yang digambar, dan yang tidak
 
 **Digambar:** path yang diisi dan digaris dengan warna serta aturan pengisian even-odd/winding yang

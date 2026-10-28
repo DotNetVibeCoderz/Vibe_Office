@@ -125,6 +125,25 @@ cropping, so you get a smaller correct image instead of a large fragment.
 `Background` matters more than it looks: a PDF page is transparent until something paints it, so
 rendering onto nothing gives you a transparent PNG that looks black in half the viewers that open it.
 
+## Multi-page TIFF
+
+```csharp
+var tiff = DocumentRenderer.RenderTiff(document, new TiffOptions
+{
+    Dpi = 200,                              // fax fine mode; 300 for an archive scan
+    Color = TiffColor.BlackAndWhite,        // or Rgb, Grayscale
+    Compression = TiffCompression.Deflate,  // or PackBits, None
+});
+
+DocumentRenderer.RenderTiff("kontrak.docx", "kontrak.tif");   // any format, one file
+```
+
+Every page in one baseline TIFF, which is what archive and fax workflows ask for and SkiaSharp
+cannot encode. Strips of about 64 KB are compressed independently; Deflate uses predictor 2, black
+and white is thresholded at half brightness. Each page records its resolution and its number.
+Pillow, reading through libtiff, finds colour pages identical to the PNG rendering pixel for pixel
+in every compression, and grey and black-and-white pages identical to their references.
+
 ## What it draws, and what it does not
 
 **Draws:** filled and stroked paths with the correct colours and even-odd/winding fill rules,

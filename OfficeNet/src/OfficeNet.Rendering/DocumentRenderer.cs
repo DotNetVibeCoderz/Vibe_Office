@@ -70,7 +70,7 @@ public sealed class RenderOptions
 /// PDF a user would get from the same document.
 /// </para>
 /// </remarks>
-public static class DocumentRenderer
+public static partial class DocumentRenderer
 {
     /// <summary>Renders one PDF page to an image.</summary>
     public static byte[] RenderPage(PdfPage page, RenderOptions? options = null)
@@ -78,7 +78,16 @@ public static class DocumentRenderer
         ArgumentNullException.ThrowIfNull(page);
         options ??= new RenderOptions();
 
-        var scale = ResolveScale(page.Width, page.Height, options);
+        using var image = RenderImage(page, options, out _);
+        using var data = image.Encode(ToSkiaFormat(options.Format), options.Quality);
+
+        return data.ToArray();
+    }
+
+    /// <summary>Rasterises a page, for whichever encoder wants it; the scale used comes back out.</summary>
+    private static SKImage RenderImage(PdfPage page, RenderOptions options, out double scale)
+    {
+        scale = ResolveScale(page.Width, page.Height, options);
 
         var width = Math.Max(1, (int)Math.Round(page.Width * scale));
         var height = Math.Max(1, (int)Math.Round(page.Height * scale));
@@ -111,10 +120,7 @@ public static class DocumentRenderer
             canvas.DrawRect(0.5f, 0.5f, width - 1, height - 1, border);
         }
 
-        using var image = surface.Snapshot();
-        using var data = image.Encode(ToSkiaFormat(options.Format), options.Quality);
-
-        return data.ToArray();
+        return surface.Snapshot();
     }
 
     private static double ResolveScale(double widthPoints, double heightPoints, RenderOptions options)
@@ -707,6 +713,16 @@ public static class DocumentRenderer
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
 
+        using var pdf = OpenAsPdf(path);
+        return RenderPdf(pdf, options);
+    }
+
+    /// <summary>
+    /// Any document OfficeNet reads, as the PDF its exporter makes — chosen by the file's content,
+    /// not its name, for a PDF.
+    /// </summary>
+    private static PdfDocument OpenAsPdf(string path)
+    {
         using var stream = File.OpenRead(path);
         Span<byte> header = stackalloc byte[4];
         var read = stream.ReadAtLeast(header, 4, throwOnEndOfStream: false);
@@ -714,8 +730,7 @@ public static class DocumentRenderer
 
         if (read >= 4 && header.SequenceEqual("%PDF"u8))
         {
-            using var pdf = PdfDocument.Open(stream);
-            return RenderPdf(pdf, options);
+            return PdfDocument.Open(stream);
         }
 
         // Everything else is an OPC package; the format libraries reject the wrong one clearly.
@@ -726,19 +741,19 @@ public static class DocumentRenderer
             case ".docx" or ".docm" or ".dotx":
             {
                 using var document = WordNet.WordDocument.Open(stream);
-                return RenderWord(document, options);
+                return document.ToPdf();
             }
 
             case ".xlsx" or ".xlsm" or ".xltx":
             {
                 using var workbook = ExcelNet.Workbook.Open(stream);
-                return RenderExcel(workbook, options);
+                return workbook.ToPdf();
             }
 
             case ".pptx" or ".pptm" or ".ppsx" or ".potx":
             {
                 using var presentation = PowerPointNet.Presentation.Open(stream);
-                return RenderPowerPoint(presentation, options);
+                return presentation.ToPdf();
             }
 
             default:

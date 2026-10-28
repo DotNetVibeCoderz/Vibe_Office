@@ -128,7 +128,7 @@ direktori home.
 | `pdf_merge` / `pdf_split` | Menggabungkan; memecah per N halaman. |
 | `pdf_protect` | Enkripsi AES-256 dengan password. |
 | **Semua format** | |
-| `convert` | `docx/xlsx/pptx → pdf`, `docx → html/md`, `xlsx/pptx → html`, `html → docx/pptx/xlsx`, `md/txt → docx`, `pdf → docx/xlsx`. |
+| `convert` | `docx/xlsx/pptx → pdf`, `docx → html/md`, `xlsx/pptx → html`, `html → docx/pptx/xlsx`, `md/txt → docx`, `pdf → docx/xlsx`, `docx/xlsx/pptx/pdf → tif`. |
 | `extract_text` | Teks polos, maksimal 20 000 karakter. |
 | `document_info` | Format, metadata, dan struktur — heading, sheet, slide, halaman. |
 | `render_page` | Satu halaman sebagai **gambar PNG yang bisa dilihat model**, dan opsional disimpan. |

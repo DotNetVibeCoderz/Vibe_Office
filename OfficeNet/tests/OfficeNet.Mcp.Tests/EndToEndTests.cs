@@ -321,6 +321,10 @@ public class EndToEndTests(ServerFixture server) : IClassFixture<ServerFixture>
         (await Call("convert", new { input = "convert/surat.html", output = "convert/dari-html.docx" })).Ok();
         (await Call("convert", new { input = "convert/surat.pdf", output = "convert/dari-pdf.docx" })).Ok();
         (await Call("convert", new { input = "convert/surat.pdf", output = "convert/dari-pdf.xlsx" })).Ok();
+        (await Call("convert", new { input = "convert/surat.docx", output = "convert/surat.tif" })).Ok();
+
+        var tiff = File.ReadAllBytes(Full("convert/surat.tif"));
+        Assert.Equal("II*\0", System.Text.Encoding.ASCII.GetString(tiff, 0, 4));
 
         using (var pdf = PdfDocument.Open(Full("convert/surat.pdf")))
         {
