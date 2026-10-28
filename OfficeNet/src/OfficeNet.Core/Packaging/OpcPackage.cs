@@ -56,6 +56,31 @@ public sealed class OpcPackage : IDisposable
     /// <summary>The path the package was opened from, when it was opened from a file.</summary>
     public string? Path => _originalPath;
 
+    /// <summary>
+    /// The password the package is encrypted with when saved, or <c>null</c> to save it as a plain zip.
+    /// </summary>
+    /// <remarks>
+    /// Opening an encrypted package with its password sets this, so saving it again keeps it
+    /// encrypted — as Office does. Set it to <c>null</c> to remove the protection, or to a new
+    /// password to change it. See <see cref="PackageEncryption"/>.
+    /// </remarks>
+    public string? Password
+    {
+        get => _password;
+        set
+        {
+            if (value is not null)
+            {
+                ArgumentException.ThrowIfNullOrEmpty(value);
+                ArgumentOutOfRangeException.ThrowIfGreaterThan(value.Length, 255, nameof(value));
+            }
+
+            _password = value;
+        }
+    }
+
+    private string? _password;
+
     // ---- Construction --------------------------------------------------------------------------
 
     /// <summary>Creates an empty package with the minimum content-type defaults every OOXML file needs.</summary>
@@ -72,7 +97,11 @@ public sealed class OpcPackage : IDisposable
     /// <summary>Opens a package from a file.</summary>
     /// <exception cref="FileNotFoundException">The file does not exist.</exception>
     /// <exception cref="OfficeNetException">The file is not a readable OPC package.</exception>
-    public static OpcPackage Open(string path)
+    public static OpcPackage Open(string path) => Open(path, password: null);
+
+    /// <summary>Opens a package from a file, decrypting it with a password when it is encrypted.</summary>
+    /// <exception cref="OfficeNetPasswordException">The file is encrypted and the password is wrong or missing.</exception>
+    public static OpcPackage Open(string path, string? password)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         if (!File.Exists(path))
@@ -84,17 +113,72 @@ public sealed class OpcPackage : IDisposable
         // of the package is what makes "open, edit, save to the same path" fail on Windows.
         var bytes = File.ReadAllBytes(path);
         using var stream = new MemoryStream(bytes, writable: false);
-        var package = Open(stream);
+        var package = Open(stream, password);
         package._originalPath = System.IO.Path.GetFullPath(path);
         return package;
     }
 
     /// <summary>Opens a package from a stream. The stream is fully read and not retained.</summary>
     /// <exception cref="OfficeNetException">The stream is not a readable OPC package.</exception>
-    public static OpcPackage Open(Stream stream)
+    public static OpcPackage Open(Stream stream) => Open(stream, password: null);
+
+    /// <summary>
+    /// Opens a package from a stream, decrypting it with a password when it is encrypted. The
+    /// stream is fully read and not retained.
+    /// </summary>
+    /// <remarks>
+    /// A password given for a package that is not encrypted is ignored, and <see cref="Password"/>
+    /// stays <c>null</c>: whether to encrypt on save is the caller's decision, not a side effect.
+    /// </remarks>
+    /// <exception cref="OfficeNetPasswordException">The stream is encrypted and the password is wrong or missing.</exception>
+    public static OpcPackage Open(Stream stream, string? password)
     {
         ArgumentNullException.ThrowIfNull(stream);
 
+        // An encrypted package is a compound file, not a zip. It is told apart from a legacy binary
+        // file by its streams, and decrypted here so that everything after sees an ordinary zip.
+        if (!stream.CanSeek)
+        {
+            var buffered = new MemoryStream();
+            stream.CopyTo(buffered);
+            buffered.Position = 0;
+            stream = buffered;
+        }
+
+        var start = stream.Position;
+        Span<byte> signature = stackalloc byte[8];
+        var read = stream.ReadAtLeast(signature, 8, throwOnEndOfStream: false);
+        stream.Position = start;
+
+        if (CompoundFile.IsCompoundFile(signature[..read]))
+        {
+            var bytes = new byte[stream.Length - start];
+            stream.ReadExactly(bytes);
+
+            if (!PackageEncryption.IsEncrypted(bytes))
+            {
+                throw new OfficeNetException(
+                    "The stream is a compound file, not a zip: a legacy binary Office file (.doc, .xls, .ppt). " +
+                    "OfficeNet reads the XML formats only — convert it first.");
+            }
+
+            if (password is null)
+            {
+                throw new OfficeNetPasswordException(
+                    "The document is encrypted with a password. Open it with the overload that takes one.");
+            }
+
+            using var decrypted = new MemoryStream(PackageEncryption.Decrypt(bytes, password), writable: false);
+            var opened = ReadZip(decrypted);
+            opened._password = password;
+            return opened;
+        }
+
+        return ReadZip(stream);
+    }
+
+    private static OpcPackage ReadZip(Stream stream)
+    {
         var package = new OpcPackage();
         ZipArchive archive;
         try
@@ -530,6 +614,20 @@ public sealed class OpcPackage : IDisposable
     {
         ArgumentNullException.ThrowIfNull(stream);
 
+        if (_password is not null)
+        {
+            // The zip is built in memory, then written as the compound file that carries it.
+            using var plain = new MemoryStream();
+            WriteZip(plain);
+            stream.Write(PackageEncryption.Encrypt(plain.ToArray(), _password));
+            return;
+        }
+
+        WriteZip(stream);
+    }
+
+    private void WriteZip(Stream stream)
+    {
         using var archive = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: true);
 
         // [Content_Types].xml must be the first entry for the package to be readable by consumers

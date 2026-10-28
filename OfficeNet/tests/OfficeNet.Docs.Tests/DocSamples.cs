@@ -348,6 +348,30 @@ public class DocSamples : IDisposable
     }
 
     [Fact]
+    public void Core_PasswordEncryption()
+    {
+        var path = Path_("gaji.xlsx");
+
+        using (var created = Workbook.Create())
+        {
+            created.Password = "Sandi-Ku 123";
+            created.Save(path);
+        }
+
+        using (var workbook = Workbook.Open(path, "Sandi-Ku 123"))
+        {
+            workbook.Worksheets[0]["B2"].Set(15_000_000);
+            workbook.Save();
+
+            workbook.Password = null;
+            workbook.Save(Path_("gaji-terbuka.xlsx"));
+        }
+
+        Assert.Equal(OfficeFormat.Encrypted, Office.DetectFormat(path));
+        Assert.Equal(OfficeFormat.Excel, Office.DetectFormat(Path_("gaji-terbuka.xlsx")));
+    }
+
+    [Fact]
     public void Core_Markdown()
     {
         var html = MarkdownToHtml.Convert("# Judul\n\nTeks **tebal** dan ~~coret~~.");

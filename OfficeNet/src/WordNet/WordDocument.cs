@@ -120,6 +120,38 @@ public sealed class WordDocument : OfficeDocument
         return FromPackage(OpcPackage.Open(stream));
     }
 
+    /// <summary>Opens a password-encrypted .docx from a file.</summary>
+    /// <remarks>
+    /// The document stays encrypted with the same password when saved; set <c>Password</c> to
+    /// <c>null</c> to remove it. An unencrypted file opens too, and stays unencrypted.
+    /// </remarks>
+    /// <exception cref="OfficeNetPasswordException">The password is wrong.</exception>
+    public static WordDocument Open(string path, string password)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        ArgumentNullException.ThrowIfNull(password);
+        return FromPackage(OpcPackage.Open(path, password));
+    }
+
+    /// <summary>Opens a password-encrypted .docx from a stream.</summary>
+    /// <exception cref="OfficeNetPasswordException">The password is wrong.</exception>
+    public static WordDocument Open(Stream stream, string password)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+        ArgumentNullException.ThrowIfNull(password);
+        return FromPackage(OpcPackage.Open(stream, password));
+    }
+
+    /// <summary>Opens a password-encrypted .docx from bytes.</summary>
+    /// <exception cref="OfficeNetPasswordException">The password is wrong.</exception>
+    public static WordDocument Open(byte[] bytes, string password)
+    {
+        ArgumentNullException.ThrowIfNull(bytes);
+        ArgumentNullException.ThrowIfNull(password);
+        using var stream = new MemoryStream(bytes, writable: false);
+        return FromPackage(OpcPackage.Open(stream, password));
+    }
+
     /// <summary>
     /// Opens a document to use as a template: the content is cleared, everything else is kept.
     /// </summary>

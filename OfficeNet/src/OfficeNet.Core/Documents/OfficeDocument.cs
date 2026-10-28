@@ -74,6 +74,21 @@ public abstract class OfficeDocument : IOfficeDocument
     /// <inheritdoc />
     public string? Path => Package.Path;
 
+    /// <summary>
+    /// The password the file is encrypted with when saved — ECMA-376 Agile encryption, what Office
+    /// calls "Encrypt with Password" — or <c>null</c> for none.
+    /// </summary>
+    /// <remarks>
+    /// Opening an encrypted file with its password sets this, so it is saved encrypted again. Set it
+    /// to <c>null</c> to remove the protection. This is not sheet protection or restricted editing,
+    /// which leave the file readable; see <see cref="PackageEncryption"/>.
+    /// </remarks>
+    public string? Password
+    {
+        get => Package.Password;
+        set => Package.Password = value;
+    }
+
     /// <inheritdoc />
     public abstract string ExtractText();
 

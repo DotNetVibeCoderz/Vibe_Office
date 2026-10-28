@@ -44,6 +44,44 @@ disebut Office sebagai rusak:
 - **Target sebuah relationship harus dapat diselesaikan.** `r:id` yang menggantung bukan diabaikan;
   itu sebuah kesalahan.
 
+## Enkripsi dengan kata sandi
+
+```csharp
+using var workbook = Workbook.Open("gaji.xlsx", "Sandi-Ku 123");   // atau WordDocument, Presentation
+
+workbook.Worksheets[0]["B2"].Set(15_000_000);
+workbook.Save();               // tetap terenkripsi, dengan kata sandi yang sama
+
+workbook.Password = null;      // atau kata sandi baru
+workbook.Save("gaji-terbuka.xlsx");
+```
+
+Inilah *Encrypt with Password* milik Office: seluruh berkas tidak bisa dibaca tanpa kata sandinya.
+Ini bukan proteksi sheet atau *Restrict Editing*, yang menyimpan hash di dalam berkas yang tetap bisa
+dibaca siapa saja.
+
+.docx/.xlsx/.pptx yang terenkripsi bukan zip. Ia adalah **compound file** — wadah yang dipakai
+`.doc`/`.xls` lama — berisi zip terenkripsi sebagai `EncryptedPackage`, parameternya sebagai
+`EncryptionInfo`, dan storage `\u0006DataSpaces` yang menyebut transformasinya. Itulah sebabnya ia tampak
+seperti berkas biner lama bagi apa pun yang hanya membaca byte pertamanya, dan sebabnya
+`Office.DetectFormat` melaporkan `Encrypted`.
+
+Penulisan memakai enkripsi **Agile** ECMA-376 dengan parameter Office sendiri: AES-256-CBC, SHA-512,
+100.000 iterasi hash, salt dan kunci acak setiap kali simpan, dan HMAC atas paket terenkripsi.
+Pembacaan menerima parameter Agile apa pun. Saat membuka, kata sandi diperiksa dulu terhadap verifier
+yang tersimpan — yang salah menjadi `OfficeNetPasswordException`, bukan sampah — lalu HMAC-nya, sehingga
+berkas yang diubah di tengah jalan ditolak. Enkripsi *Standard* Office 2007 yang lebih lama ditolak
+dengan menyebut namanya.
+
+Diperiksa terhadap aslinya: Excel, Word, dan PowerPoint (lewat COM) membuka berkas yang dienkripsi
+library ini dan menolak kata sandi yang salah; berkas yang dienkripsi Excel, Word, PowerPoint, dan
+msoffcrypto-tool terbuka di sini, dan disimpan sebagai fixture tes. Stream `\u0006DataSpaces` sama dengan
+byte rujukannya.
+
+`PackageEncryption.Encrypt`/`Decrypt` bekerja langsung pada byte, dan `CompoundFile` membaca serta
+menulis wadahnya — stream bernama di dalam storage, tidak lebih. Penulis workbook streaming
+(`ExcelNet.Streaming`) menulis zip biasa; enkripsi keluarannya dengan `PackageEncryption.Encrypt`.
+
 ## Satuan
 
 Setiap panjang di OfficeNet adalah `Length`, disimpan dalam **EMU** — English Metric Units, 914.400

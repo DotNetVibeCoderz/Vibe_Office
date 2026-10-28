@@ -15,6 +15,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Files Excel, Word and PowerPoint encrypted themselves; kept once, in the Core tests. -->
+    <None Include="..\OfficeNet.Core.Tests\Encryption\*" LinkBase="Encryption" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit.v3" />
     <PackageReference Include="xunit.runner.visualstudio" />

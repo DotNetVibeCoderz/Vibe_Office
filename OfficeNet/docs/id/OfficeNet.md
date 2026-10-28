@@ -23,8 +23,12 @@ using OfficeNet;
 
 var format = Office.DetectFormat("berkas.docx");   // path, Stream, atau byte[]
 
-Console.WriteLine(format);   // Word, Excel, PowerPoint, Pdf, atau Unknown
+Console.WriteLine(format);   // Word, Excel, PowerPoint, Pdf, Encrypted, LegacyBinaryOffice, atau Unknown
 ```
+
+Dokumen yang dienkripsi dengan kata sandi adalah `Encrypted`: yang mana dari ketiganya tidak bisa
+diketahui tanpa kata sandinya. `Office.Open(path, password)` mendekripsinya, mencari tahu, lalu
+membukanya sebagai tipe itu — lihat [enkripsi dengan kata sandi](Core.md#enkripsi-dengan-kata-sandi).
 
 Deteksi membaca isinya, bukan ekstensinya. Berkas `.docx` yang sebenarnya `.xlsx` — yang terjadi
 setiap kali ada orang mengganti nama berkas agar lolos penyaring unggahan — dilaporkan sebagai Excel.

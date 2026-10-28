@@ -136,6 +136,38 @@ public sealed class Workbook : OfficeDocument, IReadOnlyList<Worksheet>
         return FromPackage(OpcPackage.Open(stream));
     }
 
+    /// <summary>Opens a password-encrypted .xlsx from a file.</summary>
+    /// <remarks>
+    /// The document stays encrypted with the same password when saved; set <c>Password</c> to
+    /// <c>null</c> to remove it. An unencrypted file opens too, and stays unencrypted.
+    /// </remarks>
+    /// <exception cref="OfficeNetPasswordException">The password is wrong.</exception>
+    public static Workbook Open(string path, string password)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        ArgumentNullException.ThrowIfNull(password);
+        return FromPackage(OpcPackage.Open(path, password));
+    }
+
+    /// <summary>Opens a password-encrypted .xlsx from a stream.</summary>
+    /// <exception cref="OfficeNetPasswordException">The password is wrong.</exception>
+    public static Workbook Open(Stream stream, string password)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+        ArgumentNullException.ThrowIfNull(password);
+        return FromPackage(OpcPackage.Open(stream, password));
+    }
+
+    /// <summary>Opens a password-encrypted .xlsx from bytes.</summary>
+    /// <exception cref="OfficeNetPasswordException">The password is wrong.</exception>
+    public static Workbook Open(byte[] bytes, string password)
+    {
+        ArgumentNullException.ThrowIfNull(bytes);
+        ArgumentNullException.ThrowIfNull(password);
+        using var stream = new MemoryStream(bytes, writable: false);
+        return FromPackage(OpcPackage.Open(stream, password));
+    }
+
     private static Workbook FromPackage(OpcPackage package)
     {
         var workbookPart = package.MainDocumentPart

@@ -27,6 +27,12 @@ public enum OfficeFormat
 
     /// <summary>A legacy binary Office file (.doc, .xls, .ppt), which OfficeNet cannot read.</summary>
     LegacyBinaryOffice,
+
+    /// <summary>
+    /// A password-encrypted .docx, .xlsx or .pptx. Which of the three is known only after
+    /// decrypting — open it with <c>Office.Open(path, password)</c>.
+    /// </summary>
+    Encrypted,
 }
 
 /// <summary>
@@ -86,12 +92,16 @@ public static class Office
                 return OfficeFormat.Pdf;
             }
 
-            // The OLE compound-document signature: .doc, .xls and .ppt all begin with it. Naming
-            // it explicitly turns "not a zip" into advice the caller can act on.
-            if (read >= 8 && header.SequenceEqual(
-                    (ReadOnlySpan<byte>)[0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1]))
+            // The OLE compound-document signature: .doc, .xls and .ppt all begin with it — and so
+            // does an encrypted .docx/.xlsx/.pptx, whose zip is a stream inside. Naming either
+            // explicitly turns "not a zip" into advice the caller can act on.
+            if (read >= 8 && CompoundFile.IsCompoundFile(header))
             {
-                return OfficeFormat.LegacyBinaryOffice;
+                stream.Position = start;
+                var bytes = new byte[stream.Length - start];
+                stream.ReadExactly(bytes);
+
+                return PackageEncryption.IsEncrypted(bytes) ? OfficeFormat.Encrypted : OfficeFormat.LegacyBinaryOffice;
             }
 
             if (header[0] != 'P' || header[1] != 'K')
@@ -174,12 +184,46 @@ public static class Office
             OfficeFormat.LegacyBinaryOffice => throw new OfficeNetNotSupportedException(
                 $"'{Path.GetFileName(path)}' is a legacy binary Office file (.doc, .xls or .ppt). " +
                 "OfficeNet reads the XML formats only — convert it to .docx, .xlsx or .pptx first."),
+            OfficeFormat.Encrypted => throw new OfficeNetPasswordException(
+                $"'{Path.GetFileName(path)}' is encrypted with a password. Open it with Office.Open(path, password)."),
             _ => OpenWithPlugin(path),
         };
     }
 
     /// <summary>
-    /// Last resort for <see cref="Open"/>: a format a plugin registered.
+    /// Opens a Word, Excel or PowerPoint file that may be encrypted with a password.
+    /// </summary>
+    /// <remarks>
+    /// An encrypted file is decrypted to learn which of the three it is, then opened as that type;
+    /// it stays encrypted with the same password when saved. A file that is not encrypted opens as
+    /// <see cref="Open(string)"/> would.
+    /// </remarks>
+    /// <exception cref="OfficeNetPasswordException">The password is wrong.</exception>
+    public static IOfficeDocument Open(string path, string password)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        ArgumentNullException.ThrowIfNull(password);
+
+        if (DetectFormat(path) != OfficeFormat.Encrypted)
+        {
+            return Open(path);
+        }
+
+        var bytes = File.ReadAllBytes(path);
+        using var plain = new MemoryStream(PackageEncryption.Decrypt(bytes, password), writable: false);
+
+        return DetectFormat(plain) switch
+        {
+            OfficeFormat.Word => WordNet.WordDocument.Open(path, password),
+            OfficeFormat.Excel => ExcelNet.Workbook.Open(path, password),
+            OfficeFormat.PowerPoint => PowerPointNet.Presentation.Open(path, password),
+            _ => throw new OfficeNetException(
+                $"'{Path.GetFileName(path)}' decrypts to something that is not a Word, Excel or PowerPoint document."),
+        };
+    }
+
+    /// <summary>
+    /// Last resort for <see cref="Open(string)"/>: a format a plugin registered.
     /// </summary>
     /// <remarks>
     /// Reached only after the built-ins have declined, so a plugin can add formats but never
@@ -280,6 +324,11 @@ public static class Office
                     $"'{Path.GetFileName(sourcePath)}' is a legacy binary Office file. Convert it " +
                     "to .docx, .xlsx or .pptx first.");
 
+            case OfficeFormat.Encrypted:
+                throw new OfficeNetPasswordException(
+                    $"'{Path.GetFileName(sourcePath)}' is encrypted with a password. Open it with " +
+                    "Office.Open(path, password) and save that as PDF.");
+
             default:
                 throw new OfficeNetException(
                     $"'{Path.GetFileName(sourcePath)}' is not a document OfficeNet can convert.");
@@ -298,7 +347,7 @@ public static class Office
     ];
 
     /// <summary>
-    /// The file extensions <see cref="Open"/> handles, including any a plugin registered.
+    /// The file extensions <see cref="Open(string)"/> handles, including any a plugin registered.
     /// </summary>
     /// <remarks>
     /// Computed rather than cached: a handler can be registered at any point, and a list captured

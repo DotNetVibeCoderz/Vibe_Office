@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 are both complete, and 1.3.0 is on NuGet**; v2.0 is in progress — the HTML engine now lives in
 `OfficeNet.Core.Html`, and `WordNet.Import.HtmlToWord` and `WordNet.Export.WordToHtml` exist. All six
 libraries build clean with zero warnings: `OfficeNet.Core`, `PdfNet`, `WordNet`, `ExcelNet`,
-`PowerPointNet`, `OfficeNet` (meta), `OfficeNet.Rendering`, and the MCP server `OfficeNet.Mcp`. **1750 tests** (four veraPDF checks skip unless `VERAPDF` is set) across eight
+`PowerPointNet`, `OfficeNet` (meta), `OfficeNet.Rendering`, and the MCP server `OfficeNet.Mcp`. **1771 tests** (four veraPDF checks skip unless `VERAPDF` is set) across eight
 test projects.
 
 Everything the plan listed through v1.1 exists: the libraries, tests with independent structural
@@ -105,6 +105,15 @@ Every item here cost real debugging time. None are hypothetical.
   for `w:t` and `SharedStrings.Write` for `t`.
 - **Strict-conformance files use different namespace URIs.** Without
   `XmlUtil.NormalizeStrictNamespaces` at load, a strict .docx opens with zero paragraphs, silently.
+
+- **An encrypted .docx/.xlsx/.pptx is a compound file, not a zip** — the same first eight bytes
+  as a legacy `.doc`. Tell them apart by the `EncryptionInfo`/`EncryptedPackage` streams
+  (`PackageEncryption.IsEncrypted`), never by the signature alone. Excel, Word and PowerPoint are on
+  the dev machine and drivable through COM; the fixtures in `tests/OfficeNet.Core.Tests/Encryption`
+  came from them, and Office won't open an encrypted package without the `\u0006DataSpaces` storage.
+- **A CFB mini-stream chain can be eight times longer than the file has sectors.** A loop guard
+  bounded by the sector count rejected msoffcrypto's files; `CompoundFile` detects cycles by
+  visited sector instead, which also catches a cycle shorter than the stream.
 
 ### ExcelNet
 

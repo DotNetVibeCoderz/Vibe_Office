@@ -23,8 +23,12 @@ using OfficeNet;
 
 var format = Office.DetectFormat("berkas.docx");   // path, Stream or byte[]
 
-Console.WriteLine(format);   // Word, Excel, PowerPoint, Pdf, or Unknown
+Console.WriteLine(format);   // Word, Excel, PowerPoint, Pdf, Encrypted, LegacyBinaryOffice, or Unknown
 ```
+
+A password-encrypted document is `Encrypted`: which of the three it is cannot be known without the
+password. `Office.Open(path, password)` decrypts it, finds out, and opens it as that type — see
+[password encryption](Core.md#password-encryption).
 
 Detection reads the content, not the extension. A `.docx` that is really a `.xlsx` — which happens
 whenever someone renames a file to get past an upload filter — is reported as Excel.

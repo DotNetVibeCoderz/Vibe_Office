@@ -205,6 +205,38 @@ public sealed class Presentation : OfficeDocument
         return FromPackage(OpcPackage.Open(stream));
     }
 
+    /// <summary>Opens a password-encrypted .pptx from a file.</summary>
+    /// <remarks>
+    /// The document stays encrypted with the same password when saved; set <c>Password</c> to
+    /// <c>null</c> to remove it. An unencrypted file opens too, and stays unencrypted.
+    /// </remarks>
+    /// <exception cref="OfficeNetPasswordException">The password is wrong.</exception>
+    public static Presentation Open(string path, string password)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        ArgumentNullException.ThrowIfNull(password);
+        return FromPackage(OpcPackage.Open(path, password));
+    }
+
+    /// <summary>Opens a password-encrypted .pptx from a stream.</summary>
+    /// <exception cref="OfficeNetPasswordException">The password is wrong.</exception>
+    public static Presentation Open(Stream stream, string password)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+        ArgumentNullException.ThrowIfNull(password);
+        return FromPackage(OpcPackage.Open(stream, password));
+    }
+
+    /// <summary>Opens a password-encrypted .pptx from bytes.</summary>
+    /// <exception cref="OfficeNetPasswordException">The password is wrong.</exception>
+    public static Presentation Open(byte[] bytes, string password)
+    {
+        ArgumentNullException.ThrowIfNull(bytes);
+        ArgumentNullException.ThrowIfNull(password);
+        using var stream = new MemoryStream(bytes, writable: false);
+        return FromPackage(OpcPackage.Open(stream, password));
+    }
+
     /// <summary>
     /// Opens a presentation as a template: the slides are removed, everything else is kept.
     /// </summary>

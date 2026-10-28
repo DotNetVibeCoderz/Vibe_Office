@@ -41,6 +41,41 @@ Two rules the package layer enforces, because breaking either produces a file Of
 - **Every part must have a content type**, either by extension default or by an explicit override.
 - **A relationship target must resolve.** A dangling `r:id` is not ignored; it is an error.
 
+## Password encryption
+
+```csharp
+using var workbook = Workbook.Open("gaji.xlsx", "Sandi-Ku 123");   // or WordDocument, Presentation
+
+workbook.Worksheets[0]["B2"].Set(15_000_000);
+workbook.Save();               // still encrypted, with the same password
+
+workbook.Password = null;      // or a new one
+workbook.Save("gaji-terbuka.xlsx");
+```
+
+This is Office's *Encrypt with Password*: the whole file is unreadable without the password. It is
+not sheet protection or *Restrict Editing*, which store a hash inside a file anyone can still read.
+
+An encrypted .docx/.xlsx/.pptx is not a zip. It is a **compound file** — the container legacy
+`.doc`/`.xls` used — holding the encrypted zip as `EncryptedPackage`, the parameters as
+`EncryptionInfo`, and a `\u0006DataSpaces` storage naming the transform. That is why it looks like a
+legacy binary file to anything reading only the first bytes, and why `Office.DetectFormat` reports
+`Encrypted` instead.
+
+Writing uses ECMA-376 **Agile** encryption with Office's own parameters: AES-256-CBC, SHA-512,
+100,000 hash iterations, random salts and key each save, and an HMAC over the encrypted package.
+Reading takes any Agile parameters. Opening checks the password against the stored verifier first — a
+wrong one is an `OfficeNetPasswordException`, not garbage — and the HMAC after, so a file altered on the
+way is refused. Office 2007's older *Standard* encryption is refused by name.
+
+Checked against the real thing: Excel, Word and PowerPoint (through COM) open files this library
+encrypted and refuse a wrong password; files Excel, Word, PowerPoint and msoffcrypto-tool encrypted
+open here, and are kept as test fixtures. The `\u0006DataSpaces` streams match the reference bytes.
+
+`PackageEncryption.Encrypt`/`Decrypt` work on bytes directly, and `CompoundFile` reads and writes the
+container — named streams in storages, nothing more. The streaming workbook writer
+(`ExcelNet.Streaming`) writes a plain zip; encrypt its output with `PackageEncryption.Encrypt`.
+
 ## Units
 
 Every length in OfficeNet is a `Length`, stored in **EMU** — English Metric Units, 914,400 per inch

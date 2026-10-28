@@ -767,10 +767,14 @@ melengkapi.
   kembali series demi series sesuai `c:order`; python-pptx melihat bar plot dan line plot. Renderer PDF
   menggambar tiap kelompok dengan skalanya sendiri. Berlaku untuk ExcelNet, PowerPointNet, Word, dan
   tool MCP. Ikut diperbaiki: chart garis dengan marker terbaca kembali sebagai garis biasa.
-- [ ] **Enkripsi workbook** (ECMA-376 Agile Encryption, AES-256 + SHA-512). Berkas terenkripsi
-  bukan ZIP melainkan compound file (CFB) berisi `EncryptionInfo` dan `EncryptedPackage`. Ini
-  **bukan** format biner lama: yang dibutuhkan hanya pembaca/penulis CFB minimal untuk dua stream,
-  bukan model `.xls`. Berlaku sama untuk .docx dan .pptx, jadi tempatnya di Core.
+- [x] **Enkripsi dengan kata sandi — selesai, untuk .xlsx, .docx, dan .pptx.** Di Core:
+  `CompoundFile` (pembaca/penulis CFB minimal — stream bernama dalam storage, DIFAT untuk berkas besar,
+  mini stream, pohon saudara terurut MS-CFB) dan `PackageEncryption` (Agile ECMA-376: AES-256-CBC,
+  SHA-512, 100.000 iterasi, HMAC; membaca parameter Agile apa pun; *Standard* ditolak dengan nama).
+  `OpcPackage.Password`/`OfficeDocument.Password`, `Open(path|stream|bytes, password)` di ketiga tipe,
+  `OfficeFormat.Encrypted` dan `Office.Open(path, password)`. Membuka dengan kata sandi membuat simpan
+  ulang tetap terenkripsi. Diverifikasi dengan Excel, Word, dan PowerPoint asli lewat COM (dua arah),
+  dan msoffcrypto-tool (dua arah, integritas diperiksa); berkas buatan Office menjadi fixture tes.
 - [x] **XLSX → HTML dan HTML → XLSX — selesai.** `HtmlIo` (sebelah `CsvIo`/`JsonIo`). Keluar: satu
   `table` per sheet dengan `caption`, nilai lewat format angkanya (`ExcelToPdf.Format`), sel gabungan
   sebagai `colspan`/`rowspan`, font/isian/perataan/garis tepi/lebar kolom sebagai CSS, tautan disaring
