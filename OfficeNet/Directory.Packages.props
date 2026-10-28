@@ -19,7 +19,7 @@
       a third-party dependency, and the alternative is hand-rolling signature cryptography, which is
       exactly the thing not to hand-roll.
     -->
-    <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="10.0.0" />
+    <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="10.0.14" />
 
     <!-- Rasterisation for PDF/document -> image export. -->
     <PackageVersion Include="SkiaSharp" Version="4.151.2" />
