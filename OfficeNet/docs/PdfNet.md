@@ -297,6 +297,52 @@ would mean seeing it used.
 `ReservedBytes` sizes the hole the signature goes into, 8 KB by default. A signature that does not
 fit is refused rather than truncated.
 
+### A trusted timestamp
+
+```csharp
+using var http = new HttpClient();
+
+PdfSigner.Sign(pdf, certificate, "laporan-signed.pdf", new PdfSignOptions
+{
+    TimestampAuthority = request =>
+    {
+        using var content = new ByteArrayContent(request);
+        content.Headers.ContentType = new("application/timestamp-query");
+
+        using var response = http.PostAsync("https://freetsa.org/tsr", content).GetAwaiter().GetResult();
+        return response.EnsureSuccessStatusCode().Content.ReadAsByteArrayAsync().GetAwaiter().GetResult();
+    },
+});
+```
+
+The `/M` signing time is the signer's own claim. A timestamp is a third party's: an RFC 3161
+authority signs the hash of the signature value together with the time, and the token goes into the
+signature as its `signature-time-stamp` attribute — what PAdES-T asks for. It is what lets a
+signature be shown to predate the certificate's expiry or revocation.
+
+The library never makes a network request itself, so the authority is a delegate: it gets the DER
+request and returns the DER response, and the caller picks the authority, the proxy and the
+credentials. The response is checked against the request — the hash of *this* signature and a fresh
+nonce — before it is attached; one that answers something else, or a rejection, is an
+`OfficeNetException`, as is a delegate that throws. With an authority set the hole grows to 16 KB,
+because the token brings the authority's certificates, unless `ReservedBytes` was set.
+
+Reading one back needs no network:
+
+```csharp
+if (result.Timestamp is { } when)
+{
+    Console.WriteLine($"Timestamped {when:u} by {result.TimestampCertificate?.Subject}");
+}
+```
+
+`Timestamp` is set only when the token is over this signature's value and its own signature holds. A
+token lifted from another signature — it sits outside the signed bytes, so it can be swapped — leaves
+`Timestamp` null and says why in `TimestampProblem`; the signature itself is still `IsIntact`.
+Whether the authority is one you trust is, as with the signer, a chain to build from
+`TimestampCertificate`. Checked against OpenSSL acting as the authority: `openssl ts -reply` answered
+the request, the signer accepted it, and `openssl ts -verify` passed the token.
+
 ### Why the order looks strange
 
 A signature covers a byte range of the finished file, and it cannot cover itself. So the file is
@@ -309,9 +355,9 @@ value rather than by position, so the new range is filled in and the existing si
 alone. The first signature then reports `CoversWholeDocument = false`, which is the honest answer —
 that is what an incrementally signed document looks like.
 
-**What this does not produce:** a trusted timestamp, a revocation response, or a long-term-validation
-archive. Those are what make a signature PAdES-LTV, they need a network service, and their absence is
-why a signature checked years from now may fail even though nothing was tampered with.
+**What this does not produce:** a revocation response or a long-term-validation archive (a DSS
+dictionary). With a timestamp those are what make a signature PAdES-LTV; without them a signature
+checked years from now may fail even though nothing was tampered with.
 
 ## Forms
 

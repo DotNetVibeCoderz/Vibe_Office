@@ -49,6 +49,30 @@ public sealed class PdfSignOptions
     /// signed and is not.
     /// </remarks>
     public int ReservedBytes { get; set; } = 8192;
+
+    /// <summary>
+    /// Sends a timestamp request to a timestamp authority and returns its response — an RFC 3161
+    /// trusted timestamp, so the signature can be shown to have existed at a time the signer did
+    /// not merely claim.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The library never makes a network request on its own, so it hands over the DER request and
+    /// takes back the DER response; posting it to a TSA as <c>application/timestamp-query</c> is
+    /// one line of <c>HttpClient</c> in the caller, who chooses the authority, the proxy and the
+    /// credentials. The response is checked against the request — the hash and the nonce — before
+    /// it is attached, so a wrong or replayed response is refused.
+    /// </para>
+    /// <para>
+    /// The token goes into the signature as the <c>signature-time-stamp</c> attribute, over the
+    /// signature value, as PAdES requires. With an authority set, <see cref="ReservedBytes"/> grows
+    /// to 16 KB unless it was set: the token brings the authority's certificates with it.
+    /// </para>
+    /// </remarks>
+    public Func<byte[], byte[]>? TimestampAuthority { get; set; }
+
+    /// <summary>The space actually reserved: more when a timestamp token has to fit too.</summary>
+    internal int ReservedSpace => TimestampAuthority is not null && ReservedBytes == 8192 ? 16384 : ReservedBytes;
 }
 
 /// <summary>
@@ -197,7 +221,7 @@ public static class PdfSigner
         // The hole. Hex, because the signature is binary and a literal string would need escaping —
         // which changes its length, which is the one thing that must not happen here.
         signature[PdfName.Get("Contents")] =
-            new PdfString(new byte[Math.Max(1024, options.ReservedBytes)]) { IsHex = true };
+            new PdfString(new byte[Math.Max(1024, options.ReservedSpace)]) { IsHex = true };
 
         // Placeholders wide enough for any offset in a file this library can write, and recognisable
         // afterwards: the splice finds them by this value rather than by position, so signing a
@@ -436,7 +460,50 @@ public static class PdfSigner
 
         cms.ComputeSignature(signer);
 
+        if (options.TimestampAuthority is { } authority)
+        {
+            Timestamp(cms.SignerInfos[0], authority);
+        }
+
         return cms.Encode();
+    }
+
+    /// <summary>The <c>signature-time-stamp</c> attribute's OID (RFC 3161, appendix A).</summary>
+    internal const string TimestampTokenOid = "1.2.840.113549.1.9.16.2.14";
+
+    /// <summary>
+    /// Asks the authority to timestamp the signature value and attaches its token to the signer.
+    /// </summary>
+    private static void Timestamp(SignerInfo signer, Func<byte[], byte[]> authority)
+    {
+        var request = Rfc3161TimestampRequest.CreateFromSignerInfo(signer, HashAlgorithmName.SHA256,
+            requestSignerCertificates: true, nonce: RandomNumberGenerator.GetBytes(8));
+
+        byte[] response;
+
+        try
+        {
+            response = authority(request.Encode());
+        }
+        catch (Exception ex) when (ex is not OfficeNetException)
+        {
+            throw new OfficeNetException($"The timestamp authority could not be reached: {ex.Message}", ex);
+        }
+
+        Rfc3161TimestampToken token;
+
+        try
+        {
+            // Checks the response answers this request: the hash of this signature, this nonce.
+            token = request.ProcessResponse(response, out _);
+        }
+        catch (CryptographicException ex)
+        {
+            throw new OfficeNetException(
+                $"The timestamp authority's response does not answer the request: {ex.Message}", ex);
+        }
+
+        signer.AddUnsignedAttribute(new AsnEncodedData(new Oid(TimestampTokenOid), token.AsSignedCms().Encode()));
     }
 
     private static string OidFor(HashAlgorithmName algorithm) => algorithm.Name switch

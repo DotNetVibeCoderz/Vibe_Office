@@ -304,6 +304,53 @@ SHA-256; SHA-384 dan SHA-512 tersedia, SHA-1 tidak, karena sudah tidak aman untu
 `ReservedBytes` menentukan besar lubang tempat tanda tangannya, 8 KB secara default. Tanda tangan
 yang tidak muat ditolak, bukan dipotong.
 
+### Timestamp tepercaya
+
+```csharp
+using var http = new HttpClient();
+
+PdfSigner.Sign(pdf, certificate, "laporan-signed.pdf", new PdfSignOptions
+{
+    TimestampAuthority = request =>
+    {
+        using var content = new ByteArrayContent(request);
+        content.Headers.ContentType = new("application/timestamp-query");
+
+        using var response = http.PostAsync("https://freetsa.org/tsr", content).GetAwaiter().GetResult();
+        return response.EnsureSuccessStatusCode().Content.ReadAsByteArrayAsync().GetAwaiter().GetResult();
+    },
+});
+```
+
+Waktu tanda tangan `/M` adalah klaim penanda tangan sendiri. Timestamp adalah klaim pihak ketiga:
+otoritas RFC 3161 menandatangani hash dari nilai tanda tangan bersama waktunya, dan token itu masuk ke
+tanda tangan sebagai atribut `signature-time-stamp` — yang diminta PAdES-T. Dengan itulah sebuah tanda
+tangan bisa dibuktikan sudah ada sebelum sertifikatnya kedaluwarsa atau dicabut.
+
+Pustaka ini tidak pernah membuat request jaringan sendiri, jadi otoritasnya berupa delegasi: menerima
+request DER dan mengembalikan respons DER, dan pemanggil yang memilih otoritas, proxy, dan
+kredensialnya. Respons diperiksa terhadap request-nya — hash dari tanda tangan *ini* dan nonce yang
+baru — sebelum dilampirkan; respons yang menjawab hal lain, atau penolakan, menjadi
+`OfficeNetException`, begitu juga delegasi yang melempar exception. Dengan otoritas, lubangnya
+membesar menjadi 16 KB karena token membawa sertifikat otoritasnya, kecuali `ReservedBytes` sudah
+diatur.
+
+Membacanya kembali tidak butuh jaringan:
+
+```csharp
+if (result.Timestamp is { } when)
+{
+    Console.WriteLine($"Timestamped {when:u} by {result.TimestampCertificate?.Subject}");
+}
+```
+
+`Timestamp` hanya diisi bila token itu atas nilai tanda tangan ini dan tanda tangannya sendiri sah.
+Token yang dicomot dari tanda tangan lain — letaknya di luar byte yang ditandatangani, jadi bisa
+ditukar — membuat `Timestamp` null dan alasannya ada di `TimestampProblem`; tanda tangannya sendiri
+tetap `IsIntact`. Apakah otoritasnya tepercaya, seperti penanda tangannya, dijawab dengan membangun
+chain dari `TimestampCertificate`. Diperiksa dengan OpenSSL sebagai otoritas: `openssl ts -reply`
+menjawab request-nya, penanda tangan menerimanya, dan `openssl ts -verify` meloloskan tokennya.
+
 ### Kenapa urutannya terlihat aneh
 
 Tanda tangan mencakup rentang byte dari berkas yang sudah jadi, dan ia tidak bisa mencakup dirinya
@@ -317,10 +364,9 @@ sentinel-nya, bukan lewat posisinya, sehingga rentang yang baru yang diisi dan t
 dibiarkan utuh. Tanda tangan pertama lalu melaporkan `CoversWholeDocument = false`, dan itu jawaban
 yang jujur — memang begitulah bentuk dokumen yang ditandatangani secara bertahap.
 
-**Yang tidak dihasilkan:** timestamp tepercaya, respons pencabutan, atau arsip long-term validation.
-Itulah yang membuat sebuah tanda tangan menjadi PAdES-LTV, semuanya butuh layanan jaringan, dan
-ketiadaannya adalah sebab tanda tangan yang diperiksa bertahun-tahun lagi bisa gagal meski tidak ada
-yang diutak-atik.
+**Yang tidak dihasilkan:** respons pencabutan atau arsip long-term validation (kamus DSS). Bersama
+timestamp, itulah yang membuat tanda tangan menjadi PAdES-LTV; tanpanya tanda tangan yang diperiksa
+bertahun-tahun lagi bisa gagal meski tidak ada yang diutak-atik.
 
 ## Formulir
 

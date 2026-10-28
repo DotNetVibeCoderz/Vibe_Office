@@ -1595,6 +1595,35 @@ public class DocSamples : IDisposable
     }
 
     [Fact]
+    public void PdfNet_TimestampAuthority()
+    {
+        // The doc's delegate, compiled; it is not called, because CI has no network. TimestampTests
+        // runs a signature through an authority built in the test.
+        using var http = new HttpClient();
+
+        var options = new PdfSignOptions
+        {
+            TimestampAuthority = request =>
+            {
+                using var content = new ByteArrayContent(request);
+                content.Headers.ContentType = new("application/timestamp-query");
+
+                using var response = http.PostAsync("https://freetsa.org/tsr", content).GetAwaiter().GetResult();
+                return response.EnsureSuccessStatusCode().Content.ReadAsByteArrayAsync().GetAwaiter().GetResult();
+            },
+        };
+
+        Assert.NotNull(options.TimestampAuthority);
+
+        SignatureVerification? result = null;
+
+        if (result?.Timestamp is { } when)
+        {
+            Console.WriteLine($"Timestamped {when:u} by {result.TimestampCertificate?.Subject}");
+        }
+    }
+
+    [Fact]
     public void PdfNet_EmbeddingAFont()
     {
         // The doc example uses a real .ttf path; here the font is built so the sample runs anywhere.

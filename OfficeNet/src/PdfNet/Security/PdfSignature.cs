@@ -60,6 +60,26 @@ public sealed class SignatureVerification
     public string? Problem { get; internal set; }
 
     /// <summary>
+    /// When a timestamp authority attests the signature existed — from an RFC 3161 token that
+    /// belongs to this signature — or <c>null</c> when there is none, or none that holds.
+    /// </summary>
+    /// <remarks>
+    /// The signing time in the dictionary is the signer's own claim; this is a third party's. As
+    /// with <see cref="Certificate"/>, whether that authority is one you trust is a policy answer —
+    /// <see cref="TimestampCertificate"/> is there to answer it with.
+    /// </remarks>
+    public DateTimeOffset? Timestamp { get; internal set; }
+
+    /// <summary>The timestamp authority's certificate, when the token held.</summary>
+    public X509Certificate2? TimestampCertificate { get; internal set; }
+
+    /// <summary>
+    /// Why a timestamp token that is present does not hold — it is over other bytes, or its own
+    /// signature fails. The signature itself may still be intact.
+    /// </summary>
+    public string? TimestampProblem { get; internal set; }
+
+    /// <summary>
     /// Whether the signature is intact and covers everything.
     /// </summary>
     /// <remarks>
@@ -304,6 +324,11 @@ public static class PdfSignatures
             result.Certificate = detached.SignerInfos.Count > 0
                 ? detached.SignerInfos[0].Certificate
                 : null;
+
+            if (detached.SignerInfos.Count > 0)
+            {
+                CheckTimestamp(detached.SignerInfos[0], result);
+            }
         }
         catch (CryptographicException ex)
         {
@@ -312,6 +337,34 @@ public static class PdfSignatures
         }
 
         return result;
+    }
+
+    /// <summary>Reads and checks an RFC 3161 token in the signer's unsigned attributes.</summary>
+    private static void CheckTimestamp(SignerInfo signer, SignatureVerification result)
+    {
+        var attribute = signer.UnsignedAttributes.Cast<CryptographicAttributeObject>()
+            .FirstOrDefault(a => a.Oid.Value == PdfSigner.TimestampTokenOid);
+
+        if (attribute is null || attribute.Values.Count == 0)
+        {
+            return;
+        }
+
+        if (!Rfc3161TimestampToken.TryDecode(attribute.Values[0].RawData, out var token, out _))
+        {
+            result.TimestampProblem = "The timestamp token could not be read.";
+            return;
+        }
+
+        // Over this signature's value, and signed by the authority it names.
+        if (!token.VerifySignatureForSignerInfo(signer, out var authority))
+        {
+            result.TimestampProblem = "The timestamp token is not over this signature, or its own signature fails.";
+            return;
+        }
+
+        result.Timestamp = token.TokenInfo.Timestamp;
+        result.TimestampCertificate = authority;
     }
 
     /// <summary>Checks every signature in a file.</summary>

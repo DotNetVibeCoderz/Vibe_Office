@@ -638,8 +638,8 @@ memeriksa bagaimana pustaka memperlakukan `w:ins` sebelum menulis fitur track ch
 - [x] PdfNet: lampiran — ekstrak dan tambah (`/EmbeddedFiles`, `/AF` untuk PDF/A-3)
 - [x] PdfNet: metadata XMP, sepakat dengan `/Info` sampai detik
 - [x] PdfNet: PDF/A-2b dan PDF/A-3b, diverifikasi veraPDF; ekspor Word ke PDF/A dengan font tersemat
-- [ ] PdfNet: timestamp RFC 3161 lewat delegasi pemanggil; verifikasi token yang ada
-- [ ] Rendering: keluaran TIFF multi-halaman
+- [x] PdfNet: timestamp RFC 3161 lewat delegasi pemanggil; verifikasi token yang ada
+- [x] Rendering: keluaran TIFF multi-halaman
 
 Sudah ada dan **tidak** perlu dikerjakan, walaupun tercantum di `reference.md`: copy/move/hide
 worksheet, proteksi sheet, data validation, autofilter, pivot, hyperlink sel, `MEDIAN`/`TODAY`/

@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 are both complete, and 1.3.0 is on NuGet**; v2.0 is in progress — the HTML engine now lives in
 `OfficeNet.Core.Html`, and `WordNet.Import.HtmlToWord` and `WordNet.Export.WordToHtml` exist. All six
 libraries build clean with zero warnings: `OfficeNet.Core`, `PdfNet`, `WordNet`, `ExcelNet`,
-`PowerPointNet`, `OfficeNet` (meta), `OfficeNet.Rendering`, and the MCP server `OfficeNet.Mcp`. **1746 tests pass** across eight
+`PowerPointNet`, `OfficeNet` (meta), `OfficeNet.Rendering`, and the MCP server `OfficeNet.Mcp`. **1747 tests** (four veraPDF checks skip unless `VERAPDF` is set) across eight
 test projects.
 
 Everything the plan listed through v1.1 exists: the libraries, tests with independent structural

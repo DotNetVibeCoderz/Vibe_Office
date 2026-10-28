@@ -134,8 +134,8 @@ seberapa sering ketiadaannya menghentikan pekerjaan nyata.
   yang nyata. Penandatanganan menghasilkan `adbe.pkcs7.detached` dengan SHA-256; placeholder dicari
   lewat nilai sentinel-nya sehingga dokumen yang sudah bertanda tangan bisa ditandatangani lagi
   tanpa merusak yang lama. Diverifikasi dengan openssl, bukan hanya dengan pembacanya sendiri.
-  Yang tidak dihasilkan dan didokumentasikan: timestamp tepercaya dan arsip LTV, yang butuh layanan
-  jaringan.
+  Timestamp tepercaya RFC 3161 menyusul di v2.1 (lihat di bawah). Yang tidak dihasilkan dan
+  didokumentasikan: respons pencabutan dan arsip LTV.
 
 ---
 
@@ -832,11 +832,13 @@ melengkapi.
   `WriteXmpMetadata`, yang membangkitkan paket dari `/Info` *setelah* penyimpanan mencap tanggalnya
   — satu-satunya cara agar keduanya sepakat sampai detik dan zona waktu, seperti yang diperiksa PDF/A.
   pypdf membaca judul, pembuat, dan tanggalnya.
-- [ ] **Timestamp tepercaya (RFC 3161).** Sebelumnya ditolak karena butuh layanan jaringan. Bisa
-  tanpa membuat pustaka ini melakukan request sendiri: pemanggil memberi delegasi
-  `Func<byte[], byte[]>` yang mengirim permintaan ke TSA-nya, sama seperti `ImageResolver` di
-  konversi HTML. Verifikasi token timestamp yang sudah ada di berkas tidak butuh jaringan sama
-  sekali.
+- [x] **Timestamp tepercaya (RFC 3161) — selesai.** `PdfSignOptions.TimestampAuthority`
+  (`Func<byte[], byte[]>`: request DER masuk, respons DER keluar) — pustaka tetap tidak membuat
+  request sendiri. Respons diperiksa terhadap hash dan nonce request-nya sebelum token dipasang
+  sebagai atribut `signature-time-stamp`; lubang tanda tangan membesar ke 16 KB. Verifikasi mengisi
+  `Timestamp`/`TimestampCertificate`, dan token yang dicomot dari tanda tangan lain dilaporkan di
+  `TimestampProblem`. Diuji dengan TSA buatan di tes dan secara manual dengan `openssl ts -reply` /
+  `ts -verify`.
 
 ### OfficeNet.Rendering
 
