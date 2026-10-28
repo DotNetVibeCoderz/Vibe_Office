@@ -686,9 +686,16 @@ melengkapi.
   lain tertangkap setelah dua tes dipertajam: atribut `xml:space` diperiksa langsung di XML, karena
   pembaca .NET menyimpan spasi tepi meski tanpa atribut itu sedangkan Excel tidak. openpyxl membaca
   ketiga run beserta formatnya. Ekspor PDF masih menggambar teks dengan font sel.
-- [ ] **Sort range.** Menurut satu atau beberapa kolom, naik/turun, dengan urutan tipe Excel (angka
-  < teks < boolean < error, kosong selalu terakhir) dan perbandingan teks tak peka huruf besar.
-  Formula yang ikut berpindah **tidak** ditulis ulang referensinya di versi pertama — dicatat.
+- [x] **Sort range — selesai.** `Worksheet.Sort(range, keys)`: urutan tipe Excel, kosong selalu di
+  bawah ke arah mana pun, teks tak peka huruf besar, stabil, menolak sel gabungan. Keputusan
+  semula — formula yang ikut berpindah tidak ditulis ulang — **dibatalkan**: tanpa itu baris berisi
+  `=C2*D2` yang pindah ke baris 5 menghitung baris lain, salah tanpa tanda. Referensi baris relatif
+  kini digeser seperti Excel menyalin (`$` tetap terkunci, teks berkutip dan `LOG10(` tidak
+  tersentuh), dan penggesernya publik sebagai `FormulaText.ShiftRows`.
+
+  Sembilan mutasi; satu lolos — sort tak stabil — karena `List.Sort` memakai insertion sort, yang
+  kebetulan stabil, untuk array ≤ 16 elemen. Tes empat baris tidak mungkin membedakannya; tes 200
+  baris penuh nilai kembar kini menangkapnya.
 - [ ] **Conditional formatting lanjutan.** `duplicateValues`/`uniqueValues` (deteksi duplikat dari
   `reference.md`), `top10`, `aboveAverage`, `containsText`, `expression`, dan icon set. Plus
   `FindDuplicates(range)` di sisi API untuk yang butuh hasilnya, bukan warnanya.

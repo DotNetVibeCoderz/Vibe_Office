@@ -295,6 +295,22 @@ is the sheet itself and the position is worked out on save, so `MoveSheet` canno
 to the sheet that took its slot. Renaming a sheet rewrites the names that refer to it; copying one
 copies its local names; removing one removes them.
 
+## Sorting
+
+```csharp
+sheet.Sort("A2:E100", new SortKey("C", Descending: true), new SortKey("A"));
+```
+
+Rows of the range move as a whole — values, formulas, styles, comments, links — in Excel's order:
+numbers (and dates), then text ignoring case, then logical values, then errors, and **blank cells
+last in either direction**. The sort is stable, so ties keep their order. Leave the header row out
+of the range. A range with merged cells is refused, as Excel refuses it.
+
+A moved formula's relative row references move with it: `=B2*C2*$F$1` landing on row 5 becomes
+`=B5*C5*$F$1`, so each total still multiplies its own row. `FormulaText.ShiftRows` does the same for
+a formula you copy yourself. Formulas elsewhere that point into the sorted range are not rewritten,
+which is also what Excel does.
+
 ## Layout
 
 ```csharp

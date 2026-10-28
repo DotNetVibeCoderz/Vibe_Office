@@ -696,6 +696,20 @@ public class DocSamples : IDisposable
     }
 
     [Fact]
+    public void ExcelNet_Sorting()
+    {
+        using var workbook = Workbook.Create();
+        var sheet = workbook[0];
+        sheet.WriteRow("A2", "b", 1, 5);
+        sheet.WriteRow("A3", "a", 1, 9);
+
+        sheet.Sort("A2:E100", new SortKey("C", Descending: true), new SortKey("A"));
+
+        Assert.Equal("a", sheet["A2"].Text);
+        Assert.Equal("B5*C5*$F$1", ExcelNet.Formulas.FormulaText.ShiftRows("B2*C2*$F$1", 3));
+    }
+
+    [Fact]
     public void ExcelNet_Lookups()
     {
         using var workbook = Workbook.Create("Data");

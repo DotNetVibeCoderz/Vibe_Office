@@ -691,6 +691,22 @@ public sealed class Worksheet
 
     internal IReadOnlyDictionary<CellReference, CellData> RawCells => _cells;
 
+    /// <summary>
+    /// Sorts the rows of a range by one or more columns, the way Excel does: numbers, then text,
+    /// then logical values, then errors, blanks last in either direction.
+    /// </summary>
+    /// <example><c>sheet.Sort("A2:E100", new SortKey("C", Descending: true), new SortKey("A"));</c></example>
+    /// <remarks>
+    /// Whole rows of the range move — values, formulas, styles, comments, links — and a moved
+    /// formula's relative row references move with it. Leave the header row out of the range.
+    /// </remarks>
+    /// <exception cref="OfficeNetException">The range contains merged cells.</exception>
+    public Worksheet Sort(string range, params SortKey[] keys)
+    {
+        Sorting.Sort(this, CellRangeReference.Parse(range), keys);
+        return this;
+    }
+
     /// <summary>Removes a cell entirely, including its style.</summary>
     public void Clear(CellReference reference)
     {

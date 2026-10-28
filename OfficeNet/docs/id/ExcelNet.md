@@ -303,6 +303,23 @@ adalah sheet itu sendiri dan posisinya dihitung saat menyimpan, sehingga `MoveSh
 menyerahkan area cetak ke sheet yang menempati posisinya. Mengganti nama sheet menulis ulang nama
 yang merujuknya; menyalin sheet ikut menyalin nama lokalnya; menghapus sheet menghapusnya.
 
+## Mengurutkan
+
+```csharp
+sheet.Sort("A2:E100", new SortKey("C", Descending: true), new SortKey("A"));
+```
+
+Baris-baris range berpindah utuh — nilai, formula, gaya, komentar, tautan — dalam urutan Excel:
+angka (dan tanggal), lalu teks tanpa membedakan huruf besar, lalu nilai logika, lalu error, dan
+**sel kosong selalu di bawah ke arah mana pun**. Pengurutannya stabil, jadi nilai kembar
+mempertahankan urutannya. Jangan sertakan baris header di range. Range yang berisi sel gabungan
+ditolak, seperti Excel menolaknya.
+
+Referensi baris relatif di formula yang berpindah ikut berpindah: `=B2*C2*$F$1` yang mendarat di
+baris 5 menjadi `=B5*C5*$F$1`, sehingga setiap total tetap mengalikan barisnya sendiri.
+`FormulaText.ShiftRows` melakukan hal yang sama untuk formula yang Anda salin sendiri. Formula di
+tempat lain yang menunjuk ke range yang diurutkan tidak ditulis ulang, sama seperti Excel.
+
 ## Tata letak
 
 ```csharp
