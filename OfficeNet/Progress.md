@@ -583,6 +583,62 @@ di 1,45–1,74 us dari 4.000 sampai 128.000 — algoritmanya linear, yang bising
 karena kasus besar membengkak dari 98 ms ke 705 ms di bawah beban. Ambangnya dinaikkan ke 120, masih
 separuh dari ~256 yang dihasilkan regresi kuadratik, dengan buktinya ditulis di komentar tesnya.
 
+## v2.1 — celah fitur dari `reference.md` (belum dimulai)
+
+Fitur GemBox dicocokkan dengan kode pada 28 Oktober 2026. Alasan dan urutannya di
+[Plan.md](Plan.md#v21--celah-fitur-terhadap-pustaka-komersial); di sini hanya checklist-nya.
+
+**Ditemukan saat pencocokan — bug, bukan celah:** `Cell.Comment` di ExcelNet disimpan di model
+tetapi tidak pernah ditulis ke berkas maupun dibaca kembali. Komentar hilang diam-diam saat disimpan.
+**Sudah diperbaiki**, bersama bug kembarannya: hyperlink ditulis tapi tak pernah dibaca.
+
+**Bug kedua dengan bentuk yang sama, di WordNet:** run di dalam tracked insertion tidak terlihat
+oleh `Paragraph.Runs`, sehingga teks sisipan hilang dari setiap keluaran. Ditemukan saat
+memeriksa bagaimana pustaka memperlakukan `w:ins` sebelum menulis fitur track changes. **826 tes.**
+
+- [x] ExcelNet: komentar sel ditulis dan dibaca (`comments` + VML `legacyDrawing`); hyperlink sel
+      kini juga dibaca kembali (sebelumnya hilang saat buka-lalu-simpan); `WithComment`/`WithHyperlink`
+- [x] WordNet: track changes — baca, accept/reject, tulis. Sekaligus memperbaiki: teks di dalam
+      `w:ins`, `w:sdt`, dan `w:fldSimple` sebelumnya **hilang** dari `Text`, PDF, dan HTML;
+      `w:pPr` bisa tertulis setelah `w:ins`; settings ditulis di luar urutan skema
+- [x] WordNet: proteksi dokumen + range yang boleh diedit (`permStart`/`permEnd`); hash Word
+      diverifikasi dengan vektor uji ECMA-376 dan implementasi Python terpisah
+- [x] WordNet: `AppendDocument` dengan pemetaan ulang gaya, penomoran (termasuk `w:nsid`), relasi,
+      id catatan/komentar/bookmark/revisi/drawing. Sekaligus memperbaiki: gambar dan tautan di
+      header/footer/catatan sebelumnya **selalu rusak** (relasinya di part yang salah)
+- [x] WordNet: memecah dokumen per section / heading / page break eksplisit. Sekaligus memperbaiki:
+      `AddSection` membuat semua section berbagi satu header; ekspor PDF tak mengikuti header warisan
+- [x] WordNet: mail merge bersarang — `FillTemplate`: baris tabel/blok/inline berulang, kondisional,
+      path bertitik, format per culture; format karakter dipertahankan (`MailMerge` lama meratakannya)
+- [x] WordNet: watermark sebagai shape di header, bukan hanya opsi ekspor PDF; ekspor PDF ikut menggambarnya
+- [ ] WordNet: chart di dokumen (memakai `ChartData`/`ChartXml` dari Core)
+- [ ] WordNet: Markdown ↔ DOCX, TXT → DOCX
+- [ ] ExcelNet: named range (`definedNames`), termasuk dipakai mesin formula
+- [ ] ExcelNet: Excel Table (`ListObject`)
+- [ ] ExcelNet: rich text di sel — saat ini format dalam sel hilang saat buka-lalu-simpan
+- [ ] ExcelNet: sort range dengan urutan tipe Excel
+- [ ] ExcelNet: conditional formatting `duplicateValues`, `top10`, `aboveAverage`, `expression`,
+      icon set; `FindDuplicates`
+- [ ] ExcelNet: fungsi finansial `PMT`, `PV`, `FV`, `NPER`, `RATE`, `NPV`, `IRR`, `XNPV`, `XIRR`
+- [ ] ExcelNet: XLSX ↔ HTML
+- [ ] ExcelNet: round-trip XLSM terverifikasi (content type macro-enabled bertahan)
+- [ ] Core: chart kombinasi + sumbu sekunder
+- [ ] Core: enkripsi Agile ECMA-376 (CFB minimal) untuk .docx/.xlsx/.pptx
+- [ ] PowerPointNet: garis, panah, konektor (`p:cxnSp`)
+- [ ] PowerPointNet: custom geometry (`a:custGeom`), ikut digambar di ekspor PDF
+- [ ] PowerPointNet: objek OLE tersemat dengan pratinjau
+- [ ] PdfNet: membuat field AcroForm (text, checkbox, radio, combo, list, button)
+- [ ] PdfNet: lampiran — ekstrak dan tambah (`/EmbeddedFiles`)
+- [ ] PdfNet: metadata XMP
+- [ ] PdfNet: PDF/A-2b dan PDF/A-3b, diverifikasi veraPDF
+- [ ] PdfNet: timestamp RFC 3161 lewat delegasi pemanggil; verifikasi token yang ada
+- [ ] Rendering: keluaran TIFF multi-halaman
+
+Sudah ada dan **tidak** perlu dikerjakan, walaupun tercantum di `reference.md`: copy/move/hide
+worksheet, proteksi sheet, data validation, autofilter, pivot, hyperlink sel, `MEDIAN`/`TODAY`/
+lookup, duplikat/hapus/urut ulang slide, layout & master, media, doughnut/scatter, merge/split/
+pindah/hapus halaman PDF, enkripsi PDF, tanda tangan PDF beserta validasinya, highlight/note/link.
+
 ## Yang masih tersisa
 
 **v1.1 selesai seluruhnya.** Setiap butir di bagian v1.1 [Plan.md](Plan.md) sudah dikerjakan, kecuali
@@ -593,6 +649,6 @@ diukur lalu **ditolak** dengan angkanya: lexer PdfNet hanya 13,6x ukuran berkas 
 paket linear di ~150x keluarannya. Parser XML pull tetap jadi gagasan; kasus hanya-baca yang paling
 nyata — ekstraksi teks — sudah ditangani tanpa parser kedua.
 
-Yang tersisa adalah v2.0, dan tiga batasan yang dicatat sebagai batasan, bukan sebagai bug:
+Yang tersisa adalah v2.0, celah fitur v2.1 di atas, dan tiga batasan yang dicatat sebagai batasan, bukan sebagai bug:
 penataan aksara kompleks (GSUB/GPOS) di penulis font, tiling pattern di renderer, serta soft mask
 dan transparency group.

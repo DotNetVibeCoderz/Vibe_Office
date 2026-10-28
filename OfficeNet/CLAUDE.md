@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 are both complete, and 1.3.0 is on NuGet**; v2.0 is in progress — the HTML engine now lives in
 `OfficeNet.Core.Html`, and `WordNet.Import.HtmlToWord` and `WordNet.Export.WordToHtml` exist. All six
 libraries build clean with zero warnings: `OfficeNet.Core`, `PdfNet`, `WordNet`, `ExcelNet`,
-`PowerPointNet`, `OfficeNet` (meta) and `OfficeNet.Rendering`. **729 tests pass** across seven
+`PowerPointNet`, `OfficeNet` (meta) and `OfficeNet.Rendering`. **826 tests pass** across seven
 test projects.
 
 Everything the plan listed through v1.1 exists: the libraries, tests with independent structural
@@ -121,6 +121,13 @@ Every item here cost real debugging time. None are hypothetical.
 - **The date epoch is 1899-12-30** and serial 60 is the phantom 29 Feb 1900.
 - **Excel's `ROUND` is away-from-zero**, not banker's; `MOD` takes the divisor's sign; `-2^2` is 4
   (unary minus binds tighter than `^`).
+- **A cell comment is two parts.** `xl/commentsN.xml` holds the text; a VML drawing referenced by
+  `legacyDrawing` displays it. Without the VML the file is valid and Excel shows nothing. VML shape
+  ids are unique across the *workbook* (`o:idmap` blocks of 1024), so `Workbook.FlushToPackage`
+  hands blocks out — per-sheet numbering collides. `SheetComments` must run before `SheetXml.Write`.
+- **`Cell` is a `readonly struct` from the indexer**, so `sheet["A1"].Comment = x` does not
+  compile. Fluent `WithComment`/`WithHyperlink` exist for that reason. For a long time comments were
+  never written *and* hyperlinks never read, and no test noticed because no test could set them.
 - **Column width is "characters of the digit zero"**, not a length — see `ExcelToPdf.ColumnPoints`.
 
 ### PdfNet
@@ -143,6 +150,45 @@ Every item here cost real debugging time. None are hypothetical.
 - **A JPEG needs no conversion (DCTDecode *is* the file), and neither does a PNG** — Flate with
   `/Predictor 15` is exactly PNG's own compression, so IDAT transfers byte for byte. Only alpha
   needs real work.
+
+### Tracked changes and paragraph content
+
+- **A paragraph's runs are not its direct `w:r` children.** They also sit inside `w:hyperlink`,
+  `w:ins`, `w:moveTo`, `w:sdt/w:sdtContent`, `w:fldSimple`, `w:smartTag`, `w:customXml`, nested.
+  Every consumer (`Runs`, `ExtractText`, PDF, HTML) goes through `ParagraphContent.Runs`, which
+  yields the *final* view and skips `w:del`/`w:moveFrom`. A new exporter that walks
+  `Element.Elements()` itself will silently drop every tracked insertion — that bug shipped once.
+- **`w:ins` means three things by parent:** around runs it is text; in `w:pPr/w:rPr` it is the
+  paragraph mark; in `w:trPr` it is the row. `RevisionCollection.Classify` decides by parent.
+- **Joining paragraphs must move nodes, not copy them.** LINQ to XML clones an element that still
+  has a parent when it is added elsewhere; pending `Revision` objects then point at a detached copy.
+  `Revision.JoinWithNext` detaches first.
+- **`w:pPr` must be a paragraph's first child**, and `SetOrdered` only knows that if the successor
+  list names every possible sibling — `Paragraph.ParagraphOrder` includes `w:ins`/`w:del`/`w:sdt`
+  for that reason.
+- **Word's protection hash is not Excel's.** The password becomes Word's 1997 32-bit key first;
+  SHA-512 runs over that key's *reversed* hex digits in UTF-16. `tools/word_protection_hash.py` is
+  the independent implementation the tests compare against — keep it independent.
+- **`settings.xml` is a schema sequence.** Write through `DocumentSettings.Set`/`Ensure`, never
+  `AddFirst`; `trackRevisions` and `documentProtection` sit between `revisionView` and
+  `defaultTabStop`.
+
+- **A relationship belongs to the part the `r:` attribute sits in.** A picture in a header needs
+  its relationship on the header part. `WordDocument.OwnerPartOf(element)` finds that part; every
+  new `AddImage`/`AddHyperlinkRelationship` call site must pass it. Header pictures shipped broken
+  for a long time because the validator only checked `document.xml` — it now checks every part.
+- **`AppendDocument` renumbers lazily** (`Merging/DocumentMerger`). Lists need a fresh `w:nsid`,
+  because Word merges lists by nsid; WordNet's own lists write none, so a test fixture must plant
+  one or it proves nothing. After a merge, `SeedIdCounters` must run or the next picture reuses a
+  `docPr` id.
+
+- **A section without a header reference inherits the previous one's** (Word's Link to Previous).
+  `AddSection` writes no references for that reason, the PDF exporter walks back through earlier
+  sections, and `SplitBySection` copies inherited references into the part it cuts loose.
+
+- **`ReplaceTextAcrossRuns`/`MailMerge` flatten the paragraph to the first run's formatting.** The
+  docs once claimed otherwise. `FillTemplate` (`Templates/TemplateEngine`) isolates each token into
+  its own run first and never flattens; use it as the model for any new text substitution.
 
 ### Word → PDF export
 

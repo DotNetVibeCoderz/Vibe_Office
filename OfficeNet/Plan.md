@@ -479,6 +479,259 @@ sekarang jauh lebih sempit daripada saat v1.3 dimulai.
 
 ---
 
+## v2.1 — Celah fitur terhadap pustaka komersial
+
+Daftar fitur GemBox.Document/Spreadsheet/Presentation/Pdf (`reference.md`) dicocokkan dengan kode
+yang ada pada 28 Oktober 2026 — dengan grep atas API publik dan penulis XML-nya, bukan dengan
+membaca README. Yang tercantum di sini adalah yang **belum ada dan bisa diwujudkan tanpa melanggar
+keempat prinsip di atas**. Yang tidak bisa dicatat di bagian "Yang sengaja tidak akan dikerjakan".
+
+Urutannya: kehilangan data dulu, lalu yang paling sering menghentikan pekerjaan nyata, lalu yang
+melengkapi.
+
+### Didahulukan: kehilangan data diam-diam
+
+- [x] **Komentar sel ExcelNet tidak pernah ditulis — selesai.** `Cell.Comment` disimpan di model
+  tetapi `SheetXml` tidak menulis part `comments` maupun VML-nya, dan tidak membacanya kembali.
+  Sekarang `SheetComments` menulis keduanya plus `legacyDrawing`, membacanya saat dibuka (termasuk
+  komentar rich text buatan Excel, tanpa bacaan fonetik `rPh`), dan menghapus keduanya bila komentar
+  terakhir dihapus — VML yang berisi selain catatan dibiarkan. Id shape VML dibagikan per blok
+  `o:idmap` di tingkat workbook, karena keunikannya lintas sheet, bukan per sheet.
+
+  **Tiga temuan di jalan.** Pertama, **hyperlink juga hilang**: ditulis tetapi tidak pernah dibaca,
+  jadi buka-lalu-simpan menghapus setiap tautan. Sekarang dibaca, termasuk `ref` berupa range dan
+  tautan internal (`#Sheet2!B2` → atribut `location`, bukan relasi). Kedua, **`sheet["A1"].Comment =
+  …` tidak bisa dikompilasi** — `Cell` adalah `readonly struct` dari indexer, jadi setter-nya hanya
+  terjangkau lewat variabel lokal. Itu mungkin sebabnya bug ini tak pernah ketahuan; `WithComment`
+  dan `WithHyperlink` kini ada. Ketiga, `System.Security.Cryptography.Pkcs` 10.0.0 kini punya
+  advisory **high** (GHSA-846f-f764-76mx), yang dengan `-warnaserror` membuat CI merah; dinaikkan ke
+  10.0.14.
+
+  Validator kini menolak part komentar tanpa `legacyDrawing` dan id shape VML ganda lintas sheet.
+  Empat mutasi — tanpa `legacyDrawing`, tanpa pembaca hyperlink, satu blok idmap untuk semua sheet,
+  `rPh` ikut terbaca — masing-masing digagalkan tes; yang keempat baru setelah fixture-nya diberi
+  `rPh`. openpyxl membaca kembali komentar di dua sheet, tautan eksternal, dan `location` internal.
+  Yang **belum** dibuktikan: tampilan catatannya di Excel sendiri — tidak ada Excel di mesin ini.
+
+### WordNet
+
+- [x] **Track changes — selesai.** `WordDocument.Revisions` membaca sepuluh jenis revisi di body,
+  header, footer, catatan, dan komentar; `Accept`/`Reject` per revisi dan `AcceptAll`/`RejectAll`;
+  `AddTrackedRun`, `Run.TrackDeletion`/`TrackInsertion`, `Paragraph.TrackDeletion` (run beserta
+  tanda paragrafnya), dan `TrackRevisions` untuk sakelar Word.
+
+  **Pemeriksaan "entah bagaimana" itu menemukan bug yang lebih besar dari fiturnya:** run di dalam
+  `w:ins` sama sekali tidak terlihat. `Paragraph.Runs` hanya turun ke `w:hyperlink`, jadi setiap
+  sisipan terlacak — juga isi content control (`w:sdt`) dan `w:fldSimple` — hilang dari `Text`,
+  `ExtractText`, ekspor PDF, dan ekspor HTML. Keempatnya kini lewat satu penelusur,
+  `ParagraphContent`, yang menetapkan **tampilan final**: sisipan tampil, hapusan tidak.
+
+  Satu nama elemen, tiga arti: `w:ins` di sekeliling run adalah teks, di dalam `w:pPr/w:rPr` adalah
+  pemisah paragraf, di dalam `w:trPr` adalah baris. Klasifikasinya menurut induk, dan menerima tanda
+  paragraf yang dihapus menggabungkan isinya ke paragraf berikut, yang mempertahankan propertinya
+  sendiri — seperti Word. Penggabungan itu harus **memindahkan** node, bukan menyalinnya: revisi
+  yang masih tertunda di isi yang dipindah memegang node itu, dan LINQ to XML diam-diam menyalin
+  elemen yang masih punya induk.
+
+  **Dua cacat skema lama ikut ditemukan.** `w:pPr` bisa tertulis *setelah* `w:ins` karena daftar
+  penerusnya tidak menyebut `w:ins`; dan `updateFields`/`evenAndOddHeaders` ditulis dengan
+  `AddFirst` di depan `zoom`, padahal `CT_Settings` adalah sequence. Settings kini lewat
+  `DocumentSettings` dengan urutan skema lengkap. Validator kini memeriksa `w:pPr` sebagai anak
+  pertama, `w:t` tidak di dalam hapusan (dan `w:delText` hanya di sana), id revisi unik, dan urutan
+  settings.
+
+  Tiga belas mutasi; sepuluh langsung tertangkap. Tiga lolos dan masing-masing membetulkan
+  sesuatu: komentar yang mengklaim urutan mundur itu wajib ternyata keliru (yang wajib adalah
+  pemindahannya), fixture `pPrChange` tak punya `rPr` tanda paragraf, dan tes id hanya menambah satu
+  revisi sehingga tak mungkin bertabrakan. Ketiganya kini tertangkap. python-docx membuka hasilnya.
+
+  Yang belum: `w:cellIns`/`w:cellDel`/`w:cellMerge`, perubahan penomoran, dan ekspor PDF dengan
+  markup revisi (coretan/garis bawah berwarna) — ekspor sekarang selalu tampilan final.
+- [x] **Proteksi dokumen dan range yang boleh diedit — selesai.** `Protect`/`Unprotect`,
+  `Protection.VerifyPassword`, `AllowEditing(first, last, editor)`, dan `EditableRanges`. Empat
+  pembatasan; `TrackedChanges` sekaligus menyalakan `TrackRevisions`.
+
+  **Hash-nya bukan hash Excel**, dan di situlah jebakannya. Word lebih dulu menurunkan password ke
+  kunci 32-bit skema Word 1997 (word tinggi dari encryption matrix, word rendah dari XOR verifier),
+  menulis byte kunci itu terbalik sebagai delapan digit hex, baru menjalankan SHA-512 bersalt atas
+  UTF-16 digit itu. Meng-hash password langsung menghasilkan berkas yang terproteksi dengan benar
+  tapi menolak password yang benar. Algoritmanya diambil dari ECMA-376 Part 4 §2.15.1.28 dan
+  dibandingkan dengan Apache POI; vektor uji spesifikasinya sendiri ("Example" → `0x64CEED7E` →
+  `7EEDCE64`) menjadi tes, dan hash berulangnya dicocokkan dengan
+  `tools/word_protection_hash.py` yang ditulis terpisah dari kode pustaka.
+
+  **POI berbeda dari spesifikasi untuk karakter di atas 0x7F**: ia meng-XOR byte bertanda Java ke
+  dalam `short`, sehingga karakter seperti `é` diperluas tandanya dan menghasilkan kunci lain. Di
+  sini byte-nya tak bertanda, sesuai spesifikasi. Mana yang dipakai Word untuk karakter non-ASCII
+  **belum dibuktikan** — tidak ada Word di mesin ini.
+
+  `VerifyPassword` mengembalikan `null`, bukan `false`, untuk skema yang tidak diimplementasikan
+  (atribut gaya ISO `algorithmName`, atau MD5), supaya berkas produsen lain tidak dinyatakan salah
+  password padahal tidak ada yang memeriksa. Tujuh mutasi, ketujuhnya tertangkap.
+- [x] **Menggabungkan dokumen — selesai.** `AppendDocument(source, AppendOptions)` dengan
+  `SectionJoin` (halaman baru, continuous, tanpa break) dan `StyleConflict` (gaya target, atau
+  salin gaya sumber yang berbeda dengan id baru). Semua dipetakan **malas** — gaya atau daftar baru
+  disalin saat pertama dirujuk — sehingga hanya yang dipakai ikut, dan header serta catatan yang
+  disalin mendapat perlakuan yang sama dengan body: `r:id` per pasangan part, gaya, `numId`/
+  `abstractNumId`, id catatan/komentar, id revisi/bookmark/permission, nama bookmark (beserta anchor
+  tautan internalnya), `wp:docPr`, dan `w14:paraId`.
+
+  **`w:nsid` adalah jebakan yang tidak terlihat.** Word menentukan dua daftar itu daftar yang sama
+  menurut `nsid`, bukan id, dan dua dokumen dari `Normal.dotm` yang sama sering berbagi satu. Salinan
+  yang mempertahankannya melanjutkan penomoran target. Daftar buatan WordNet sendiri tidak menulis
+  `nsid`, jadi tes pertamanya lulus dengan mutasi itu — fixture-nya kini menanam nsid bersama
+  seperti berkas Word sungguhan.
+
+  **Bug lama yang ditemukan di jalan: setiap gambar dan tautan di header/footer rusak.**
+  `Run.AddPicture` dan `Paragraph.AddHyperlink` selalu menaruh relasinya di part dokumen, padahal
+  `r:embed` di header di-resolve terhadap relasi header — yang tidak punya berkas `.rels` sama
+  sekali. Validator hanya memeriksa `document.xml`, jadi tak ada yang melihat. Sekarang relasi
+  dibuat di part pemilik elemennya (`OwnerPartOf`), dan validator memeriksa setiap part Word.
+  Ditemukan karena tes gabungan memeriksa relasi header, dan **sumbernya** sudah gagal.
+
+  Dua cacat lain: penggabung sendiri sempat menulis `w:pPr` setelah run (jebakan `GetOrCreate`
+  dengan daftar urutan satu nama, persis yang tercatat di CLAUDE.md), dan penghitung id drawing
+  dokumen tidak tahu id yang dibagikan penggabung, sehingga `AddPicture` berikutnya bisa memakai id
+  yang sama — kini disemai ulang lintas header juga. Enam belas mutasi; tiga lolos karena fixture
+  terlalu bersih (tanpa nsid, tanpa gaya default yang bentrok, tanpa section di tengah sumber), dan
+  ketiganya kini tertangkap. python-docx membaca tiga section dengan header masing-masing.
+
+  Yang tidak ikut: balasan komentar berutas (`commentsExtended`), dan field `REF`/`PAGEREF` yang
+  menyebut bookmark yang diganti namanya.
+- [x] **Memecah dokumen — selesai.** `SplitBySection`, `SplitByHeading(level)`,
+  `SplitAtPageBreaks`. Kebalikan cara kerja penggabung, dengan sengaja: setiap bagian bermula dari
+  salinan utuh sumber lalu dipotong, sehingga tak ada rujukan yang bisa salah, kemudian yang tak
+  terpakai dipangkas — gambar, header, footnote, komentar, serta bookmark dan range komentar yang
+  terbelah batas. Break di tengah paragraf memecah paragrafnya. Pecah lalu gabung kembali
+  menghasilkan teks yang sama. Per *halaman* tetap tidak ada: itu keputusan mesin layout Word.
+
+  **Bug lama yang ditemukan: `AddSection` menyalin referensi header**, sehingga semua section
+  berbagi satu part dan menulis header section baru menimpa header section lama — tanpa cara untuk
+  memisahkannya. Word mewujudkan "Link to Previous" dengan *tidak menulis* referensi. Sekarang
+  section baru mewarisi sampai `GetHeader()` dipanggil padanya. Agar itu tidak merusak yang lain,
+  ekspor PDF kini mencari header ke section sebelumnya (sebelumnya hanya membaca referensi section
+  terakhir), dan pemecah menuliskan referensi warisan ke bagian yang dipotong lepas dari section
+  asalnya. Ini **perubahan perilaku**: kode yang sengaja mengandalkan header bersama setelah
+  `AddSection` kini mendapat header terpisah begitu ia menulis ke section baru. Sebelas mutasi,
+  semuanya tertangkap.
+- [x] **Mail merge bersarang / region berulang — selesai.** `FillTemplate(data, TemplateOptions)`:
+  field dengan path bertitik dan format .NET (`{{total:N2}}` dalam culture pilihan), bagian
+  berulang `{{#x}}…{{/x}}`, bagian terbalik `{{^x}}`, `{{.}}`, bersarang dengan pencarian yang jatuh
+  ke konteks luar, data berupa objek/objek anonim/dictionary/daftar. Body, header, footer, dan
+  catatan semuanya diisi. **Posisi kedua tag menentukan apa yang berulang** — satu paragraf: inline;
+  baris tabel yang sama: barisnya; selain itu: rentang blok, dan paragraf yang hanya berisi tag
+  dibuang — sehingga template tidak butuh markup tambahan. `DataTable` tidak didukung langsung;
+  `rows.Select(r => ...)` ke objek sudah cukup.
+
+  **Token dipotong dari run-nya, bukan diratakan bersama paragrafnya.** `MailMerge` lama (dan
+  `ReplaceTextAcrossRuns` di bawahnya) menulis ulang seluruh paragraf sebagai satu run berformat run
+  pertama, jadi kata tebal di sebelah `{{nama}}` kehilangan tebalnya. **Dokumentasinya mengklaim
+  sebaliknya** — "preserving each run's formatting" — dan itu tidak pernah benar; kini dikoreksi.
+  `FillTemplate` memecah run tepat di tepi setiap token lebih dulu, sehingga format setiap karakter
+  lain tetap di tempatnya.
+
+  Dua belas mutasi; sebelas tertangkap. Yang lolos membuktikan sebuah komentar salah: kode yang
+  "mencegah token yang dipertahankan diisi ulang oleh konteks luar" tidak mencegah apa pun, karena
+  konteks luar selalu subset konteks dalam. Kodenya dihapus. Satu keputusan aturan dicatat: di
+  tabel satu kolom kedua tag jatuh di paragraf yang sama dan berulang inline; tag penutup di
+  paragraf kedua sel itu mengulang barisnya.
+- [x] **Watermark sungguhan di .docx — selesai.** `AddWatermark`, `Watermark`, `RemoveWatermark`.
+  Shape `wps` di header, di belakang teks, diputar 315°, ukuran huruf menyesuaikan panjang teks
+  agar frasa panjang tidak keluar halaman. Ekspor PDF kini ikut menggambar watermark dokumen kecuali
+  `PdfExportOptions.Watermark` menyebut yang lain — sebelumnya watermark .docx akan hilang begitu
+  diekspor. Dipilih DrawingML, bukan VML WordArt yang dimasukkan dialog Word: formula
+  `shapetype` VML-nya tidak bisa diverifikasi tanpa Word, sedangkan shape `wps` sudah divalidasi di
+  pustaka ini sejak v1.1.
+
+  Hanya part header yang benar-benar dirujuk yang diberi watermark, sekali per part: memanggil
+  `GetHeader()` pada section yang mewarisi akan memberinya header kosong dan memutus pewarisannya.
+  Tujuh mutasi; satu lolos sampai ada tes untuk dua section yang merujuk satu header secara
+  eksplisit — bentuk yang ditulis `AddSection` versi lama, jadi setiap dokumen lama punya bentuk itu.
+  Yang **belum** dibuktikan: tampilannya di Word sendiri.
+- [ ] **Chart di dokumen Word.** `ChartData`/`ChartXml` sudah di Core dan sudah dipakai ExcelNet dan
+  PowerPointNet; Word hanya butuh `wp:inline` + `c:chart` dan part chart-nya. `ChartRenderer`
+  untuk ekspor PDF perlu dipindah ke tempat yang bisa dipakai WordNet (Core, atau PdfNet bila ia
+  tetap daun).
+- [ ] **Markdown → DOCX dan DOCX → Markdown.** Lewat model blok yang sama dengan HTML
+  (`HtmlFlattener` masuk, penulis baru keluar), sehingga Markdown dan HTML sepakat tentang isinya.
+  Parser CommonMark ditulis sendiri atau Markdown dirender ke HTML dulu — keputusan yang harus
+  diambil dengan alasan dependensi, bukan selera. TXT → DOCX ikut sebagai kasus paling sederhana.
+- [ ] **Ekspor PDF/A** (lihat PdfNet) sebagai opsi `PdfExportOptions.Conformance`.
+
+### ExcelNet
+
+- [ ] **Named range** (`definedNames`). Tulis, baca, dan pakai di mesin formula (`=SUM(Penjualan)`).
+  Termasuk nama bawaan `_xlnm.Print_Area` dan `_xlnm.Print_Titles`, yang sekaligus membuka pintu ke
+  pengaturan cetak.
+- [ ] **Excel Table** (`ListObject`, part `xl/tables/tableN.xml`). Range bernama dengan header,
+  gaya tabel, baris total, autofilter-nya sendiri. Referensi terstruktur (`Tabel1[Kolom]`) di mesin
+  formula adalah langkah kedua yang terpisah.
+- [ ] **Rich text di sel.** `SharedStrings` saat ini menggabungkan run rich text jadi teks polos
+  saat membaca, jadi membuka lalu menyimpan berkas **menghapus** format dalam selnya. Model run
+  (`CellRichText`) yang ditulis kembali utuh.
+- [ ] **Sort range.** Menurut satu atau beberapa kolom, naik/turun, dengan urutan tipe Excel (angka
+  < teks < boolean < error, kosong selalu terakhir) dan perbandingan teks tak peka huruf besar.
+  Formula yang ikut berpindah **tidak** ditulis ulang referensinya di versi pertama — dicatat.
+- [ ] **Conditional formatting lanjutan.** `duplicateValues`/`uniqueValues` (deteksi duplikat dari
+  `reference.md`), `top10`, `aboveAverage`, `containsText`, `expression`, dan icon set. Plus
+  `FindDuplicates(range)` di sisi API untuk yang butuh hasilnya, bukan warnanya.
+- [ ] **Fungsi finansial.** `PMT`, `PV`, `FV`, `NPER`, `RATE`, `NPV`, `IRR`, `XNPV`, `XIRR`.
+  `IRR`/`RATE` iteratif (Newton dengan fallback bisection), dengan tebakan awal dan batas iterasi
+  Excel, mengembalikan `#NUM!` bila tidak konvergen — bukan angka terakhir yang kebetulan ada.
+  Diuji terhadap nilai yang dihitung Excel/LibreOffice, bukan terhadap rumus yang sama.
+- [ ] **Chart kombinasi** (batang + garis, sumbu sekunder) di `ChartData`/`ChartXml` — berlaku
+  sekaligus untuk ExcelNet, PowerPointNet, dan chart Word di atas.
+- [ ] **Enkripsi workbook** (ECMA-376 Agile Encryption, AES-256 + SHA-512). Berkas terenkripsi
+  bukan ZIP melainkan compound file (CFB) berisi `EncryptionInfo` dan `EncryptedPackage`. Ini
+  **bukan** format biner lama: yang dibutuhkan hanya pembaca/penulis CFB minimal untuk dua stream,
+  bukan model `.xls`. Berlaku sama untuk .docx dan .pptx, jadi tempatnya di Core.
+- [ ] **XLSX → HTML dan HTML → XLSX** (tabel). `HtmlWriter`/`HtmlFlattener` sudah di Core.
+- [ ] **XLSM.** Ekstensinya dikenali dan part yang tidak dimodelkan dibawa utuh; yang belum
+  diperiksa adalah content type bagian utamanya (`sheet.macroEnabled.main+xml`) bertahan saat
+  disimpan. Satu tes round-trip dengan `vbaProject.bin` menjawabnya.
+
+### PowerPointNet
+
+- [ ] **Garis, panah, dan konektor** (`p:cxnSp`, `a:headEnd`/`a:tailEnd`, konektor yang terhubung
+  ke shape lewat `stCxn`/`endCxn`). Dibaca sebagai `ShapeKind.Connector` tapi tidak bisa dibuat.
+- [ ] **Custom geometry** (`a:custGeom`) — API path (moveTo/lineTo/cubicBezTo/close) untuk shape
+  bebas, dan ikut digambar di ekspor PDF.
+- [ ] **Objek tersemat (OLE)** — sematkan .xlsx/.docx/.pdf sebagai `p:oleObj` dengan gambar
+  pratinjau. Paket tersemat adalah berkas OPC biasa, jadi tidak butuh CFB untuk format Office.
+
+### PdfNet
+
+- [ ] **Membuat field AcroForm.** `AcroForm` sekarang membaca, mengisi, dan meratakan field yang
+  sudah ada, tetapi tidak bisa **membuat** text field, checkbox, radio group, combo box, list box,
+  maupun push button. Appearance stream-nya sudah dibangkitkan untuk mengisi, jadi jalurnya ada.
+- [ ] **Lampiran (embedded files).** Ekstrak dan tambah lewat name tree `/EmbeddedFiles` dan
+  anotasi `/FileAttachment`. Prasyarat PDF/A-3 (ZUGFeRD/Factur-X untuk e-invoice).
+- [ ] **PDF/A-2b dan PDF/A-3b.** Metadata XMP yang selaras dengan `/Info`, `/OutputIntent` dengan
+  profil ICC sRGB, semua font tersemat (14 font baku **tidak** boleh dipakai — ekspornya harus
+  memaksa font tersemat), tanpa enkripsi dan tanpa transparansi untuk PDF/A-1. Diverifikasi dengan
+  veraPDF, bukan dengan klaim sendiri.
+- [ ] **Metadata XMP** baca/tulis — berdiri sendiri juga, bukan hanya untuk PDF/A.
+- [ ] **Timestamp tepercaya (RFC 3161).** Sebelumnya ditolak karena butuh layanan jaringan. Bisa
+  tanpa membuat pustaka ini melakukan request sendiri: pemanggil memberi delegasi
+  `Func<byte[], byte[]>` yang mengirim permintaan ke TSA-nya, sama seperti `ImageResolver` di
+  konversi HTML. Verifikasi token timestamp yang sudah ada di berkas tidak butuh jaringan sama
+  sekali.
+
+### OfficeNet.Rendering
+
+- [ ] **Keluaran TIFF multi-halaman.** SkiaSharp tidak mengodekan TIFF, tapi TIFF baseline dengan
+  Deflate cukup sederhana untuk ditulis tangan — dan satu TIFF berisi seluruh halaman adalah yang
+  diminta alur arsip dan faks.
+
+### Kandidat dengan nilai lebih rendah
+
+- **XPS.** Format OPC (FixedDocument/FixedPage XAML), jadi Core sudah menangani kontainernya.
+  Pemakainya makin sedikit; dikerjakan hanya bila ada yang meminta.
+- **RTF masuk.** Berbasis teks, tidak butuh OLE, tetapi spesifikasinya panjang dan berkas dunia
+  nyata penuh kontrol vendor. Subset (paragraf, run, tabel, gambar) layak bila ada permintaan.
+
+---
+
 ## Yang sengaja tidak akan dikerjakan
 
 Menyebutkan ini sama pentingnya dengan menyebutkan rencana: ia mencegah orang menunggu sesuatu
@@ -492,6 +745,10 @@ yang tidak akan datang.
 - **Perhitungan ulang formula seperti Excel.** Mesin formula ada untuk mengisi cache sehingga
   konsumen non-Excel melihat angka. Menargetkan kesetaraan dengan 500+ fungsi Excel, beserta
   array formula dan iterative calculation, bukan tujuan yang sepadan.
+- **Dari `reference.md`, yang sengaja tidak diambil:** membaca/menulis `.doc`/`.xls`/`.ppt` (lihat
+  format biner lama di atas), memecah Word **per halaman** (butuh mesin layout setara Word), dan
+  SmartArt Word selain mempertahankannya apa adanya — part yang tidak dimodelkan memang sudah
+  terbawa utuh.
 - **Rendering di server tanpa font.** Metrik 14 font baku sudah tertanam, tapi rasterisasi
   membutuhkan font sungguhan. Kontainer tanpa font akan menghasilkan gambar dengan glyph pengganti,
   dan itu masalah lingkungan, bukan bug library.
