@@ -183,13 +183,16 @@ public class TimestampTests
         cms.SignerInfos[0].RemoveUnsignedAttribute(cms.SignerInfos[0].UnsignedAttributes[0].Values[0]);
         cms.SignerInfos[0].AddUnsignedAttribute(foreign.Values[0]);
 
+        // The whole reserved hole, from the signature's first hex digit to the closing '>'. The
+        // re-encoded signature can be a byte longer than the original — a nonce's DER length varies
+        // with its leading bits — so it is padded to the hole, not to the old signature.
         var forged = (byte[])first.Clone();
-        var hole = System.Text.Encoding.ASCII.GetBytes(Convert.ToHexString(original));
-        var at = forged.AsSpan().IndexOf(hole);
+        var at = forged.AsSpan().IndexOf(System.Text.Encoding.ASCII.GetBytes(Convert.ToHexString(original)));
         Assert.True(at > 0);
+        var hole = forged.AsSpan(at).IndexOf((byte)'>');
 
-        var replacement = Convert.ToHexString(cms.Encode()).PadRight(hole.Length, '0');
-        Assert.True(replacement.Length == hole.Length, "the forged signature must fit the same hole");
+        var replacement = Convert.ToHexString(cms.Encode()).PadRight(hole, '0');
+        Assert.True(replacement.Length == hole, "the forged signature must fit the same hole");
         System.Text.Encoding.ASCII.GetBytes(replacement).CopyTo(forged, at);
 
         var verification = Assert.Single(PdfSignatures.VerifyAll(forged));
