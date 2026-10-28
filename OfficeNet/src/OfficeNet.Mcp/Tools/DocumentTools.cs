@@ -24,7 +24,8 @@ public sealed class DocumentTools(Workspace workspace)
     [McpServerTool(Name = "convert", Title = "Convert a document", Destructive = true)]
     [Description(
         "Converts between formats, chosen by the two extensions: .docx/.xlsx/.pptx → .pdf, " +
-        ".docx → .html or .md, .html → .docx or .pptx, .md → .docx, .txt → .docx (a paragraph per " +
+        ".docx → .html or .md, .xlsx → .html (every sheet a table), .html → .docx, .pptx or .xlsx " +
+        "(every table a sheet), .md → .docx, .txt → .docx (a paragraph per " +
         "line), .pdf → .docx (paragraphs, headings, tables reconstructed) or .xlsx (tables).")]
     public string Convert(
         [Description("Workspace path of the source.")] string input,
@@ -48,6 +49,35 @@ public sealed class DocumentTools(Workspace workspace)
 
                 case (".docx", ".md" or ".markdown"):
                     WordToMarkdown.Convert(source, target);
+                    break;
+
+                case (".xlsx" or ".xlsm", ".html" or ".htm"):
+                    using (var workbook = Workbook.Open(source))
+                    {
+                        HtmlIo.Export(workbook, target);
+                    }
+
+                    break;
+
+                case (".html" or ".htm", ".xlsx"):
+                    using (var workbook = Workbook.Create())
+                    {
+                        var sheets = HtmlIo.Import(workbook, source);
+
+                        if (sheets.Count == 0)
+                        {
+                            throw new ArgumentException($"{workspace.Relative(source)} has no table to convert.");
+                        }
+
+                        // The new workbook's own empty Sheet1 goes, unless a table filled it.
+                        if (!sheets.Any(s => s.Name == "Sheet1"))
+                        {
+                            workbook.RemoveSheet("Sheet1");
+                        }
+
+                        workbook.Save(target);
+                    }
+
                     break;
 
                 case (".html" or ".htm", ".docx"):
@@ -98,7 +128,7 @@ public sealed class DocumentTools(Workspace workspace)
                 default:
                     throw new ArgumentException(
                         $"Converting {from} to {to} is not supported. Supported: docx/xlsx/pptx → pdf, " +
-                        "docx → html/md, html → docx/pptx, md/txt → docx, pdf → docx/xlsx.");
+                        "docx → html/md, xlsx → html, html → docx/pptx/xlsx, md/txt → docx, pdf → docx/xlsx.");
             }
 
             return $"Converted {workspace.Relative(source)} to {workspace.Relative(target)}.";

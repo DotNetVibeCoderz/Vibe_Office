@@ -755,7 +755,14 @@ melengkapi.
   bukan ZIP melainkan compound file (CFB) berisi `EncryptionInfo` dan `EncryptedPackage`. Ini
   **bukan** format biner lama: yang dibutuhkan hanya pembaca/penulis CFB minimal untuk dua stream,
   bukan model `.xls`. Berlaku sama untuk .docx dan .pptx, jadi tempatnya di Core.
-- [ ] **XLSX → HTML dan HTML → XLSX** (tabel). `HtmlWriter`/`HtmlFlattener` sudah di Core.
+- [x] **XLSX → HTML dan HTML → XLSX — selesai.** `HtmlIo` (sebelah `CsvIo`/`JsonIo`). Keluar: satu
+  `table` per sheet dengan `caption`, nilai lewat format angkanya (`ExcelToPdf.Format`), sel gabungan
+  sebagai `colspan`/`rowspan`, font/isian/perataan/garis tepi/lebar kolom sebagai CSS, tautan disaring
+  skemanya. Masuk: algoritma penempatan tabel HTML (rowspan mendorong sel ke kanan), span menjadi
+  merge, tipe dengan aturan CSV plus persentase, format angka disimpulkan dari teks (`1,234.5` →
+  `#,##0.0`), `th` tetap label, format sel hanya bila meliputi seluruh teks. pandas membaca
+  ekspornya, openpyxl membaca impornya; ekspor → impor → ekspor menghasilkan halaman yang sama.
+  Tool MCP `convert` kini xlsx → html dan html → xlsx.
 - [x] **XLSM — terbukti, tanpa perubahan kode.** Tes round trip: .xlsm yang diubah lalu disimpan
   mempertahankan content type `sheet.macroEnabled.main+xml`, relasi `vbaProject`, dan isi
   `vbaProject.bin` byte demi byte. Sebelumnya hanya diasumsikan.

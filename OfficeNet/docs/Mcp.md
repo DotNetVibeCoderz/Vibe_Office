@@ -125,7 +125,7 @@ made for the purpose rather than your home directory.
 | `pdf_merge` / `pdf_split` | Concatenate; split into parts of N pages. |
 | `pdf_protect` | AES-256 encryption with a password. |
 | **Any format** | |
-| `convert` | `docx/xlsx/pptx → pdf`, `docx → html/md`, `html → docx/pptx`, `md/txt → docx`, `pdf → docx/xlsx`. |
+| `convert` | `docx/xlsx/pptx → pdf`, `docx → html/md`, `xlsx → html`, `html → docx/pptx/xlsx`, `md/txt → docx`, `pdf → docx/xlsx`. |
 | `extract_text` | Plain text, capped at 20 000 characters. |
 | `document_info` | Format, metadata, and structure — headings, sheets, slides, pages. |
 | `render_page` | One page as a PNG **image the model can see**, and optionally saved. |

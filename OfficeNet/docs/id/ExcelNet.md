@@ -642,6 +642,48 @@ SqlIo.Export(sheet, connection, "penjualan");
 desimal harus memakai `;` sebagai pemisah kolom, dan salah di sini mengubah setiap angka menjadi dua
 kolom.
 
+## HTML
+
+```csharp
+using ExcelNet.Io;
+
+HtmlIo.Export(workbook, "laporan.html");                  // semua sheet, satu halaman
+var fragment = HtmlIo.ExportText(sheet, new ExcelHtmlOptions
+{
+    FullDocument = false,   // tabelnya saja
+    ShowGridLines = false,
+});
+
+var sheets = HtmlIo.Import(workbook, "halaman.html");     // setiap <table> menjadi sheet
+HtmlIo.ImportText(workbook, html, new ExcelHtmlImportOptions
+{
+    Culture = CultureInfo.GetCultureInfo("id-ID"),        // 1.234,5 dan 12,5%
+    InferTypes = true,
+    KeepFormatting = true,
+    AutoFitColumns = true,
+});
+```
+
+Saat keluar, setiap sheet menjadi `table` dengan nama sheet sebagai `caption`-nya, dan setiap nilai
+ditulis seperti yang ditampilkan Excel — lewat format angkanya, jadi formula menampilkan hasilnya dan
+`0.125` berformat `0.0%` terbaca `12.5%`. Sel gabungan menjadi `colspan`/`rowspan`; tebal, miring,
+warna, isian, perataan, garis tepi, wrap, dan lebar kolom menjadi CSS. Tautan dengan skema yang aman
+disajikan (`http`, `https`, `mailto`, `tel`, `ftp`, relatif) tetap menjadi tautan; tautan
+`javascript:` hanya menyisakan teksnya. Warna tema diserahkan ke halaman, karena menyelesaikannya
+membutuhkan tema workbook.
+
+Saat masuk, setiap `table` terluar menjadi sheet yang dinamai dari `caption`-nya (karakter yang
+dilarang Excel menjadi spasi), mengisi sheet kosong bernama sama alih-alih menambah `Sheet1 (2)`,
+dan tidak pernah menyentuh sheet yang sudah berisi. Sel ditempatkan dengan algoritma tabel HTML
+sendiri — `rowspan` mendorong sel di baris bawahnya ke kanan — dan setiap span menjadi gabungan sel.
+Teks diberi tipe dengan aturan CSV, ditambah persentase: `007` tetap teks, `1,234.5` menjadi angka
+berformat `#,##0.0`, tanggal mendapat format tanggal, dan `th` tetap label walau terbaca `2026`. Sel
+menjadi tebal, miring, atau berwarna bila seluruh teksnya begitu; tebal sebagian bukan tebal.
+
+Workbook yang diekspor ke HTML lalu dibaca kembali mempertahankan nama sheet, sel gabungan, nilai,
+format angka, tautan, dan format yang terlihat — halaman yang diekspornya sesudah itu adalah halaman
+yang sama.
+
 ## PDF → Excel
 
 ```csharp

@@ -626,6 +626,46 @@ SqlIo.Export(sheet, connection, "penjualan");
 `CsvOptions.Indonesian` matters more than it looks: a locale that uses `,` as the decimal separator
 must use `;` as the field separator, and getting that wrong turns every number into two columns.
 
+## HTML
+
+```csharp
+using ExcelNet.Io;
+
+HtmlIo.Export(workbook, "laporan.html");                  // every sheet, one page
+var fragment = HtmlIo.ExportText(sheet, new ExcelHtmlOptions
+{
+    FullDocument = false,   // the tables only
+    ShowGridLines = false,
+});
+
+var sheets = HtmlIo.Import(workbook, "halaman.html");     // every <table> becomes a sheet
+HtmlIo.ImportText(workbook, html, new ExcelHtmlImportOptions
+{
+    Culture = CultureInfo.GetCultureInfo("id-ID"),        // 1.234,5 and 12,5%
+    InferTypes = true,
+    KeepFormatting = true,
+    AutoFitColumns = true,
+});
+```
+
+Out, each sheet is a `table` with the sheet's name as its `caption`, and every value is written as
+Excel displays it — through its number format, so a formula shows its result and `0.125` formatted
+`0.0%` reads `12.5%`. Merged cells become `colspan`/`rowspan`; bold, italic, colours, fills,
+alignment, borders, wrapping and column widths become CSS. Links whose scheme is safe to serve
+(`http`, `https`, `mailto`, `tel`, `ftp`, relative) stay links; a `javascript:` link keeps only its
+text. Theme colours are left to the page, because resolving them needs the workbook's theme.
+
+In, each outermost `table` becomes a sheet named after its `caption` (characters Excel forbids
+become spaces), filling an empty sheet of that name rather than adding `Sheet1 (2)`, and never
+touching one that has content. Cells are placed by HTML's own table algorithm — a `rowspan` pushes
+the cells of the rows below it to the right — and every span becomes a merge. Text is typed by the
+CSV rules, plus percentages: `007` stays text, `1,234.5` becomes a number formatted `#,##0.0`, a
+date gets a date format, and a `th` stays a label even when it reads `2026`. A cell is bold, italic
+or coloured when all of its text is; partly bold is not bold.
+
+A workbook exported to HTML and read back keeps its sheet names, merges, values, number formats,
+links and the visible formatting — the page it exports afterwards is the same page.
+
 ## PDF → Excel
 
 ```csharp

@@ -340,6 +340,52 @@ public class EndToEndTests(ServerFixture server) : IClassFixture<ServerFixture>
     }
 
     [Fact]
+    public async Task AWorkbookBecomesHtmlAndHtmlTablesBecomeAWorkbook()
+    {
+        (await Call("excel_create", new
+        {
+            path = "xhtml/harga.xlsx",
+            sheets = new[]
+            {
+                new
+                {
+                    name = "Harga",
+                    rows = new object[][]
+                    {
+                        ["Produk", "Harga", "Qty", "Total"],
+                        ["Kertas", 50000, 2, "=B2*C2"],
+                        ["Tinta", 125000, 3, "=B3*C3"],
+                    },
+                    numberFormats = new Dictionary<string, string> { ["B"] = "#,##0", ["D"] = "#,##0" },
+                },
+            },
+        })).Ok();
+
+        (await Call("convert", new { input = "xhtml/harga.xlsx", output = "xhtml/harga.html" })).Ok();
+        (await Call("convert", new { input = "xhtml/harga.html", output = "xhtml/kembali.xlsx" })).Ok();
+
+        // The formula's result, formatted as the sheet shows it.
+        var html = File.ReadAllText(Full("xhtml/harga.html"));
+        Assert.Contains("<caption>Harga</caption>", html, StringComparison.Ordinal);
+        Assert.Contains(">375,000</td>", html, StringComparison.Ordinal);
+
+        AssertValidPackage(Full("xhtml/kembali.xlsx"));
+
+        using (var workbook = Workbook.Open(Full("xhtml/kembali.xlsx")))
+        {
+            var sheet = Assert.Single(workbook);
+            Assert.Equal("Harga", sheet.Name);
+            Assert.Equal(375000, sheet["D3"].Value.AsNumber());
+            Assert.Equal("#,##0", sheet["D3"].Style.NumberFormat);
+        }
+
+        File.WriteAllText(Full("xhtml/tanpa-tabel.html"), "<p>Tidak ada tabel.</p>");
+        var none = await Call("convert", new { input = "xhtml/tanpa-tabel.html", output = "xhtml/kosong.xlsx" });
+        Assert.True(none.IsError);
+        Assert.Contains("no table", none.Text(), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task MarkdownAndTextBecomeWordDocumentsAndWordBecomesMarkdown()
     {
         Directory.CreateDirectory(Full("md"));

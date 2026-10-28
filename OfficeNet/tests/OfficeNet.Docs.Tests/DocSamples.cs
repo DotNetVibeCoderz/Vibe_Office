@@ -1106,6 +1106,49 @@ public class DocSamples : IDisposable
     }
 
     [Fact]
+    public void ExcelNet_Html()
+    {
+        using var workbook = Workbook.Create("Penjualan");
+        var sheet = workbook[0];
+        sheet["A1"].Set("Wilayah");
+        sheet["B1"].Set(0.125).WithNumberFormat("0.0%");
+
+        var page = Path.Combine(Path.GetTempPath(), $"officenet-{Guid.NewGuid():N}.html");
+
+        try
+        {
+            HtmlIo.Export(workbook, page);
+            var fragment = HtmlIo.ExportText(sheet, new ExcelHtmlOptions
+            {
+                FullDocument = false,
+                ShowGridLines = false,
+            });
+            Assert.Contains("12.5%", fragment, StringComparison.Ordinal);
+
+            using var target = Workbook.Create();
+            var sheets = HtmlIo.Import(target, page);
+            Assert.Equal("Penjualan", Assert.Single(sheets).Name);
+
+            var html = "<table><tr><td>1.234,5</td><td>12,5%</td></tr></table>";
+            var read = HtmlIo.ImportText(target, html, new ExcelHtmlImportOptions
+            {
+                Culture = System.Globalization.CultureInfo.GetCultureInfo("id-ID"),
+                InferTypes = true,
+                KeepFormatting = true,
+                AutoFitColumns = true,
+            });
+
+            // A table without a caption is Sheet1 — here the workbook's own empty Sheet1, filled.
+            Assert.Equal(1234.5, Assert.Single(read)["A1"].Value.AsNumber());
+            Assert.Equal("Sheet1", read[0].Name);
+        }
+        finally
+        {
+            File.Delete(page);
+        }
+    }
+
+    [Fact]
     public void ExcelNet_CsvJsonAndDataFrames()
     {
         using var workbook = Workbook.Create("Data");

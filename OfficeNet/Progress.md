@@ -627,7 +627,7 @@ memeriksa bagaimana pustaka memperlakukan `w:ins` sebelum menulis fitur track ch
       (tidak ada `dxfs`), dan buka-lalu-simpan menghapus format CF yang sudah ada
 - [x] ExcelNet: fungsi finansial `PMT`, `PV`, `FV`, `NPER`, `RATE`, `NPV`, `IRR`, `XNPV`, `XIRR` —
       diuji terhadap contoh resmi Microsoft; parser kini menerima argumen yang dikosongkan
-- [ ] ExcelNet: XLSX ↔ HTML
+- [x] ExcelNet: XLSX ↔ HTML (`HtmlIo`), juga di tool MCP `convert`
 - [x] ExcelNet: round-trip XLSM terverifikasi (content type macro-enabled dan `vbaProject.bin` bertahan)
 - [ ] Core: chart kombinasi + sumbu sekunder
 - [ ] Core: enkripsi Agile ECMA-376 (CFB minimal) untuk .docx/.xlsx/.pptx
