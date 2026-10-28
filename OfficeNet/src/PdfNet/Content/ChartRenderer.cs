@@ -4,11 +4,10 @@ using OfficeNet.Core.Charts;
 using OfficeNet.Core.Drawing;
 using OfficeNet.Core;
 using PdfNet.Content;
-using PowerPointNet.Charts;
 using System.Globalization;
 using PdfAlignment = PdfNet.Content.TextAlignment;
 
-namespace PowerPointNet.Export;
+namespace PdfNet.Content;
 
 /// <summary>
 /// Draws a chart into a PDF page.
@@ -26,13 +25,22 @@ namespace PowerPointNet.Export;
 /// are positioned from the values and are accurate.
 /// </para>
 /// </remarks>
-internal static class ChartRenderer
+public static class ChartRenderer
 {
     private const double TitleSize = 14;
     private const double LabelSize = 8;
     private const double LegendSize = 9;
 
-    internal static void Render(
+    /// <summary>
+    /// Draws <paramref name="data"/> into the box given, in points from the top-left of a
+    /// <see cref="PdfCanvas.TopDown"/> canvas.
+    /// </summary>
+    /// <remarks>
+    /// Lives in PdfNet, beside the canvas it draws on, so that every exporter can share it: slides,
+    /// sheets, and Word documents all hold the same <see cref="ChartData"/>. It used to be private
+    /// to PowerPointNet, which is why a workbook's charts were missing from its PDF.
+    /// </remarks>
+    public static void Render(
         PdfCanvas canvas, ChartData data, double left, double top, double width, double height)
     {
         if (data.Series.Count == 0 || width <= 0 || height <= 0)

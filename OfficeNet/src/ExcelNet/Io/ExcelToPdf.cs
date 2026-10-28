@@ -88,8 +88,16 @@ public static class ExcelToPdf
 
     private static void RenderSheet(PdfDocument pdf, Worksheet sheet, ExcelPdfOptions options)
     {
+        var charts = sheet.Charts;
+
         if (sheet.UsedRange is not { } used)
         {
+            if (charts.Count > 0)
+            {
+                var chartPage = 1;
+                DrawCharts(pdf, sheet, charts, options, null, 0, ref chartPage);
+            }
+
             return;
         }
 
@@ -122,6 +130,8 @@ public static class ExcelToPdf
         bands.Add((bandStart, widths.Length - bandStart));
 
         var pageNumber = 1;
+        PdfPage? lastPage = null;
+        double lastY = 0;
 
         foreach (var (firstColumn, columnCount) in bands)
         {
@@ -164,13 +174,12 @@ public static class ExcelToPdf
 
                 if (options.ShowFooter)
                 {
-                    canvas.SetFont(StandardFont.Helvetica, 7.5);
-                    canvas.SetFillColor(OfficeColor.Gray);
-                    canvas.DrawText($"{sheet.Name} — page {pageNumber}",
-                        options.Margin, options.PageSize.Height - options.Margin + 4);
+                    Footer(canvas, sheet, options, pageNumber);
                 }
 
                 pageNumber++;
+                lastPage = page;
+                lastY = y;
 
                 // A band with no rows left would loop forever; the guard is the page that drew
                 // nothing but the header.
@@ -179,6 +188,81 @@ public static class ExcelToPdf
                     row++;
                 }
             }
+        }
+
+        DrawCharts(pdf, sheet, charts, options, lastPage, lastY, ref pageNumber);
+    }
+
+    private static void Footer(PdfCanvas canvas, Worksheet sheet, ExcelPdfOptions options, int pageNumber)
+    {
+        canvas.SetFont(StandardFont.Helvetica, 7.5);
+        canvas.SetFillColor(OfficeColor.Gray);
+        canvas.DrawText($"{sheet.Name} — page {pageNumber}",
+            options.Margin, options.PageSize.Height - options.Margin + 4);
+    }
+
+    /// <summary>
+    /// Draws the sheet's charts after its cells: below the data on the last page when they fit,
+    /// otherwise on pages of their own.
+    /// </summary>
+    /// <remarks>
+    /// A chart is sized from the cells it is anchored over, as Excel sizes it, but not placed
+    /// over them. Once the cells are cut into page-wide bands and page-tall runs, "over cell H2"
+    /// can fall across a page break, or on a band printed three pages later; under the data is the
+    /// one place a reader always finds it. Until this existed, a workbook's charts were simply
+    /// missing from its PDF, because the chart renderer was private to PowerPointNet.
+    /// </remarks>
+    private static void DrawCharts(PdfDocument pdf, Worksheet sheet, IReadOnlyList<Charts.SheetChart> charts,
+        ExcelPdfOptions options, PdfPage? page, double y, ref int pageNumber)
+    {
+        const double Gap = 16;
+
+        var available = options.PageSize.Width - options.Margin * 2;
+        var top = options.Margin + options.FontSizePoints + 12;
+        var bottom = options.PageSize.Height - options.Margin - (options.ShowFooter ? 18 : 0);
+
+        foreach (var chart in charts)
+        {
+            double width = 0, height = 0;
+
+            for (var column = chart.Anchor.Start.Column; column <= chart.Anchor.End.Column; column++)
+            {
+                width += ColumnPoints(sheet.GetColumnWidth(column));
+            }
+
+            for (var row = chart.Anchor.Start.Row; row <= chart.Anchor.End.Row; row++)
+            {
+                height += RowPoints(sheet.GetRowHeight(row));
+            }
+
+            // Keep the anchor's proportions while fitting the page.
+            var scale = Math.Min(1, Math.Min(available / Math.Max(1, width), (bottom - top) / Math.Max(1, height)));
+            width *= scale;
+            height *= scale;
+
+            if (page is null || y + Gap + height > bottom)
+            {
+                page = pdf.Pages.Add(options.PageSize);
+                y = top - Gap;
+
+                using var fresh = page.OpenCanvas();
+                fresh.TopDown = true;
+                fresh.SetFont(StandardFont.HelveticaBold, options.FontSizePoints + 2.5);
+                fresh.SetFillColor(OfficeColor.FromRgb(0x1F, 0x38, 0x64));
+                fresh.DrawText(sheet.Name, options.Margin, options.Margin + options.FontSizePoints + 2.5);
+
+                if (options.ShowFooter)
+                {
+                    Footer(fresh, sheet, options, pageNumber);
+                }
+
+                pageNumber++;
+            }
+
+            using var canvas = page.OpenCanvas();
+            canvas.TopDown = true;
+            ChartRenderer.Render(canvas, chart.GetData(), options.Margin, y + Gap, width, height);
+            y += Gap + height;
         }
     }
 

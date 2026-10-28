@@ -863,6 +863,55 @@ public class PdfExportTests
     }
 
     [Fact]
+    public void ChartsAreDrawnInTheExport()
+    {
+        // Before the chart renderer moved into PdfNet it was private to PowerPointNet, and a
+        // workbook's charts were silently missing from its PDF.
+        using var workbook = Workbook.Create("Data");
+        var sheet = workbook["Data"];
+        sheet.WriteHeader("A1", ["Wilayah", "Nilai"]);
+        sheet.WriteRow("A2", "Jakarta", 1480);
+        sheet.WriteRow("A3", "Bandung", 1150);
+
+        sheet.AddChart(new OfficeNet.Core.Charts.ChartData
+        {
+            Type = OfficeNet.Core.Charts.ChartType.Column,
+            Title = "Nilai per Wilayah",
+            Categories = ["Jakarta", "Bandung"],
+            Series = [new OfficeNet.Core.Charts.ChartSeries("Nilai", [1480, 1150])],
+        }, "D2:K16");
+
+        using var pdf = workbook.ToPdf();
+
+        // One page: the chart fits below the two rows of data.
+        Assert.Single(pdf.Pages);
+        Assert.Contains("Nilai per Wilayah", pdf.Pages[0].ExtractText(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ManyChartsSpillOntoPagesOfTheirOwn()
+    {
+        using var workbook = Workbook.Create("Data");
+        workbook["Data"]["A1"].Set("x");
+
+        for (var i = 0; i < 4; i++)
+        {
+            workbook["Data"].AddChart(new OfficeNet.Core.Charts.ChartData
+            {
+                Type = OfficeNet.Core.Charts.ChartType.Pie,
+                Title = $"Chart {i}",
+                Categories = ["a", "b"],
+                Series = [new OfficeNet.Core.Charts.ChartSeries("s", [1, 2])],
+            }, "C2:L25");
+        }
+
+        using var pdf = workbook.ToPdf();
+
+        Assert.True(pdf.Pages.Count > 1);
+        Assert.Contains("Chart 3", pdf.ExtractText(), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void NumberFormatsAreAppliedInTheExport()
     {
         using var workbook = Workbook.Create();
