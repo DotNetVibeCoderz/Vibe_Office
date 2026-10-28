@@ -308,7 +308,22 @@ public class StreamingTests
 
         workbook.Sheet("Data").WriteRow(new object?[20000]);
     }
+}
 
+/// <summary>
+/// Tests that measure the whole process's heap, and so must not run beside anything else.
+/// </summary>
+/// <remarks>
+/// <c>GC.GetTotalMemory</c> counts every live object, not the ones this test made. Run in parallel,
+/// another class's allocations land between the two readings — which is how this once failed on CI
+/// with "grew by 2.9 MB" while the writer, measured alone, grows by nothing over 580,000 rows.
+/// </remarks>
+[CollectionDefinition(nameof(WholeHeapMeasurements), DisableParallelization = true)]
+public sealed class WholeHeapMeasurements;
+
+[Collection(nameof(WholeHeapMeasurements))]
+public class StreamingMemoryTests
+{
     [Fact]
     public void MemoryDoesNotGrowWithTheRowCount()
     {
