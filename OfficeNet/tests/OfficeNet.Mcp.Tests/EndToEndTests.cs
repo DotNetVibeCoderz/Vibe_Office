@@ -450,8 +450,9 @@ public class EndToEndTests(ServerFixture server) : IClassFixture<ServerFixture>
                 Name = "officenet",
                 Command = "dotnet",
                 Arguments = [ServerFixture.ServerPath(), "--root", server.Root.Path],
-            }));
+            }), cancellationToken: TestContext.Current.CancellationToken);
 
+        // The docs omit the token for brevity; a test passes xUnit's so cancellation reaches it.
         var result = await client.CallToolAsync("word_create", new Dictionary<string, object?>
         {
             ["path"] = "surat.docx",
@@ -460,7 +461,7 @@ public class EndToEndTests(ServerFixture server) : IClassFixture<ServerFixture>
                 new { type = "heading", text = "Surat Pemberitahuan" },
                 new { type = "paragraph", text = "Dengan hormat, kami sampaikan **jadwal baru**." },
             },
-        });
+        }, cancellationToken: TestContext.Current.CancellationToken);
 
         result.Ok();
         using var document = WordDocument.Open(Full("surat.docx"));
