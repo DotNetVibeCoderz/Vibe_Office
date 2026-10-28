@@ -1379,6 +1379,19 @@ public static class WordToPdf
                 return;
             }
 
+            // A chart is drawn from the values cached in its part, by the renderer the slide and
+            // sheet exports share.
+            if (drawing.Descendants(Ns.C + "chart").FirstOrDefault()?.Attr(Ns.R + "id") is { } chartId)
+            {
+                if (_document.DocumentPart.RelatedPart(chartId) is { } chartPart)
+                {
+                    PdfNet.Content.ChartRenderer.Render(canvas, OfficeNet.Core.Charts.ChartXml.Read(chartPart.Xml),
+                        x, y, width, height);
+                }
+
+                return;
+            }
+
             PaintPicture(canvas, drawing, x, y, width, height);
         }
 

@@ -648,10 +648,12 @@ melengkapi.
   Tujuh mutasi; satu lolos sampai ada tes untuk dua section yang merujuk satu header secara
   eksplisit — bentuk yang ditulis `AddSection` versi lama, jadi setiap dokumen lama punya bentuk itu.
   Yang **belum** dibuktikan: tampilannya di Word sendiri.
-- [ ] **Chart di dokumen Word.** `ChartData`/`ChartXml` sudah di Core dan sudah dipakai ExcelNet dan
-  PowerPointNet; Word hanya butuh `wp:inline` + `c:chart` dan part chart-nya. `ChartRenderer`
-  untuk ekspor PDF perlu dipindah ke tempat yang bisa dipakai WordNet (Core, atau PdfNet bila ia
-  tetap daun).
+- [x] **Chart di dokumen Word — selesai.** `AddChart` (dokumen dan paragraf), `Charts`, `WordChart`
+  dengan `GetData`/`SetData`; part chart DrawingML yang sama dengan ExcelNet dan PowerPointNet, di
+  `wp:inline` dengan relasi pada part pemilik paragrafnya. Ekspor PDF menggambarnya dengan
+  `ChartRenderer`, yang sudah dipindah ke PdfNet saat membuat server MCP. Ikut terbawa saat
+  `AppendDocument`. Tool MCP `word_create` kini menerima blok `chart`. MuPDF me-render chart di
+  PDF hasil ekspor dengan label, sumbu, dan legenda; python-docx mengenali part-nya.
 - [ ] **Markdown → DOCX dan DOCX → Markdown.** Lewat model blok yang sama dengan HTML
   (`HtmlFlattener` masuk, penulis baru keluar), sehingga Markdown dan HTML sepakat tentang isinya.
   Parser CommonMark ditulis sendiri atau Markdown dirender ke HTML dulu — keputusan yang harus

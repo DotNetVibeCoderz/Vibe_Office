@@ -464,6 +464,27 @@ public sealed class Paragraph
     public Paragraph AddPageCount(string placeholder = "1") => AddField("NUMPAGES", placeholder);
 
     /// <summary>Appends an inline picture in a new run.</summary>
+    /// <summary>
+    /// Adds a native chart in the line of text, 15 × 9 cm unless sized.
+    /// </summary>
+    /// <remarks>It is a real Word chart, editable in Word, and is drawn by the PDF export too.</remarks>
+    public Drawing.WordChart AddChart(OfficeNet.Core.Charts.ChartData data, Length? width = null,
+        Length? height = null, string? altText = null)
+    {
+        ArgumentNullException.ThrowIfNull(data);
+
+        var run = new XElement(Ns.W + "r");
+        Element.Add(run);
+
+        var drawing = Drawing.WordChart.BuildDrawing(_document, Element, data,
+            width ?? Length.FromCentimeters(15), height ?? Length.FromCentimeters(9), altText);
+        run.Add(drawing);
+        _document.Touch();
+
+        var id = drawing.Descendants(Ns.C + "chart").First().Attr(Ns.R + "id")!;
+        return new Drawing.WordChart(_document, drawing, _document.OwnerPartOf(Element).RelatedPart(id)!);
+    }
+
     public Run AddPicture(byte[] imageBytes, Length? width = null, Length? height = null,
         string? altText = null) =>
         AddRun().AddPicture(imageBytes, width, height, altText);

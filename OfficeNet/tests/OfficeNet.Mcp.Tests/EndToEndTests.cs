@@ -80,6 +80,17 @@ public class EndToEndTests(ServerFixture server) : IClassFixture<ServerFixture>
                 new { type = "bullets", items = new[] { "Jakarta memimpin", "Biaya turun 4%" } },
                 new { type = "table", rows = new[] { new[] { "Wilayah", "Nilai" }, new[] { "Jakarta", "1.480" } } },
                 new { type = "quote", text = "Angka bersifat ilustratif." },
+                new
+                {
+                    type = "chart",
+                    chart = new
+                    {
+                        type = "bar",
+                        title = "Per wilayah",
+                        categories = new[] { "Jakarta", "Bandung" },
+                        series = new[] { new { name = "2026", values = new[] { 1480.0, 1150 } } },
+                    },
+                },
             },
         })).Ok();
 
@@ -91,6 +102,7 @@ public class EndToEndTests(ServerFixture server) : IClassFixture<ServerFixture>
         Assert.Contains("Pendapatan naik 32% dibanding kuartal lalu.", document.ExtractText());
         Assert.True(document.Paragraphs[1].Runs.Single(r => r.Text == "32%").Format.Bold);
         Assert.Single(document.Tables);
+        Assert.Equal("Per wilayah", document.Charts.Single().GetData().Title);
     }
 
     [Fact]

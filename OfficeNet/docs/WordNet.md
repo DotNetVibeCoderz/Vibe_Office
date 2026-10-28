@@ -459,6 +459,26 @@ document.AddPicture(bytes, width: Units.Cm(6), height: Units.Cm(3));
 Aspect ratio is preserved when only one dimension is given. PNG, JPEG, GIF, BMP and TIFF are
 recognised by content, not by file extension.
 
+## Charts
+
+```csharp
+document.AddChart(new ChartData
+{
+    Type = ChartType.Column,
+    Title = "Pendapatan per Wilayah",
+    Categories = ["Jakarta", "Bandung", "Surabaya"],
+    Series = [new ChartSeries("Q2", [1120, 860, 740]), new ChartSeries("Q3", [1480, 1150, 905])],
+    ShowDataLabels = true,
+});
+
+var data = document.Charts[0].GetData();
+```
+
+A native Word chart — the same `ChartData` ExcelNet and PowerPointNet use, written as the same
+DrawingML chart part — editable in Word and drawn by the PDF export with the renderer the slide and
+sheet exports share. It sits in the line of text, 15 × 9 cm unless sized. Word draws it from the
+values cached in the part; no embedded workbook is written, so Word's *Edit Data* has none to open.
+
 ## Text boxes and shapes
 
 A text box is a rectangle with words in it that floats over the page. It is what a pull quote, a

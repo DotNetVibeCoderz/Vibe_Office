@@ -611,7 +611,8 @@ memeriksa bagaimana pustaka memperlakukan `w:ins` sebelum menulis fitur track ch
 - [x] WordNet: mail merge bersarang — `FillTemplate`: baris tabel/blok/inline berulang, kondisional,
       path bertitik, format per culture; format karakter dipertahankan (`MailMerge` lama meratakannya)
 - [x] WordNet: watermark sebagai shape di header, bukan hanya opsi ekspor PDF; ekspor PDF ikut menggambarnya
-- [ ] WordNet: chart di dokumen (memakai `ChartData`/`ChartXml` dari Core)
+- [x] WordNet: chart di dokumen (memakai `ChartData`/`ChartXml` dari Core), digambar ekspor PDF;
+      blok `chart` di tool MCP `word_create`
 - [ ] WordNet: Markdown ↔ DOCX, TXT → DOCX
 - [x] ExcelNet: named range (`definedNames`), termasuk dipakai mesin formula; area cetak dan judul
       cetak; `localSheetId` dihitung saat menyimpan (aman terhadap `MoveSheet` dan chartsheet)

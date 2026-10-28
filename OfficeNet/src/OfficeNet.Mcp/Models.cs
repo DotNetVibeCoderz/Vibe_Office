@@ -11,7 +11,7 @@ namespace OfficeNet.Mcp;
 /// <summary>One block of a Word document.</summary>
 public sealed record DocBlock
 {
-    [Description("heading | paragraph | bullets | numbered | table | image | pagebreak | toc | quote")]
+    [Description("heading | paragraph | bullets | numbered | table | image | chart | pagebreak | toc | quote")]
     public string Type { get; init; } = "paragraph";
 
     [Description("The text of a heading, paragraph or quote. **bold** and *italic* are honoured.")]
@@ -37,6 +37,9 @@ public sealed record DocBlock
 
     [Description("left | center | right | justify")]
     public string? Align { get; init; }
+
+    [Description("For a chart block: a native, editable Word chart.")]
+    public ChartSpec? Chart { get; init; }
 }
 
 /// <summary>A chart for a slide or a sheet.</summary>

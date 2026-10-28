@@ -653,6 +653,18 @@ public sealed class WordDocument : OfficeDocument
         return table;
     }
 
+    /// <summary>Appends a centred paragraph holding a native chart.</summary>
+    public Drawing.WordChart AddChart(OfficeNet.Core.Charts.ChartData data, Length? width = null,
+        Length? height = null, string? altText = null)
+    {
+        var paragraph = AddParagraph();
+        paragraph.Alignment = ParagraphAlignment.Center;
+        return paragraph.AddChart(data, width, height, altText);
+    }
+
+    /// <summary>The charts in the body, in document order.</summary>
+    public IReadOnlyList<Drawing.WordChart> Charts => [.. Drawing.WordChart.Find(this)];
+
     /// <summary>Appends a paragraph containing only a picture.</summary>
     public Paragraph AddPicture(byte[] imageBytes, Length? width = null, Length? height = null,
         string? altText = null, ParagraphAlignment alignment = ParagraphAlignment.Center)

@@ -394,6 +394,24 @@ public class DocSamples : IDisposable
     }
 
     [Fact]
+    public void WordNet_Charts()
+    {
+        using var document = WordDocument.Create();
+
+        document.AddChart(new ChartData
+        {
+            Type = ChartType.Column,
+            Title = "Pendapatan per Wilayah",
+            Categories = ["Jakarta", "Bandung", "Surabaya"],
+            Series = [new ChartSeries("Q2", [1120, 860, 740]), new ChartSeries("Q3", [1480, 1150, 905])],
+            ShowDataLabels = true,
+        });
+
+        var data = document.Charts[0].GetData();
+        Assert.Equal(2, data.Series.Count);
+    }
+
+    [Fact]
     public void WordNet_TrackedChanges()
     {
         using var document = WordDocument.Create();

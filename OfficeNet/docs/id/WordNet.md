@@ -463,6 +463,27 @@ document.AddPicture(bytes, width: Units.Cm(6), height: Units.Cm(3));
 Rasio aspek dipertahankan bila hanya satu dimensi diberikan. PNG, JPEG, GIF, BMP, dan TIFF dikenali
 dari isinya, bukan dari ekstensi berkas.
 
+## Chart
+
+```csharp
+document.AddChart(new ChartData
+{
+    Type = ChartType.Column,
+    Title = "Pendapatan per Wilayah",
+    Categories = ["Jakarta", "Bandung", "Surabaya"],
+    Series = [new ChartSeries("Q2", [1120, 860, 740]), new ChartSeries("Q3", [1480, 1150, 905])],
+    ShowDataLabels = true,
+});
+
+var data = document.Charts[0].GetData();
+```
+
+Chart Word native — `ChartData` yang sama dengan ExcelNet dan PowerPointNet, ditulis sebagai part
+chart DrawingML yang sama — bisa disunting di Word dan digambar ekspor PDF dengan renderer yang
+dipakai bersama ekspor slide dan sheet. Letaknya di baris teks, 15 × 9 cm kecuali diberi ukuran. Word
+menggambarnya dari nilai yang tersimpan di part; tidak ada workbook tersemat, jadi *Edit Data* di
+Word tidak punya yang bisa dibuka.
+
 ## Text box dan shape
 
 Text box adalah persegi berisi kata-kata yang mengambang di atas halaman. Kutipan, keterangan

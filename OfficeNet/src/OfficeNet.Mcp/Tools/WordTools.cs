@@ -323,6 +323,11 @@ public sealed class WordTools(Workspace workspace)
                         alignment: Values.Alignment(block.Align) ?? ParagraphAlignment.Center);
                     break;
 
+                case "chart":
+                    document.AddChart(Values.Chart(block.Chart ?? throw new ArgumentException("A chart block needs a chart.")),
+                        block.WidthCm is { } chartWidth ? Length.FromCentimeters(chartWidth) : null);
+                    break;
+
                 case "pagebreak":
                     document.AddPageBreak();
                     break;
@@ -334,7 +339,7 @@ public sealed class WordTools(Workspace workspace)
                 default:
                     throw new ArgumentException(
                         $"Unknown block type '{block.Type}'. Use heading, paragraph, quote, bullets, " +
-                        "numbered, table, image, pagebreak or toc.");
+                        "numbered, table, image, chart, pagebreak or toc.");
             }
         }
     }
